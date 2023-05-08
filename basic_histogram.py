@@ -105,13 +105,7 @@ plt.tight_layout()
 plt.show()
 
 # %%
-def format_basis(space):
-  def shorten(s):
-    s = str(s)
-    return s if len(s) < 10 else s[:4] + '~' + s[-5:] 
-      
-  #return [f"{x.name} {x.value}" for x in seq]
-  return [f"{shorten(x.name)} {shorten(x.value)}" for x in space.basis]
+
 def format_basis_seq(seq):
   def shorten(s):
     s = str(s)
@@ -120,6 +114,8 @@ def format_basis_seq(seq):
   #return [f"{x.name} {x.value}" for x in seq]
   return [f"{shorten(x.name)} {shorten(x.value)}" for x in seq]
 
+def format_basis(space):
+  return format_basis_seq(space.basis)
 
 def show_mlp(mlp):
   def imshow_linear(ax, layer):
