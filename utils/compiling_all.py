@@ -90,4 +90,4 @@ def compile_rasp_to_model_returns_all(
       causal=causal,
       compiler_bos=compiler_bos,
       compiler_pad=compiler_pad,
-  ), rasp_model, craft_model, bases.BasisDirection(rasp.tokens.label, compiler_bos), bases.BasisDirection("one")
+  ), rasp_model, craft_model

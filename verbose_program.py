@@ -87,7 +87,7 @@ vocab = set(list(input_seq))
 formatted_input = ["bos"] + list(input_seq)
 max_seq_len=len(input_seq)+1
 
-assembled_model, rasp_model, craft_model, _BOS_DIRECTION, _ONE_DIRECTION  = compiling_all.compile_rasp_to_model_returns_all(
+assembled_model, rasp_model, craft_model  = compiling_all.compile_rasp_to_model_returns_all(
       program=program,
       vocab=vocab,
       max_seq_len=max_seq_len,
