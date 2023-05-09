@@ -1,0 +1,58 @@
+SOp is an n-length vector
+Selector is an nxn matrix
+
+Aggregate(sel: Selector, sop: Sop, default: Optional[Union[None, int, float, str, bool]]) -> Sop
+masks the SOp according to each row of the selector, then takes the average over the non-masked values. Giving a new value for each row, forming an SOp
+  e.g. aggregate(sel, [124]):
+    F T T -> 1 * 0 + 2 * 1 + 4 * 1 / 2 = 3
+    F F F -> 0 + 0 + 0 = 0
+    T F F -> 1 * 1 + 0 + 0 / 1 = 1
+    => [301]
+
+SelectorWidth(s: Selector) -> Sop - computes the average over rows of a matrix returning a vector
+
+SelectorOr(A: Selector, B: Selector) -> Selector  - computes elementwise OR over 2 matrices returning a matrix
+SelectorAnd(A: Selector, B: Selector) -> Selector  - computes elementwise AND over 2 matrices returning a matrix
+SelectorNot(A: Selector) -> Selector - computes elementwise NOT over a matrix returning a matrix
+
+
+
+
+
+Select(k: Sop, q:Sop, p: Predicate) -> Selector - applies a predicate operation over k_i and q_j, forming matrix S_ij
+
+Predicate - Comparisions:
+  rasp.Comparison.EQ
+  rasp.Comparison.FALSE
+  rasp.Comparison.TRUE
+  rasp.Comparison.GEQ
+  rasp.Comparison.GT
+  rasp.Comparison.LEQ
+  rasp.Comparison.LT
+  rasp.Comparison.NEQ
+
+Annotations
+  numerical(sop) - annotates that the vecotr is numerical
+  categorical(sop) - annotates that the vecotr is categorical
+
+SOp
+ > TokensType
+ > IndicesType
+ > LengthType
+
+Value = Union[None, int, float, str, bool]
+Map(fx: f(Value) ->Value, s: SOp, simplify: bool) -> SOp - calls fx on each element in s
+    > if simplify = True, Map(fx, Map(gx, X, False), True) = Map(fx(gx(..)), X, False) - nestled mappings will be simplified
+
+SequenceMap(fx: f(Value, Value) -> Value, A: SOp, B: SOp) -> SOp - calls fx on each element in A[i] and B[i]
+LinearSequenceMap(A: SOp, B: SOp, wa: float, wb: float) -> SOp - same as SequenceMap(lambda x y: wa * x + wb * y, A, B)
+
+fx can be anything since the function is applied over the input_value_set, and the results are memorised within the model
+
+Full(x) -> SOp - [x] * input_length - filled list with value x
+
+SOP operators
+[<, >, <=, >=, ==, !=] - other is Value -> Map(A, lambda x: x @ Value) operations
+[+, -, *, /, , &&, ||] - if other is a SOp -> SequenceMap(A, B, lambda), else if other is value Map(A, B, lambda)
+[! ] - if self is Value or SOp. Map(A, lambda x: not x)
+

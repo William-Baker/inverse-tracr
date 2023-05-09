@@ -1,5 +1,5 @@
 #%%
-
+TF_CPP_MIN_LOG_LEVEL=0
 import jax
 import sys
 sys.path.append('tracr/')
@@ -35,12 +35,15 @@ def make_hist() -> rasp.SOp:
 
 #%%
 
+TF_CPP_MIN_LOG_LEVEL=0
+
 input_seq = "hello"
 program = make_hist()
 vocab = set(list(input_seq))
 formatted_input = ["bos"] + list(input_seq)
 max_seq_len=len(input_seq)+1
 
+TF_CPP_MIN_LOG_LEVEL=0
 assembled_model, rasp_model, craft_model = compiling_all.compile_rasp_to_model_returns_all(
       program=program,
       vocab=vocab,
@@ -103,6 +106,11 @@ plt.imshow(output_seq.magnitudes)
 
 #%%
 
+from utils.verbose_craft import plot_basis_dir
+
+fig, axs = plt.subplots(1, 1, figsize=(5, 3))
+plot_basis_dir(axs, output_seq, f'POut + resid')
+plt.show()
 
 
 #%%

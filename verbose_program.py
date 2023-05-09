@@ -81,7 +81,7 @@ def get_program(program_name, max_seq_len):
 
 
 #%%
-prog_name = "hist"
+prog_name = "sort_unique"
 program, vocab, input_seq = get_program(prog_name, 6)
 vocab = set(list(input_seq))
 formatted_input = ["bos"] + list(input_seq)
