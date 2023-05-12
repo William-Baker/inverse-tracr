@@ -33,18 +33,19 @@ lambda2 = TypeVar("lambda2")
 
 df = [
     # Class name,         input types,                 output type, weight
-    [ rasp.Map,          [SOp, lambda1],                  SOp     , 2],
+    [ rasp.Map,          [lambda1, SOp],                  SOp     , 2],
     [ rasp.Select,       [SOp, SOp, rasp.Predicate],           Selector, 3],
     [ rasp.SequenceMap,  [SOp, SOpNumericValue, lambda2], SOp,      4],
     [ rasp.Aggregate,    [Selector, SOp],                 SOp,      2],
     [ rasp.SelectorWidth,[Selector],                      SOp,      2],
-    [ rasp.SelectorOr,   [Selector, Selector],            Selector, 1], 
-    [ rasp.SelectorAnd,  [Selector, Selector],            Selector, 1], 
-    [ rasp.SelectorNot,  [Selector, Selector],            Selector, 1], 
+    # [ rasp.SelectorOr,   [Selector, Selector],            Selector, 1],  # These arent implemented correclty in RASP
+    # [ rasp.SelectorAnd,  [Selector, Selector],            Selector, 1], 
+    # [ rasp.SelectorNot,  [Selector, Selector],            Selector, 1], 
 ]
 
 df = pd.DataFrame(df, columns = ['cls', 'inp', 'out', 'weight'])
 df_no_selector = pd.DataFrame(df[df.inp.apply(lambda x: Selector not in x)])
+df_returns_sop = pd.DataFrame(df[df.out == SOp])
 
 
 # must ensure all basic comparison lambdas are present
@@ -182,8 +183,9 @@ class Operation:
 
 
 
-
-scope = Scope(list('abcd'), 6)
+vocab = list('abcd')
+max_seq_len = 6
+scope = Scope(vocab, max_seq_len)
 ops = []
 
 
@@ -196,7 +198,7 @@ def sample_function(scope: Scope, df=df):
 
     
     if sampled.cls == rasp.Map:
-        # [SOp, lambda1],
+        # [lambda1, SOp],
         return_cat = Cat.boolean
         return_type = SOp
 
@@ -219,7 +221,7 @@ def sample_function(scope: Scope, df=df):
 
         # Allocate a variable to hold the return value
         allocated_name = scope.add(return_type, return_cat)
-        op = Operation(sampled.cls, [s1, func], allocated_name)
+        op = Operation(sampled.cls, [func, s1], allocated_name)
         ops.append(op)
 
     elif sampled.cls == rasp.SequenceMap: # must have double the weight of Map
@@ -233,15 +235,17 @@ def sample_function(scope: Scope, df=df):
         else: # s2 will be const
             if  randint(0,2) <= 1: # 2/3 of the time generate an int
                 s2 = scope.gen_const(Cat.numeric)
+                s2 = rasp.Full(s2)
             else: # occasionally generate a float - may have a different impl
-                s2 = float(scope.gen_const(Cat.numeric)) + randint(0,100)/100 
+                s2 = float(scope.gen_const(Cat.numeric)) + randint(0,100)/100
+                s2 = rasp.Full(s2)
         f1 = choice(SEQUNCE_LAMBDAS)
 
         return_type = SOp
         return_cat = s1_cat
 
         allocated_name = scope.add(return_type, return_cat)
-        op = Operation(sampled.cls, [s1, s2, f1], allocated_name)
+        op = Operation(sampled.cls, [f1, s1, s2], allocated_name)
         ops.append(op)
 
     elif sampled.cls == rasp.Select:
@@ -285,7 +289,7 @@ def sample_function(scope: Scope, df=df):
         ops.append(op)
 
 
-    elif (sampled.cls == rasp.SelectorOr) or (sampled.cls == rasp.SelectorAnd) or (sampled.cls == rasp.SelectorNot):
+    elif (sampled.cls == rasp.SelectorOr) or (sampled.cls == rasp.SelectorAnd):
         # [Selector, Selector],           
         # todo chance of const full selector/sop
         s1 = scope.pick_var(Selector)
@@ -297,13 +301,134 @@ def sample_function(scope: Scope, df=df):
         allocated_name = scope.add(return_type, return_cat)
         op = Operation(sampled.cls, [s1, s2], allocated_name)
         ops.append(op)
+    
+    elif sampled.cls == rasp.SelectorNot:
+        s1 = scope.pick_var(Selector)
 
+        return_type = Selector
+        return_cat = Cat.boolean
 
+        allocated_name = scope.add(return_type, return_cat)
+        op = Operation(sampled.cls, [s1], allocated_name)
+        ops.append(op)
+
+    else:
+        raise NotImplementedError()
 
 
 
 
 for i in range(0, 10):
     sample_function(scope, df)
+
+sample_function(scope, df_returns_sop)
+
+
+@dataclass
+class Program:
+    ops: Sequence[Operation]
+    
+    def __post_init__(self):
+        self.named_ops = dict((op.output, op) for op in self.ops)
+        
+
+
+#for op in ops:
+
+def populate_params(op: Operation, prog: Program):
+    params = []
+    for inp in op.inputs:
+        if isinstance(inp, str):
+            if inp == 'tokens':
+                params.append(rasp.tokens)
+            elif inp == 'indices':
+                params.append(rasp.indices)
+            else:
+                child = populate_params(prog.named_ops[inp], prog)
+                params.append(child)
+        elif isinstance(inp, Callable):
+            params.append(inp)
+        elif isinstance(inp, Union[float, int]):
+            params.append(inp)
+    ret = op.operator(*params)
+    named_ret = ret.named(op.output)
+    return named_ret
+
+
+program = populate_params(ops[-1], Program(ops))
+# %%
+
+from utils import compiling_all
+
+prog_name = "sort_unique"
+#program, vocab, input_seq = get_program(prog_name, 6)
+
+
+# assembled_model, rasp_model, craft_model  = compiling_all.compile_rasp_to_model_returns_all(
+#       program=program,
+#       vocab=vocab,
+#       max_seq_len=max_seq_len,
+#       causal=False,
+#       compiler_bos="bos",
+#       compiler_pad="pad",
+#       mlp_exactness=100)
+
+#%%
+
+
+from typing import Set
+
+from tracr.compiler import assemble
+from tracr.compiler import basis_inference
+from tracr.compiler import craft_graph_to_model
+from tracr.compiler import craft_model_to_transformer
+from tracr.compiler import expr_to_craft_graph
+from tracr.compiler import rasp_to_graph
+from tracr.craft import bases
+from tracr.rasp import rasp
+
+COMPILER_BOS = "compiler_bos"
+COMPILER_PAD = "compiler_pad"
+
+
+
+causal = False
+compiler_bos = COMPILER_BOS
+compiler_pad = COMPILER_PAD
+mlp_exactness = 100
+
+if compiler_bos in vocab:
+    raise ValueError("Compiler BOS token must not be present in the vocab. "
+                    f"Found '{compiler_bos}' in {vocab}")
+
+if compiler_pad in vocab:
+    raise ValueError("Compiler PAD token must not be present in the vocab. "
+                    f"Found '{compiler_pad}' in {vocab}")
+
+rasp_model = rasp_to_graph.extract_rasp_graph(program)
+graph, sources, sink = rasp_model.graph, rasp_model.sources, rasp_model.sink
+
+basis_inference.infer_bases(
+    graph,
+    sink,
+    vocab,
+    max_seq_len,
+)
+
+
+expr_to_craft_graph.add_craft_components_to_rasp_graph(
+    graph,
+    bos_dir=bases.BasisDirection(rasp.tokens.label, compiler_bos),
+    mlp_exactness=mlp_exactness,
+)
+#%%
+
+
+craft_model = craft_graph_to_model.craft_graph_to_model(graph, sources)
+
+#%%
+import networkx as nx
+nx.draw(rasp_model.graph, with_labels=True)
+print(program)
 
 #%%
