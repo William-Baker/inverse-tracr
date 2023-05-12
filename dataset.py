@@ -355,6 +355,10 @@ def compile_ops_into_craft_model(ops, vocab, max_seq_len):
 
     program = populate_params(ops[-1], Program(ops))
 
+    # discard duplicates
+    seen = []
+    actual_ops = list(filter(lambda x: seen.append(x.output) is None if x.output not in seen else False, actual_ops))
+
 
     COMPILER_BOS = "compiler_bos"
     COMPILER_PAD = "compiler_pad"
@@ -501,10 +505,29 @@ def encode_craft_model(craft_model):
 
 
 def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6)):
+    """
+    params:
+        ops_range = (min, max) - the range of program lengths to generate BEFORE retracing reduction
+        vocab_size_range = (min, max) - the range of vocabulary sizes to build the transformer with
+                                            - will scale the number of parameter
+        max_sequence_lengths_range = (min, max) - the range of sequence lengths to build the code AND transformer with 
+                                            - will scale the number of constants used in lambdas
+                                            - and the number of model parameters
+
+    returns:
+        gen - generator that yields (model_params, program)
+        OP_VOCAB - vocab for the craft functions ['Map', 'Select', 'SequenceMap', 'Aggregate', 'SelectorWidth']
+        VAR_VOCAB - [ 'tokens', 'indices', 'NA',
+                    'PRED_EQ', 'PRED_FALSE', 'PRED_TRUE', 'PRED_GEQ', 'PRED_GT', 'PRED_LEQ', 'PRED_LT', 'PRED_NEQ',
+                    'LAM_LT', 'LAM_LE', 'LAM_GT', 'LAM_GE', 'LAM_NE', 'LAM_EQ', 'LAM_IV', 'LAM_ADD', 'LAM_MUL', 'LAM_SUB', 'LAM_AND', 'LAM_OR', 
+                    'vXXX' - where XXX is the ID of variable - in range (0, ops_range_max)
+                            - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
+                    ]
+    """
     OP_NAME_VOCAB = list(df.cls.apply(lambda x: x.__name__))
     var_name_iter = iter_var_names()
     VAR_VOCAB = ['tokens', 'indices'] \
-                    + [next(var_name_iter) for x in range(0, max(ops_range)*2)]  \
+                    + [next(var_name_iter) for x in range(0, max(ops_range))]  \
                     + list(named_predicates.values()) \
                     + list(x[-1] for x in UNI_LAMBDAS + SEQUNCE_LAMBDAS) + [NO_PARAM]
     def gen():
@@ -518,15 +541,15 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
 
 #%%
 
-gen, OP_NAME_VOCAB, VAR_VOCAB = craft_dataset()
+gen, OP_NAME_VOCAB, VAR_VOCAB = craft_dataset(ops_range=(10,10))
 
 dataset = gen()
 
 #%%
 
-for i in range(100):
-    model_params, program = next(dataset)
 
+model_params, program = next(dataset)
 
+program
 
 # %%
