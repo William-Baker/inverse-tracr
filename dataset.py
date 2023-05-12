@@ -7,23 +7,23 @@ sys.path.append('tracr/')
 from typing import Union, TypeVar, Sequence, Callable, Optional
 from random import choice, randint
 from functools import partial
-from tracr.compiler import assemble
 from tracr.compiler import basis_inference
 from tracr.compiler import craft_graph_to_model
-from tracr.compiler import craft_model_to_transformer
 from tracr.compiler import expr_to_craft_graph
 from tracr.compiler import rasp_to_graph
 from tracr.craft import bases
 from tracr.rasp import rasp
+from tracr.craft.transformers import MultiAttentionHead, MLP
+from tracr.rasp import rasp
+from dataclasses import dataclass
+import pandas as pd
 
 # The default of float16 can lead to discrepancies between outputs of
 # the compiled model and the RASP program.
 jax.config.update('jax_default_matmul_precision', 'float32')
 
 
-from tracr.rasp import rasp
-from dataclasses import dataclass
-import pandas as pd
+
 
 
 
@@ -175,13 +175,6 @@ class Operation:
     inputs: Sequence[Union[str, Callable, rasp.Predicate ]]
     output: str
     lambda_name: Optional[str] = None
-
-        
-
-
-
-
-
 
 
 
@@ -402,14 +395,6 @@ def compile_ops_into_craft_model(ops, vocab, max_seq_len):
     return craft_model, actual_ops[::-1]
 
 
-
-
-
-# def iter_all_strings():
-#     for size in itertools.count(1):
-#         for s in itertools.product(ascii_lowercase, repeat=size):
-#             yield "".join(s)
-
 def generate_ops(max_ops: int, vocab: Sequence, max_seq_len: int):
     scope = Scope(vocab, max_seq_len)
     ops = []
@@ -443,11 +428,9 @@ def ops_craft_generator(ops_range: tuple, vocab_size_range: tuple, max_sequence_
 
 
 
-#%%
-MAX_OPS = 10
-ops, craft_model, actual_ops = ops_craft_generator(ops_range=(MAX_OPS,MAX_OPS), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6))
 
-#%%
+#ops, craft_model, actual_ops = ops_craft_generator(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6))
+
 
 def encode_ops(ops):
     features = []
@@ -488,22 +471,10 @@ def encode_ops(ops):
         features.append(feature)
     return features
 
-features = encode_ops(actual_ops)
-
-#%%
 
 
-OP_NAME_VOCAB = list(df.cls.apply(lambda x: x.__name__))
-var_name_iter = iter_var_names()
-VAR_VOCAB = [next(var_name_iter) for x in range(0, MAX_OPS*2)]  \
-                + list(named_predicates.values()) \
-                + list(x[-1] for x in UNI_LAMBDAS + SEQUNCE_LAMBDAS) + [NO_PARAM]
 
 
-#%%
-
-#def encode_model(craft_model)
-from tracr.craft.transformers import MultiAttentionHead, MLP, AttentionHead
 
 def encode_craft_model(craft_model):
     model_params = []
@@ -524,7 +495,38 @@ def encode_craft_model(craft_model):
                 )
             ))
         else:
-        raise NotImplementedError()
+            raise NotImplementedError()
+    return model_params
+
+
+
+def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6)):
+    OP_NAME_VOCAB = list(df.cls.apply(lambda x: x.__name__))
+    var_name_iter = iter_var_names()
+    VAR_VOCAB = ['tokens', 'indices'] \
+                    + [next(var_name_iter) for x in range(0, max(ops_range)*2)]  \
+                    + list(named_predicates.values()) \
+                    + list(x[-1] for x in UNI_LAMBDAS + SEQUNCE_LAMBDAS) + [NO_PARAM]
+    def gen():
+        while True:
+            ops, craft_model, actual_ops = ops_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
+            encoded_ops = encode_ops(actual_ops)
+            encoded_model = encode_craft_model(craft_model)
+            yield encoded_model, encoded_ops
+    
+    return gen, OP_NAME_VOCAB, VAR_VOCAB
+
+#%%
+
+gen, OP_NAME_VOCAB, VAR_VOCAB = craft_dataset()
+
+dataset = gen()
+
+#%%
+
+for i in range(100):
+    model_params, program = next(dataset)
+
 
 
 # %%
