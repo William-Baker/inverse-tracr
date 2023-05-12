@@ -33,9 +33,9 @@ lambda2 = TypeVar("lambda2")
 
 df = [
     # Class name,         input types,                 output type, weight
-    [ rasp.Map,          [lambda1, SOp],                  SOp     , 2],
+    [ rasp.Map,          [lambda1, SOp],                  SOp     , 4],
     [ rasp.Select,       [SOp, SOp, rasp.Predicate],           Selector, 3],
-    [ rasp.SequenceMap,  [SOp, SOpNumericValue, lambda2], SOp,      4],
+    [ rasp.SequenceMap,  [SOp, SOpNumericValue, lambda2], SOp,      2],
     [ rasp.Aggregate,    [Selector, SOp],                 SOp,      2],
     [ rasp.SelectorWidth,[Selector],                      SOp,      2],
     # [ rasp.SelectorOr,   [Selector, Selector],            Selector, 1],  # These arent implemented correclty in RASP
@@ -48,19 +48,6 @@ df_no_selector = pd.DataFrame(df[df.inp.apply(lambda x: Selector not in x)])
 df_returns_sop = pd.DataFrame(df[df.out == SOp])
 
 
-# must ensure all basic comparison lambdas are present
-
-
-# These function can be combined with a sequence map operator
-# sequence_lambdas = [
-#     [ "lambda",            "imp",                "input_types",                      "output_type"]
-#     [lambda x, y: x + y,   rasp.SOp.__add__,     [SOpNumericValue, SOpNumericValue], SOp,],
-#     [lambda x, y: x * y,   rasp.SOp.__mul__,     [SOpNumericValue, SOpNumericValue], SOp,],
-#     [lambda x, y: x - y,   rasp.SOp.__sub__,     [SOpNumericValue, SOpNumericValue], SOp,],
-#     [lambda x, y: x / y,   rasp.SOp.__truediv__, [SOpNumericValue, SOpNumericValue], SOp,],
-#     [lambda x, y: x and y, rasp.SOp.__and__,     [SOpNumericValue, SOpNumericValue], SOp,],
-#     [lambda x, y: x or y,  rasp.SOp.__or__,      [SOpNumericValue, SOpNumericValue], SOp,],
-# ]
 
 UNI_LAMBDAS = [
     lambda x, y: x < y,  
@@ -73,12 +60,12 @@ UNI_LAMBDAS = [
 ]
 
 SEQUNCE_LAMBDAS = [
-    lambda x, y: x + y,  
-    lambda x, y: x * y,  
-    lambda x, y: x - y,  
-    lambda x, y: x / y,  
-    lambda x, y: x and y,
-    lambda x, y: x or y, 
+    (lambda x, y: x + y,  []),
+    (lambda x, y: x * y,  []),
+    (lambda x, y: x - y,  []),
+    #(lambda x, y: x / y,  [0]),
+    (lambda x, y: x and y,[]),
+    (lambda x, y: x or y, []),
 ]
 
 
@@ -96,14 +83,6 @@ PREDICATES = [
 
 
 
-
-# rasp.SOp.__lt__
-# rasp.SOp.__le__
-# rasp.SOp.__eq__
-# rasp.SOp.__ne__
-# rasp.SOp.__add__
-
-
 from collections import defaultdict
 from enum import Enum
 class Cat(Enum):
@@ -111,7 +90,7 @@ class Cat(Enum):
     categoric = 2
     boolean = 3
 
-# TODO add a small chance of generating a const SOp / Selector
+
 class Scope:
     def __init__(self, vocabulary: Sequence[Union[str, int, bool]], max_seq_length) -> None:    
         self.scope = dict()
@@ -148,10 +127,10 @@ class Scope:
     def get_cat(self, name: str):
         return self.type_cat[name]
     
-    def pick_var(self, y: type): # TODO add a small chance of generating a const SOp / Selector
+    def pick_var(self, y: type): 
         return choice(self.names_by_type[y])
     
-    def pick_var_cat(self, y: type, cat: Cat): # TODO add a small chance of generating a const SOp / Selector
+    def pick_var_cat(self, y: type, cat: Cat):
         return choice(self.names_by_type_and_cat[y][cat])
     
     def var_exists(self, desired_type: type):
@@ -196,28 +175,51 @@ def sample_function(scope: Scope, df=df):
     else:
         sampled = df_no_selector.sample(weights=df_no_selector.weight).iloc[0]
 
-    
+
     if sampled.cls == rasp.Map:
         # [lambda1, SOp],
-        return_cat = Cat.boolean
-        return_type = SOp
-
-        s1 = scope.pick_var(SOp)
-        f1 = choice(UNI_LAMBDAS)
         
-        obj_cat = scope.get_cat(s1)
-        y = None
-        if s1 == "tokens":
-            y = scope.gen_const(Cat.categoric)
-        elif obj_cat == Cat.numeric:
-            y = scope.gen_const(Cat.numeric)
-        elif obj_cat == Cat.categoric:
-            y = scope.gen_const(Cat.categoric)
-        elif obj_cat == Cat.boolean:
-            y = bool(randint(0,1))
-        else:
-            raise NotImplementedError()
-        func = partial(f1, y)
+        return_type = SOp
+        
+
+        if randint(0,1) == 0: # Boolean operators
+            return_cat = Cat.boolean
+            
+            s1 = scope.pick_var(SOp)
+            f1 = choice(UNI_LAMBDAS)
+            
+            obj_cat = scope.get_cat(s1)
+            y = None
+            if s1 == "tokens":
+                y = scope.gen_const(Cat.categoric)
+            elif obj_cat == Cat.numeric:
+                y = scope.gen_const(Cat.numeric)
+            elif obj_cat == Cat.categoric:
+                y = scope.gen_const(Cat.categoric)
+            elif obj_cat == Cat.boolean:
+                y = bool(randint(0,1))
+            else:
+                raise NotImplementedError()
+            
+            func = partial(f1, y)
+
+        else: # linear operators
+            return_cat = Cat.numeric
+            s1 = scope.pick_var_cat(SOp, return_cat)
+            # TODO we can guarentee that the operand is non-zero, so lets make it possible to do division
+            f1, bad_vals = choice(SEQUNCE_LAMBDAS)# + [(lambda x, y: x / y,  [0])]) 
+            if  randint(0,2) <= 1: # 2/3 of the time generate an int
+                s2 = scope.gen_const(Cat.numeric)
+            else: # occasionally generate a float - may have a different impl
+                s2 = float(scope.gen_const(Cat.numeric)) + randint(0,100)/100
+
+            while s2 in bad_vals: # prevent bad values, such as div 0
+                if isinstance(s2, float):
+                    s2 += 0.1
+                else:
+                    s2 += 1
+
+            func = partial(f1, s2)
 
         # Allocate a variable to hold the return value
         allocated_name = scope.add(return_type, return_cat)
@@ -225,21 +227,17 @@ def sample_function(scope: Scope, df=df):
         ops.append(op)
 
     elif sampled.cls == rasp.SequenceMap: # must have double the weight of Map
-        # TODO this might only accept numeric s1 inputs, but I guess we''ll find out
         # [SOp, SOpNumericValue, lambda2],
         # todo chance of const full selector/sop
-        s1 = scope.pick_var(SOp)
+        s1 = scope.pick_var_cat(SOp, Cat.numeric)
         s1_cat = scope.get_cat(s1)
-        if scope.var_exists_cat(SOp, s1_cat) and randint(0,1) == 0: # s2 wil be an SOp
+        if scope.var_exists_cat(SOp, s1_cat): # s2 wil be an SOp
             s2 = scope.pick_var_cat(SOp, s1_cat)
-        else: # s2 will be const
-            if  randint(0,2) <= 1: # 2/3 of the time generate an int
-                s2 = scope.gen_const(Cat.numeric)
-                s2 = rasp.Full(s2)
-            else: # occasionally generate a float - may have a different impl
-                s2 = float(scope.gen_const(Cat.numeric)) + randint(0,100)/100
-                s2 = rasp.Full(s2)
-        f1 = choice(SEQUNCE_LAMBDAS)
+        else: 
+            print("dead end")
+            return
+            
+        f1, bad = choice(SEQUNCE_LAMBDAS)
 
         return_type = SOp
         return_cat = s1_cat
@@ -261,7 +259,7 @@ def sample_function(scope: Scope, df=df):
         allocated_name = scope.add(return_type, return_cat)
         op = Operation(sampled.cls, [s1, s2, pred], allocated_name)
         ops.append(op)
-    
+
     elif sampled.cls == rasp.Aggregate:
         # [Selector, SOp],
         # todo chance of const full selector/sop
@@ -301,7 +299,7 @@ def sample_function(scope: Scope, df=df):
         allocated_name = scope.add(return_type, return_cat)
         op = Operation(sampled.cls, [s1, s2], allocated_name)
         ops.append(op)
-    
+
     elif sampled.cls == rasp.SelectorNot:
         s1 = scope.pick_var(Selector)
 
@@ -332,9 +330,6 @@ class Program:
         self.named_ops = dict((op.output, op) for op in self.ops)
         
 
-
-#for op in ops:
-
 def populate_params(op: Operation, prog: Program):
     params = []
     for inp in op.inputs:
@@ -356,7 +351,7 @@ def populate_params(op: Operation, prog: Program):
 
 
 program = populate_params(ops[-1], Program(ops))
-# %%
+
 
 from utils import compiling_all
 
@@ -373,10 +368,8 @@ prog_name = "sort_unique"
 #       compiler_pad="pad",
 #       mlp_exactness=100)
 
-#%%
 
 
-from typing import Set
 
 from tracr.compiler import assemble
 from tracr.compiler import basis_inference
