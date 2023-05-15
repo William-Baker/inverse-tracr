@@ -555,13 +555,13 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
 
 gen, OP_NAME_VOCAB, VAR_VOCAB = craft_dataset(ops_range=(30,30))
 
-dataset = gen()
+# dataset = gen()
 
-#%%
+# #%%
 
 
-model_params, program = next(dataset)
+# model_params, program = next(dataset)
 
-program
+# program
 
-# %%
+# # %%
