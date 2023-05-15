@@ -463,7 +463,7 @@ def program_craft_generator(ops_range: tuple, vocab_size_range: tuple, max_seque
 
 
 
-from multiprocessing import Process, Manager
+from multiprocessing import Process, Queue
 def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
     n_ops = randint(*ops_range)
     vocab_size = randint(*vocab_size_range)
@@ -474,28 +474,43 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, m
 
     vocab = gen_vocab(n_ops, prefix='t')
 
-    def time_sensitive(return_dict):
+    def time_sensitive(queue):
         program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
         craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
+        # return_dict['craft_model'] = craft_model
+        # return_dict['actual_ops'] = actual_ops
+        #return_dict = queue.get()
+        return_dict = dict()
         return_dict['craft_model'] = craft_model
         return_dict['actual_ops'] = actual_ops
+        queue.put(return_dict)
 
-    manager = Manager()
-    return_dict = manager.dict()
-    p = Process(target=time_sensitive, args=[return_dict])
+    return_dict = {'craft_model':None, 'actual_ops': None}
+    queue = Queue()
+    #queue.put(return_dict)
+    p = Process(target=time_sensitive, args=[queue])
     
     p.start()
-    p.join(5)
+    print("started")
+    p.join(0.2)
+    print("done_wating")
     while p.is_alive(): # the process hasnt finished yet
         print("### Process Not finished starting again ####")
-        p.terminate()   # kill it
-        p.join()        # delete the thread
-        p = Process(target=time_sensitive, args=[return_dict])
-        p.start()       # start a new one
-        p.join(5)     # wait again and repeat
+        # p.terminate()   # kill it
+        # p.join()        # delete the thread
+        # p = Process(target=time_sensitive, args=[queue])
+        # p.start()       # start a new one
+        # p.join(5)     # wait again and repeat
+    
+    print("not alive, geting queue")
+    p.join()
+    print("joined")  
+
+    return_dict = queue.get()
+    print("got queue")
 
     print(return_dict)
-    if 'craft_model' in return_dict:
+    if return_dict['craft_model'] != None:
         raise(Exception("The generation program did not terminate yet we continued"))
 
     craft_model = return_dict['craft_model']
