@@ -153,7 +153,6 @@ class Scope:
     
     def weighted_sample(lst):
         weights = [x[1] for x in lst]
-        print(weights)
         sample = choices(lst, weights, k=1)
         return sample[0][0]
 

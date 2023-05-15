@@ -188,6 +188,8 @@ class Operation:
     lambda_name: Optional[str] = None
 
 
+# =================================== Program Sampling ====================================
+
 
 def sample_function(scope: Scope, ops, df=df):
     if scope.var_exists(Selector):
@@ -334,6 +336,16 @@ def sample_function(scope: Scope, ops, df=df):
         raise NotImplementedError()
 
 
+def generate_ops(max_ops: int, vocab: Sequence, max_seq_len: int):
+    scope = Scope(vocab, max_seq_len)
+    ops = []
+
+    for i in range(0, max_ops-1):
+        sample_function(scope, ops, df )
+    sample_function(scope, ops, df_returns_sop)
+
+    return ops
+
 def compile_program(ops):
     @dataclass
     class Program:
@@ -369,11 +381,13 @@ def compile_program(ops):
     # discard duplicates
     seen = []
     actual_ops = list(filter(lambda x: seen.append(x.output) is None if x.output not in seen else False, actual_ops))
+    actual_ops = actual_ops[::-1] # reverse the traversal
     print(f"Program Length: {len(actual_ops)}")
+
+
     return program, actual_ops
 
-def compile_ops_into_craft_model(ops, vocab, max_seq_len):
-    program, actual_ops = compile_program(ops)
+def compile_program_into_craft_model(program, vocab, max_seq_len):
 
     COMPILER_BOS = "compiler_bos"
     COMPILER_PAD = "compiler_pad"
@@ -411,54 +425,87 @@ def compile_ops_into_craft_model(ops, vocab, max_seq_len):
 
     craft_model = craft_graph_to_model.craft_graph_to_model(graph, sources)
 
-    return craft_model, actual_ops[::-1]
-
-
-def generate_ops(max_ops: int, vocab: Sequence, max_seq_len: int):
-    scope = Scope(vocab, max_seq_len)
-    ops = []
-
-    for i in range(0, max_ops-1):
-        sample_function(scope, ops, df )
-    sample_function(scope, ops, df_returns_sop)
-
-    return ops
+    return craft_model
 
 
 def gen_vocab(vocab_size: int, prefix='t'):
     return [prefix+str(x) for x in range(vocab_size)]
+
+
+def build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH):
+    program_length = 0
+    while program_length < TARGET_PROGRAM_LENGTH:
+        ops = generate_ops(n_ops, vocab, max_seq_len)
+        program, actual_ops = compile_program(ops)
+        len(actual_ops)
+    return program, actual_ops
+
+def program_generator(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
+    n_ops = randint(*ops_range)
+    vocab_size = randint(*vocab_size_range)
+    max_seq_len = randint(*max_sequence_lenghts_range)
+    TARGET_PROGRAM_LENGTH = max(ops_range) // 2
+    vocab = gen_vocab(n_ops, prefix='t')
+    program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
+    return actual_ops
+
+
+def program_craft_generator(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
+    n_ops = randint(*ops_range)
+    vocab_size = randint(*vocab_size_range)
+    max_seq_len = randint(*max_sequence_lenghts_range)
+    TARGET_PROGRAM_LENGTH = max(ops_range) // 2
+    vocab = gen_vocab(n_ops, prefix='t')
+    program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
+    craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
+    return craft_model, actual_ops
+
+
+
+
+from multiprocessing import Process
+def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
+    n_ops = randint(*ops_range)
+    vocab_size = randint(*vocab_size_range)
+    max_seq_len = randint(*max_sequence_lenghts_range)
+    TARGET_PROGRAM_LENGTH = max(ops_range) // 2
+    vocab = gen_vocab(n_ops, prefix='t')
+
+    def time_sensitive(return_vals):
+        program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
+        craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
+        return_vals = (craft_model, actual_ops)
+
+    return_vals = None
+    p = Process(target=time_sensitive, args=tuple([return_vals]))
+    p.start()
+    p.join(5)
+    while p.is_alive(): # the process hasnt finished yet
+        p.terminate()   # kill it
+        p.join()        # delete the thread
+        p = Process(target=time_sensitive, args=tuple([return_vals]))
+        p.start()       # start a new one
+        p.join(5)     # wait again and repeat
+
+    if return_vals == None:
+        raise(Exception("The generation program did not terminate yet we continued"))
+
+    (craft_model, actual_ops) = return_vals
+
+    return craft_model, actual_ops
+
+
+
+
+
+
+#============================= Data Encoding ==============================================
 
 def iter_var_names(prefix='v'):
     i = 0
     while True:
         i += 1
         yield prefix + str(i)
-
-
-
-def ops_craft_generator(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
-    ops = randint(*ops_range)
-    vocab_size = randint(*vocab_size_range)
-    max_seq_len = randint(*max_sequence_lenghts_range)
-    vocab = gen_vocab(vocab_size, prefix='t')
-    ops = generate_ops(ops, vocab, max_seq_len)
-    craft_model, actual_ops = compile_ops_into_craft_model(ops, vocab, max_seq_len)
-    return ops, craft_model, actual_ops
-
-
-def program_generator(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
-    ops = randint(*ops_range)
-    vocab_size = randint(*vocab_size_range)
-    max_seq_len = randint(*max_sequence_lenghts_range)
-    vocab = gen_vocab(vocab_size, prefix='t')
-    ops = generate_ops(ops, vocab, max_seq_len)
-    program, actual_ops = compile_program(ops)
-    return actual_ops
-
-
-
-
-#ops, craft_model, actual_ops = ops_craft_generator(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6))
 
 
 def encode_ops(ops):
@@ -501,10 +548,6 @@ def encode_ops(ops):
     return features
 
 
-
-
-
-
 def encode_craft_model(craft_model):
     model_params = []
     for block in craft_model.blocks:
@@ -527,6 +570,9 @@ def encode_craft_model(craft_model):
             raise NotImplementedError()
     return model_params
 
+
+
+# ========================= User Friendly Generators ============================================
 
 
 def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6)):
@@ -558,7 +604,7 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
                     + list(x[-1] for x in UNI_LAMBDAS + SEQUNCE_LAMBDAS) + [NO_PARAM]
     def gen():
         while True:
-            ops, craft_model, actual_ops = ops_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
+            ops, craft_model, actual_ops = program_craft_generator_bounded(ops_range, vocab_size_range, max_sequence_lenghts_range)
             encoded_ops = encode_ops(actual_ops)
             encoded_model = encode_craft_model(craft_model)
             yield encoded_model, encoded_ops
@@ -595,7 +641,7 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_leng
                     + list(x[-1] for x in UNI_LAMBDAS + SEQUNCE_LAMBDAS) + [NO_PARAM]
     def gen():
         while True:
-            actual_ops = program_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
+            actual_ops = build_program_of_length(ops_range, vocab_size_range, max_sequence_lenghts_range)
             encoded_ops = encode_ops(actual_ops)
             yield encoded_ops
     
