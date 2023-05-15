@@ -382,7 +382,7 @@ def compile_program(ops):
     seen = []
     actual_ops = list(filter(lambda x: seen.append(x.output) is None if x.output not in seen else False, actual_ops))
     actual_ops = actual_ops[::-1] # reverse the traversal
-    print(f"Program Length: {len(actual_ops)}")
+    #print(f"Program Length: {len(actual_ops)}")
 
 
     return program, actual_ops
@@ -463,62 +463,50 @@ def program_craft_generator(ops_range: tuple, vocab_size_range: tuple, max_seque
 
 
 
-from multiprocessing import Process, Queue
+
+import dill, multiprocessing
+dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
+multiprocessing.reduction.ForkingPickler = dill.Pickler
+multiprocessing.reduction.dump = dill.dump
+multiprocessing.context.reduction._ForkingPickler = dill.Pickler
+
 def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
     n_ops = randint(*ops_range)
     vocab_size = randint(*vocab_size_range)
     max_seq_len = randint(*max_sequence_lenghts_range)
-    TARGET_PROGRAM_LENGTH = 3
-
-    print(f"Targeting programs with length {TARGET_PROGRAM_LENGTH}")
+    TARGET_PROGRAM_LENGTH = max(ops_range) // 2
 
     vocab = gen_vocab(n_ops, prefix='t')
 
-    def time_sensitive(queue):
+    def time_sensitive(return_dict):
         program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
         craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
-        # return_dict['craft_model'] = craft_model
-        # return_dict['actual_ops'] = actual_ops
-        #return_dict = queue.get()
-        return_dict = dict()
         return_dict['craft_model'] = craft_model
         return_dict['actual_ops'] = actual_ops
-        queue.put(return_dict)
 
-    return_dict = {'craft_model':None, 'actual_ops': None}
-    queue = Queue()
-    #queue.put(return_dict)
-    p = Process(target=time_sensitive, args=[queue])
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+    p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
     
     p.start()
-    print("started")
     p.join(0.2)
-    print("done_wating")
     while p.is_alive(): # the process hasnt finished yet
         print("### Process Not finished starting again ####")
-        # p.terminate()   # kill it
-        # p.join()        # delete the thread
-        # p = Process(target=time_sensitive, args=[queue])
-        # p.start()       # start a new one
-        # p.join(5)     # wait again and repeat
-    
-    print("not alive, geting queue")
-    p.join()
-    print("joined")  
-
-    return_dict = queue.get()
-    print("got queue")
-
-    print(return_dict)
-    if return_dict['craft_model'] != None:
-        raise(Exception("The generation program did not terminate yet we continued"))
+        p.terminate()   # kill it
+        print("killed")
+        p.join()        # delete the thread
+        print("joined")
+        p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
+        print("new")
+        p.start()       # start a new one
+        print("started")
+        p.join(0.2)     # wait again and repeat
+        print("waiting")
 
     craft_model = return_dict['craft_model']
     actual_ops = return_dict['actual_ops'] 
 
     return craft_model, actual_ops
-
-
 
 
 
@@ -628,7 +616,7 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
                     + list(x[-1] for x in UNI_LAMBDAS + SEQUNCE_LAMBDAS) + [NO_PARAM]
     def gen():
         while True:
-            ops, craft_model, actual_ops = program_craft_generator_bounded(ops_range, vocab_size_range, max_sequence_lenghts_range)
+            craft_model, actual_ops = program_craft_generator_bounded(ops_range, vocab_size_range, max_sequence_lenghts_range)
             encoded_ops = encode_ops(actual_ops)
             encoded_model = encode_craft_model(craft_model)
             yield encoded_model, encoded_ops
