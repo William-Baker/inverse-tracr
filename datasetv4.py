@@ -491,17 +491,11 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, m
     p.start()
     p.join(0.2)
     while p.is_alive(): # the process hasnt finished yet
-        print("### Process Not finished starting again ####")
         p.terminate()   # kill it
-        print("killed")
         p.join()        # delete the thread
-        print("joined")
         p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
-        print("new")
         p.start()       # start a new one
-        print("started")
         p.join(0.2)     # wait again and repeat
-        print("waiting")
 
     craft_model = return_dict['craft_model']
     actual_ops = return_dict['actual_ops'] 
