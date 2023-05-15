@@ -370,7 +370,7 @@ def compile_ops_into_craft_model(ops, vocab, max_seq_len):
     # discard duplicates
     seen = []
     actual_ops = list(filter(lambda x: seen.append(x.output) is None if x.output not in seen else False, actual_ops))
-
+    print(f"Program Length: {len(actual_ops)}")
 
     COMPILER_BOS = "compiler_bos"
     COMPILER_PAD = "compiler_pad"
