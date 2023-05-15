@@ -437,7 +437,7 @@ def build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH):
     while program_length < TARGET_PROGRAM_LENGTH:
         ops = generate_ops(n_ops, vocab, max_seq_len)
         program, actual_ops = compile_program(ops)
-        len(actual_ops)
+        program_length = len(actual_ops)
     return program, actual_ops
 
 def program_generator(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
@@ -463,34 +463,43 @@ def program_craft_generator(ops_range: tuple, vocab_size_range: tuple, max_seque
 
 
 
-from multiprocessing import Process
+from multiprocessing import Process, Manager
 def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
     n_ops = randint(*ops_range)
     vocab_size = randint(*vocab_size_range)
     max_seq_len = randint(*max_sequence_lenghts_range)
-    TARGET_PROGRAM_LENGTH = max(ops_range) // 2
+    TARGET_PROGRAM_LENGTH = 3
+
+    print(f"Targeting programs with length {TARGET_PROGRAM_LENGTH}")
+
     vocab = gen_vocab(n_ops, prefix='t')
 
-    def time_sensitive(return_vals):
+    def time_sensitive(return_dict):
         program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
         craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
-        return_vals = (craft_model, actual_ops)
+        return_dict['craft_model'] = craft_model
+        return_dict['actual_ops'] = actual_ops
 
-    return_vals = None
-    p = Process(target=time_sensitive, args=tuple([return_vals]))
+    manager = Manager()
+    return_dict = manager.dict()
+    p = Process(target=time_sensitive, args=[return_dict])
+    
     p.start()
     p.join(5)
     while p.is_alive(): # the process hasnt finished yet
+        print("### Process Not finished starting again ####")
         p.terminate()   # kill it
         p.join()        # delete the thread
-        p = Process(target=time_sensitive, args=tuple([return_vals]))
+        p = Process(target=time_sensitive, args=[return_dict])
         p.start()       # start a new one
         p.join(5)     # wait again and repeat
 
-    if return_vals == None:
+    print(return_dict)
+    if 'craft_model' in return_dict:
         raise(Exception("The generation program did not terminate yet we continued"))
 
-    (craft_model, actual_ops) = return_vals
+    craft_model = return_dict['craft_model']
+    actual_ops = return_dict['actual_ops'] 
 
     return craft_model, actual_ops
 
