@@ -656,7 +656,7 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_leng
                     + list(x[-1] for x in UNI_LAMBDAS + SEQUNCE_LAMBDAS) + [NO_PARAM]
     def gen():
         while True:
-            actual_ops = build_program_of_length(ops_range, vocab_size_range, max_sequence_lenghts_range)
+            actual_ops = program_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
             encoded_ops = encode_ops(actual_ops)
             yield encoded_ops
     
