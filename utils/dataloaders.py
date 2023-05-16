@@ -5,14 +5,16 @@ from datasetv4 import program_dataset
 import numpy as np
 
 def encode_program(program, op_encoder, var_encoder):
-    encoded = np.zeros((len(program), 5), np.int32)
+    encoded = np.zeros((len(program)+1, 5), np.int32)
+    encoded[0, 0] = op_encoder['PROGRAM_START']
     for t, instruction in enumerate(program):
         # Loop through each operation which cotains list of {'op': 'SelectorWidth', 'p1': 'v1', 'p2': 'NA', 'p3': 'NA', 'r': 'v2'}
-        encoded[t, 0] = op_encoder[instruction['op']]
-        encoded[t, 1] = var_encoder[instruction['p1']]
-        encoded[t, 2] = var_encoder[instruction['p2']]
-        encoded[t, 3] = var_encoder[instruction['p3']]
-        encoded[t, 4] = var_encoder[instruction['r']]
+        encoded[t+1, 0] = op_encoder[instruction['op']]
+        encoded[t+1, 1] = var_encoder[instruction['p1']]
+        encoded[t+1, 2] = var_encoder[instruction['p2']]
+        encoded[t+1, 3] = var_encoder[instruction['p3']]
+        encoded[t+1, 4] = var_encoder[instruction['r']]
+    encoded[-1, 0] = op_encoder['PROGRAM_START']
     return encoded
 
 def encoded_program_to_onehot(encoded, OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE):
@@ -45,6 +47,12 @@ class ProgramDataset(torch.utils.data.Dataset):
         gen, OP_NAME_VOCAB, VAR_VOCAB = program_dataset(ops_range=(prog_len,prog_len))
         OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE = len(OP_NAME_VOCAB), len(VAR_VOCAB)
         op_encoder = dict(zip(OP_NAME_VOCAB, [i for i in range(OP_NAME_VOCAB_SIZE)]))
+        
+        op_encoder['PROGRAM_START'] = OP_NAME_VOCAB_SIZE # Add a token for the start of the program
+        OP_NAME_VOCAB_SIZE += 1
+        op_encoder['PROGRAM_END'] = OP_NAME_VOCAB_SIZE # Add a token for the end of the program
+        OP_NAME_VOCAB_SIZE += 1
+        
         var_encoder = dict(zip(VAR_VOCAB, [i for i in range(VAR_VOCAB_SIZE)]))
         self.data_iterator = decoder_generator(gen(), op_encoder, var_encoder, OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE)
 
