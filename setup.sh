@@ -4,4 +4,4 @@ source venv/bin/activate
 
 pip3 install antlr4-python3-runtime==4.9.1
 pip3 install graphviz
-pip3 install jax chex einops dm-haiku jax networkx numpy typing_extensions matplotlib
+pip3 install jax chex einops dm-haiku jax networkx numpy typing_extensions matplotlib pandas

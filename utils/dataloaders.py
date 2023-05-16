@@ -4,9 +4,12 @@ from torch.nn.utils.rnn import pad_sequence
 from datasetv4 import program_dataset
 import numpy as np
 
+START_TOKEN = 'PROGRAM_START'
+END_TOKEN = 'PROGRAM_END'
+
 def encode_program(program, op_encoder, var_encoder):
     encoded = np.zeros((len(program)+1, 5), np.int32)
-    encoded[0, 0] = op_encoder['PROGRAM_START']
+    encoded[0, 0] = op_encoder[START_TOKEN]
     for t, instruction in enumerate(program):
         # Loop through each operation which cotains list of {'op': 'SelectorWidth', 'p1': 'v1', 'p2': 'NA', 'p3': 'NA', 'r': 'v2'}
         encoded[t+1, 0] = op_encoder[instruction['op']]
@@ -14,7 +17,7 @@ def encode_program(program, op_encoder, var_encoder):
         encoded[t+1, 2] = var_encoder[instruction['p2']]
         encoded[t+1, 3] = var_encoder[instruction['p3']]
         encoded[t+1, 4] = var_encoder[instruction['r']]
-    encoded[-1, 0] = op_encoder['PROGRAM_START']
+    encoded[-1, 0] = op_encoder[START_TOKEN]
     return encoded
 
 def encoded_program_to_onehot(encoded, OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE):
@@ -41,16 +44,18 @@ def decoder_generator(_program_gen, op_encoder, var_encoder, OP_NAME_VOCAB_SIZE,
         onehot_program = encoded_program_to_onehot(encoded_program, OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE)
         yield onehot_program, encoded_program
 
+from functools import partial
 
 class ProgramDataset(torch.utils.data.Dataset):
     def __init__(self, prog_len):
+        self.prog_len = prog_len
         gen, OP_NAME_VOCAB, VAR_VOCAB = program_dataset(ops_range=(prog_len,prog_len))
         OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE = len(OP_NAME_VOCAB), len(VAR_VOCAB)
         op_encoder = dict(zip(OP_NAME_VOCAB, [i for i in range(OP_NAME_VOCAB_SIZE)]))
         
-        op_encoder['PROGRAM_START'] = OP_NAME_VOCAB_SIZE # Add a token for the start of the program
+        op_encoder[START_TOKEN] = OP_NAME_VOCAB_SIZE # Add a token for the start of the program
         OP_NAME_VOCAB_SIZE += 1
-        op_encoder['PROGRAM_END'] = OP_NAME_VOCAB_SIZE # Add a token for the end of the program
+        op_encoder[END_TOKEN] = OP_NAME_VOCAB_SIZE # Add a token for the end of the program
         OP_NAME_VOCAB_SIZE += 1
         
         var_encoder = dict(zip(VAR_VOCAB, [i for i in range(VAR_VOCAB_SIZE)]))
@@ -58,6 +63,11 @@ class ProgramDataset(torch.utils.data.Dataset):
 
         self.OP_NAME_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.op_encoder, self.var_encoder = \
                     OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE, op_encoder, var_encoder
+        
+        self.op_decoder = dict(zip(op_encoder.values(), op_encoder.keys()))
+        self.var_decoder = dict(zip(var_encoder.values(), var_encoder.keys()))
+
+        self.segment_sizes = [OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE]
 
     def __len__(self):
         'Denotes the total number of samples'
@@ -66,11 +76,40 @@ class ProgramDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         return next(self.data_iterator)
     
-    def collate_fn(data):
+    def collate_fn(self, data):
         inputs = [torch.tensor(d[0]) for d in data]
         targets = [torch.tensor(d[1]) for d in data]
         inputs = pad_sequence(inputs, batch_first=True)
         targets = pad_sequence(targets, batch_first=True)
+        ammount_to_pad = self.prog_len + 2 - targets.shape[1]
+        targets = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(targets) # pad the target to the max possible length for the problem
         return inputs, targets
 
+    def get_collate_fn(self):
+        return partial(ProgramDataset.collate_fn, self)
     
+    def decode_pred(self, y, batch_index: int):
+        pred = y[batch_index, :, :]
+
+        if pred.shape[-1] > 5: # compute the argmax in each segment
+            new_pred = np.zeros((pred.shape[0], 5))
+            for t in range(pred.shape[0]):
+                ptr = 0
+                for i, seg_size in enumerate(self.segment_sizes):
+                    new_pred[t, i] = pred[t, ptr:ptr + seg_size].argmax()
+                    ptr += seg_size
+            pred = new_pred
+
+        translated = str()
+        for t in range(pred.shape[0]):
+            if pred[t, :].sum().item() == 0:
+                translated += "<PAD>\n"
+                continue
+            op = self.op_decoder[pred[t, 0].item()]
+            translated += op
+            if op not in [START_TOKEN, END_TOKEN]:
+                for i in range(1,5):
+                    translated += " " + self.var_decoder[pred[t, i].item()]
+            translated += "\n"
+        return translated
+
