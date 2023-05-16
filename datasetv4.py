@@ -547,7 +547,7 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, m
     vocab_size = randint(*vocab_size_range)
     max_seq_len = randint(*max_sequence_lenghts_range)
     TARGET_PROGRAM_LENGTH = max(ops_range) // 2
-    CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs tak 0.6
+    CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs take 0.6
 
     vocab = gen_vocab(n_ops, prefix='t')
 
