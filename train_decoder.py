@@ -157,19 +157,20 @@ class PositionalEncoding(nn.Module):
 
 
 class EncoderDecoder(nn.Module):
+    
     def setup(self):
-        self.input_layer = nn.Dense(128)
-        self.encoder = TransformerEncoder(num_layers=5,
-                              input_dim=128,
-                              num_heads=4,
-                              dim_feedforward=256,
-                              dropout_prob=0.15)
-        self.decoder = TransformerEncoder(num_layers=5,
-                              input_dim=128,
-                              num_heads=4,
-                              dim_feedforward=256,
-                              dropout_prob=0.15)
-        self.output_layer = nn.Dense(5)
+        input_layer = nn.Dense(128)
+        encoder = TransformerEncoder(num_layers=5,
+                        input_dim=128,
+                        num_heads=4,
+                        dim_feedforward=256,
+                        dropout_prob=0.15)
+        decoder = TransformerEncoder(num_layers=5,
+                        input_dim=128,
+                        num_heads=4,
+                        dim_feedforward=256,
+                        dropout_prob=0.15)
+        output_layer = nn.Dense(5)
 
     def __call__(self, x, mask=None, train=True):
         i = self.input_layer(x)
