@@ -17,7 +17,7 @@ def encode_program(program, op_encoder, var_encoder):
         encoded[t+1, 2] = var_encoder[instruction['p2']]
         encoded[t+1, 3] = var_encoder[instruction['p3']]
         encoded[t+1, 4] = var_encoder[instruction['r']]
-    encoded[-1, 0] = op_encoder[START_TOKEN]
+    encoded[-1, 0] = op_encoder[END_TOKEN]
     return encoded
 
 def encoded_program_to_onehot(encoded, OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE):
