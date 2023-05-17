@@ -136,25 +136,38 @@ class PositionalEncoding(nn.Module):
 
 
 class EncoderDecoder(nn.Module):
+    num_classes: int
+    dropout_prob: float = 0.15
+    input_dropout_prob: float = 0.0
     def setup(self):
+        self.input_dropout = nn.Dropout(self.input_dropout_prob)
         self.input_layer = nn.Dense(128)
         self.encoder = TransformerEncoder(num_layers=5,
                         input_dim=128,
                         num_heads=4,
                         dim_feedforward=256,
-                        dropout_prob=0.15)
+                        dropout_prob=self.dropout_prob)
         self.decoder = TransformerEncoder(num_layers=5,
                         input_dim=128,
                         num_heads=4,
                         dim_feedforward=256,
-                        dropout_prob=0.15)
-        self.output_layer = nn.Dense(5)
+                        dropout_prob=self.dropout_prob)
+        self.output_net = [
+            nn.Dense(128),
+            nn.LayerNorm(),
+            nn.relu,
+            nn.Dropout(self.dropout_prob),
+            nn.Dense(self.num_classes)
+        ]
 
     def __call__(self, x, mask=None, train=True):
+        x = self.input_dropout(x, deterministic=not train)
         i = self.input_layer(x)
-        e = self.encoder(i, mask, train)
-        d = self.decoder(e, mask, train)
-        o = self.output_layer(d)
+        e = self.encoder(i, mask, train=train)
+        d = self.decoder(e, mask, train=train)
+        o = d
+        for l in self.output_net:
+            o = l(o) if not isinstance(l, nn.Dropout) else l(x, deterministic=not train)
         return o
 
 

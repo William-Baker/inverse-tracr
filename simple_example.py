@@ -2,8 +2,10 @@
 
 from flax import linen as nn
 import numpy as np
+from jax import lax, random, numpy as jnp
 
-x = np.ones((5,5))
+
+
 
 class MLP(nn.Module):
   def setup(self):
@@ -19,5 +21,30 @@ class MLP(nn.Module):
     return x
 
 
+main_rng = random.PRNGKey(0)
+main_rng, key2 = random.split(main_rng, 2)
+#x = random.uniform(key1, (4,4))
+x = jnp.ones((5,5))
+
+# m = MLP()
+# #m.init()
+# i = m.apply(x)
+
 m = MLP()
-i = m(x)
+params = m.init(key2, x)
+y = m.apply(params, x)
+
+
+#%%
+class MLP2(nn.Module):
+
+  @nn.compact
+  def __call__(self, x):
+    x = nn.Dense(32, name="dense1")(x)
+    x = nn.relu(x)
+    x = nn.Dense(32, name="dense2")(x)
+    return x
+
+m = MLP2()
+#m.setup()
+i = m.apply(x)
