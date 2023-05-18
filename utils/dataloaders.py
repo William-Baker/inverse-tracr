@@ -45,10 +45,12 @@ def decoder_generator(_program_gen, op_encoder, var_encoder, OP_NAME_VOCAB_SIZE,
         yield onehot_program, encoded_program
 
 from functools import partial
+from jax import numpy as jnp
 
 class ProgramDataset(torch.utils.data.Dataset):
-    def __init__(self, prog_len):
+    def __init__(self, prog_len, sample_count=1000):
         self.prog_len = prog_len
+        self.sample_count = sample_count
         gen, OP_NAME_VOCAB, VAR_VOCAB = program_dataset(ops_range=(prog_len,prog_len))
         OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE = len(OP_NAME_VOCAB), len(VAR_VOCAB)
         op_encoder = dict(zip(OP_NAME_VOCAB, [i for i in range(OP_NAME_VOCAB_SIZE)]))
@@ -71,7 +73,7 @@ class ProgramDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         'Denotes the total number of samples'
-        return 1000
+        return self.sample_count
 
     def __getitem__(self, index):
         return next(self.data_iterator)
@@ -83,22 +85,36 @@ class ProgramDataset(torch.utils.data.Dataset):
         targets = pad_sequence(targets, batch_first=True)
         ammount_to_pad = self.prog_len + 2 - targets.shape[1]
         targets = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(targets) # pad the target to the max possible length for the problem
-        return inputs, targets
+        return jnp.array(inputs), jnp.array(targets)
 
     def get_collate_fn(self):
         return partial(ProgramDataset.collate_fn, self)
+
+    def logit_classes_np(self, logits):
+        classes = np.zeros((logits.shape[0], 5))
+        logits = np.array(logits)
+        for t in range(logits.shape[0]):
+            ptr = 0
+            for i, seg_size in enumerate(self.segment_sizes):
+                classes[t, i] = logits[t, ptr:ptr + seg_size].argmax()
+                ptr += seg_size
+        return classes
+
+    def logit_classes_jnp(self, logits):
+        classes = jnp.zeros((logits.shape[0], 5))
+        logits = jnp.array(logits)
+        for t in range(logits.shape[0]):
+            ptr = 0
+            for i, seg_size in enumerate(self.segment_sizes):
+                classes[t, i] = logits[t, ptr:ptr + seg_size].argmax().item()
+                ptr += seg_size
+        return classes
     
     def decode_pred(self, y, batch_index: int):
         pred = y[batch_index, :, :]
 
         if pred.shape[-1] > 5: # compute the argmax in each segment
-            new_pred = np.zeros((pred.shape[0], 5))
-            for t in range(pred.shape[0]):
-                ptr = 0
-                for i, seg_size in enumerate(self.segment_sizes):
-                    new_pred[t, i] = pred[t, ptr:ptr + seg_size].argmax()
-                    ptr += seg_size
-            pred = new_pred
+            pred = self.logit_classes_np(pred)
 
         translated = str()
         for t in range(pred.shape[0]):
