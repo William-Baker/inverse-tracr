@@ -1,3 +1,9 @@
+
+import torch
+from torch.nn.utils.rnn import pad_sequence
+import numpy as np
+
+
 #%%
 
 import jax
@@ -461,9 +467,6 @@ def program_craft_generator(ops_range: tuple, vocab_size_range: tuple, max_seque
     return craft_model, actual_ops
 
 
-
-#============================= Data Encoding ==============================================
-
 def iter_var_names(prefix='v'):
     i = 0
     while True:
@@ -510,123 +513,6 @@ def encode_ops(ops):
         features.append(feature)
     return features
 
-
-def encode_craft_model(craft_model):
-    model_params = []
-    for block in craft_model.blocks:
-        if isinstance(block, MultiAttentionHead):
-            for attention_head in block.heads():
-                model_params.append(dict(
-                    HEAD = dict(
-                        w_qk = attention_head.w_qk.matrix,
-                        w_ov = attention_head.w_ov.matrix
-                    )
-                ))
-        elif isinstance(block, MLP):
-            model_params.append(dict(
-                MLP = dict(
-                    fst = block.fst.matrix,
-                    snd = block.snd.matrix
-                )
-            ))
-        else:
-            raise NotImplementedError()
-    return model_params
-
-
-
-#%% ====== encoder with timeout ==================
-# import multiprocessing
-# # dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
-# # multiprocessing.reduction.ForkingPickler = dill.Pickler
-# # multiprocessing.reduction.dump = dill.dump
-# # multiprocessing.context.reduction._ForkingPickler = dill.Pickler
-
-# def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
-#     n_ops = randint(*ops_range)
-#     vocab_size = randint(*vocab_size_range)
-#     max_seq_len = randint(*max_sequence_lenghts_range)
-#     TARGET_PROGRAM_LENGTH = max(ops_range) // 2
-#     CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs take 0.6
-
-#     vocab = gen_vocab(n_ops, prefix='t')
-
-#     def time_sensitive(return_dict):
-#         program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
-#         craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
-#         encoded_ops = encode_ops(actual_ops)
-#         encoded_model = encode_craft_model(craft_model)
-#         return_dict['craft_model'] = encoded_model
-#         return_dict['actual_ops'] = encoded_ops
-
-#     manager = multiprocessing.Manager()
-#     return_dict = manager.dict()
-#     craft_model, actual_ops = None, None
-#     while craft_model == None: # sometimes the thread doesnt work properly
-#         p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
-#         p.start()
-#         p.join(CRAFT_TIMEOUT)
-#         while p.is_alive(): # the process hasnt finished yet
-#             p.terminate()   # kill it
-#             p.join()        # delete the thread
-#             p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
-#             p.start()       # start a new one
-#             p.join(CRAFT_TIMEOUT)     # wait again and repeat
-
-#         try:
-#             craft_model = return_dict['craft_model']
-#             actual_ops = return_dict['actual_ops'] 
-#         except:
-#             print("craft model was none, not sure why, but repeating")
-
-
-#     return craft_model, actual_ops
-
-
-
-
-
-
-# ========================= User Friendly Generators ============================================
-
-
-def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6)):
-    """
-    Compile a generator of transformer weights and programs
-    params:
-        ops_range = (min, max) - the range of program lengths to generate BEFORE retracing reduction
-        vocab_size_range = (min, max) - the range of vocabulary sizes to build the transformer with
-                                            - will scale the number of parameter
-        max_sequence_lengths_range = (min, max) - the range of sequence lengths to build the code AND transformer with 
-                                            - will scale the number of constants used in lambdas
-                                            - and the number of model parameters
-
-    returns:
-        gen - generator that yields (model_params, program)
-        OP_VOCAB - vocab for the craft functions ['Map', 'Select', 'SequenceMap', 'Aggregate', 'SelectorWidth']
-        VAR_VOCAB - [ 'tokens', 'indices', 'NA',
-                    'PRED_EQ', 'PRED_FALSE', 'PRED_TRUE', 'PRED_GEQ', 'PRED_GT', 'PRED_LEQ', 'PRED_LT', 'PRED_NEQ',
-                    'LAM_LT', 'LAM_LE', 'LAM_GT', 'LAM_GE', 'LAM_NE', 'LAM_EQ', 'LAM_IV', 'LAM_ADD', 'LAM_MUL', 'LAM_SUB', 'LAM_AND', 'LAM_OR', 
-                    'vXXX' - where XXX is the ID of variable - in range (0, ops_range_max)
-                            - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
-                    ]
-    """
-    OP_NAME_VOCAB = list(df.cls.apply(lambda x: x.__name__))
-    var_name_iter = iter_var_names()
-    VAR_VOCAB = ['tokens', 'indices'] \
-                    + [next(var_name_iter) for x in range(0, max(ops_range))]  \
-                    + list(named_predicates.values()) \
-                    + list(x[-1] for x in UNI_LAMBDAS + SEQUNCE_LAMBDAS) + [NO_PARAM]
-    def gen():
-        while True:
-            encoded_model, encoded_ops = program_craft_generator_bounded(ops_range, vocab_size_range, max_sequence_lenghts_range)
-            # encoded_ops = encode_ops(actual_ops)
-            # encoded_model = encode_craft_model(craft_model)
-            yield encoded_model, encoded_ops
-    
-    return gen, OP_NAME_VOCAB, VAR_VOCAB
-
-
 def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6)):
     """
     Compile a generator of programs ONLY
@@ -662,17 +548,159 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_leng
     
     return gen, OP_NAME_VOCAB, VAR_VOCAB
 
+
+START_TOKEN = 'PROGRAM_START'
+END_TOKEN = 'PROGRAM_END'
+
+def encode_program(program, op_encoder, var_encoder):
+    encoded = np.zeros((len(program)+1, 5), np.int32)
+    encoded[0, 0] = op_encoder[START_TOKEN]
+    for t, instruction in enumerate(program):
+        # Loop through each operation which cotains list of {'op': 'SelectorWidth', 'p1': 'v1', 'p2': 'NA', 'p3': 'NA', 'r': 'v2'}
+        encoded[t+1, 0] = op_encoder[instruction['op']]
+        encoded[t+1, 1] = var_encoder[instruction['p1']]
+        encoded[t+1, 2] = var_encoder[instruction['p2']]
+        encoded[t+1, 3] = var_encoder[instruction['p3']]
+        encoded[t+1, 4] = var_encoder[instruction['r']]
+    encoded[-1, 0] = op_encoder[START_TOKEN]
+    return encoded
+
+def encoded_program_to_onehot(encoded, OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE):
+    one_hot = np.zeros((encoded.shape[0], OP_NAME_VOCAB_SIZE + 4 * VAR_VOCAB_SIZE))
+    segment_sizes = [OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE]
+    for t in range(encoded.shape[0]):
+        ptr = 0
+        # Loop through each operation which cotains list of 5 integer id's for each token
+        for i in range(len(segment_sizes)):
+            id = encoded[t, i]
+            #print(f"ID: {id}, x: {ptr + id}, y: {t}")
+            one_hot[t, ptr + id] = 1
+            ptr += segment_sizes[i]
+    return one_hot
+
+
+
+
+
+def decoder_generator(_program_gen, op_encoder, var_encoder, OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE):
+    while True:
+        program = next(_program_gen)
+        encoded_program = encode_program(program, op_encoder, var_encoder)
+        onehot_program = encoded_program_to_onehot(encoded_program, OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE)
+        yield onehot_program, encoded_program
+
+from functools import partial
+from jax import numpy as jnp
+
+class ProgramDataset(torch.utils.data.Dataset):
+    def __init__(self, prog_len, sample_count=1000):
+        self.prog_len = prog_len
+        self.sample_count = sample_count
+        gen, OP_NAME_VOCAB, VAR_VOCAB = program_dataset(ops_range=(prog_len,prog_len))
+        OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE = len(OP_NAME_VOCAB), len(VAR_VOCAB)
+        op_encoder = dict(zip(OP_NAME_VOCAB, [i for i in range(OP_NAME_VOCAB_SIZE)]))
+        
+        op_encoder[START_TOKEN] = OP_NAME_VOCAB_SIZE # Add a token for the start of the program
+        OP_NAME_VOCAB_SIZE += 1
+        op_encoder[END_TOKEN] = OP_NAME_VOCAB_SIZE # Add a token for the end of the program
+        OP_NAME_VOCAB_SIZE += 1
+        
+        var_encoder = dict(zip(VAR_VOCAB, [i for i in range(VAR_VOCAB_SIZE)]))
+        self.data_iterator = decoder_generator(gen(), op_encoder, var_encoder, OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE)
+
+        self.OP_NAME_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.op_encoder, self.var_encoder = \
+                    OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE, op_encoder, var_encoder
+        
+        self.op_decoder = dict(zip(op_encoder.values(), op_encoder.keys()))
+        self.var_decoder = dict(zip(var_encoder.values(), var_encoder.keys()))
+
+        self.segment_sizes = [OP_NAME_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE]
+
+    def __len__(self):
+        'Denotes the total number of samples'
+        return self.sample_count
+
+    def __getitem__(self, index):
+        return next(self.data_iterator)
+    
+    def collate_fn(self, data):
+        inputs = [torch.tensor(d[0]) for d in data]
+        targets = [torch.tensor(d[1]) for d in data]
+        inputs = pad_sequence(inputs, batch_first=True)
+        targets = pad_sequence(targets, batch_first=True)
+        ammount_to_pad = self.prog_len + 2 - targets.shape[1]
+        targets = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(targets) # pad the target to the max possible length for the problem
+        return jnp.array(inputs), jnp.array(targets)
+
+    def get_collate_fn(self):
+        return partial(ProgramDataset.collate_fn, self)
+
+    def logit_classes_np(self, logits):
+        classes = np.zeros((logits.shape[0], 5))
+        logits = np.array(logits)
+        for t in range(logits.shape[0]):
+            ptr = 0
+            for i, seg_size in enumerate(self.segment_sizes):
+                classes[t, i] = logits[t, ptr:ptr + seg_size].argmax()
+                ptr += seg_size
+        return classes
+
+    def logit_classes_jnp(self, logits):
+        classes = jnp.zeros((logits.shape[0], 5))
+        logits = jnp.array(logits)
+        for t in range(logits.shape[0]):
+            ptr = 0
+            for i, seg_size in enumerate(self.segment_sizes):
+                classes[t, i] = logits[t, ptr:ptr + seg_size].argmax().item()
+                ptr += seg_size
+        return classes
+    
+    def decode_pred(self, y, batch_index: int):
+        pred = y[batch_index, :, :]
+
+        if pred.shape[-1] > 5: # compute the argmax in each segment
+            pred = self.logit_classes_np(pred)
+
+        translated = str()
+        for t in range(pred.shape[0]):
+            if pred[t, :].sum().item() == 0:
+                translated += "<PAD>\n"
+                continue
+            op = self.op_decoder[pred[t, 0].item()]
+            translated += op
+            if op not in [START_TOKEN, END_TOKEN]:
+                for i in range(1,5):
+                    translated += " " + self.var_decoder[pred[t, i].item()]
+            translated += "\n"
+        return translated
+
 #%%
 
-#gen, OP_NAME_VOCAB, VAR_VOCAB = craft_dataset(ops_range=(30,30))
+from models import EncoderDecoder, TransformerEncoder, EncoderBlock
+from jax import random
+import jax.numpy as jnp
+from utils.jax_helpers import JaxSeeder
+import os
+CHECKPOINT_PATH = ".logs/"
+from torch.utils.tensorboard import SummaryWriter
+import jax
+import optax
+from flax.training import train_state, checkpoints
+from tqdm import tqdm
+import numpy as np
+import torch
 
-# dataset = gen()
+torch.cuda.is_available = lambda : False
 
-# #%%
+from torch.utils.data import DataLoader
+from utils.dataloaders import ProgramDataset
 
 
-# model_params, program = next(dataset)
 
-# program
 
-# # %%
+dataset = ProgramDataset(30, 20000)
+train_dataloader = DataLoader(dataset, batch_size=8, collate_fn=dataset.get_collate_fn() , num_workers=2)#, prefetch_factor=2, pin_memory=True)
+
+
+it = iter(train_dataloader)
+x,y = next(it)
