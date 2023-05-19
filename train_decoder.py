@@ -1,62 +1,9 @@
 
 #%%
 
-from utils.jax_helpers import JaxSeeder
-seeder = JaxSeeder(0)
-
-from torch.utils.data import DataLoader
-from utils.dataloaders import ProgramDataset
-
-dataset = ProgramDataset(30, 20000)
-train_dataloader = DataLoader(dataset, batch_size=500, collate_fn=dataset.get_collate_fn()) # , num_workers=8, prefetch_factor=2, pin_memory=True)
-
-
-it = iter(train_dataloader)
-x,y = next(it)
-print(dataset.decode_pred(y, 0))
-print(dataset.decode_pred(x, 0))
-
-#%%
 
 
 
-
-from models import EncoderDecoder, TransformerEncoder, EncoderBlock
-from jax import random
-import jax.numpy as jnp
-
-
-# enc = EncoderDecoder(5, dropout_prob=.50)
-
-
-
-# init_rng, dropout_init_rng, dropout_apply_rng = seeder(), seeder(), seeder()
-# params = enc.init({'params': init_rng, 'dropout': dropout_init_rng}, x, True)['params']
-# # Apply encoder block with parameters on the inputs
-# # Since dropout is stochastic, we need to pass a rng to the forward
-
-# # will return the same thing every time
-# out = enc.apply({'params': params}, x, train=True, rngs={'dropout': dropout_apply_rng}) 
-# out.sum()
-
-# #%%
-
-# # will return something different each time
-# out = enc.apply({'params': params}, x, train=True, rngs={'dropout': seeder()})
-
-# out.sum()
-
-
-#%%
-
-import os
-CHECKPOINT_PATH = ".logs/"
-from torch.utils.tensorboard import SummaryWriter
-import jax
-import optax
-from flax.training import train_state, checkpoints
-from tqdm import tqdm
-import numpy as np
 
 class TrainerModule:
 
@@ -192,15 +139,22 @@ class TrainerModule:
 
     def train_epoch(self, train_loader, epoch):
         # Train model for one epoch, and log avg loss and accuracy
-        accs, losses = [], []
-        for batch in tqdm(train_loader, desc='Training', leave=False):
-            self.state, self.rng, loss, accuracy = self.train_step(self.state, self.rng, batch)
-            losses.append(loss)
-            accs.append(accuracy)
-        avg_loss = np.stack(jax.device_get(losses)).mean()
-        avg_acc = np.stack(jax.device_get(accs)).mean()
-        self.logger.add_scalar('train/loss', avg_loss, global_step=epoch)
-        self.logger.add_scalar('train/accuracy', avg_acc, global_step=epoch)
+        with tqdm(total=len(train_loader), unit='batch') as tepoch:
+          tepoch.set_description(f"Epoch {epoch}")
+          
+          accs, losses = [], []
+          for idx, batch in enumerate(train_loader):
+              self.state, self.rng, loss, accuracy = self.train_step(self.state, self.rng, batch)
+              losses.append(loss)
+              accs.append(accuracy)
+
+              tepoch.set_postfix({'Batch': idx, 'Train Loss': loss.item(), 'Acc': accuracy.item()})
+              tepoch.update(1)
+
+          avg_loss = np.stack(jax.device_get(losses)).mean()
+          avg_acc = np.stack(jax.device_get(accs)).mean()
+          self.logger.add_scalar('train/loss', avg_loss, global_step=epoch)
+          self.logger.add_scalar('train/accuracy', avg_acc, global_step=epoch)
 
     def eval_model(self, data_loader):
         # Test model on all data points of a data loader and return avg accuracy
@@ -228,11 +182,62 @@ class TrainerModule:
         # Check whether a pretrained model exist for this Transformer
         return os.path.isfile(os.path.join(CHECKPOINT_PATH, f'{self.model_name}.ckpt'))
 
-max_epochs = 10
-num_train_iters = len(train_dataloader) * max_epochs
-
-trainer = TrainerModule('Program-Encoder-Decoder', next(it), num_train_iters, num_classes=sum(dataset.segment_sizes))
-
-trainer.train_model(train_dataloader, train_dataloader, num_epochs=max_epochs)
 
 #%%
+
+if __name__ == "__main__":
+    from models import EncoderDecoder, TransformerEncoder, EncoderBlock
+    from jax import random
+    import jax.numpy as jnp
+    from utils.jax_helpers import JaxSeeder
+    import os
+    CHECKPOINT_PATH = ".logs/"
+    from torch.utils.tensorboard import SummaryWriter
+    import jax
+    import optax
+    from flax.training import train_state, checkpoints
+    from tqdm import tqdm
+    import numpy as np
+    import torch
+
+    torch.cuda.is_available = lambda : False
+
+    from torch.utils.data import DataLoader
+    from utils.file_dataloaders import ProgramDatasetFromFile
+
+    dataset = ProgramDatasetFromFile(program_file='program_dataset7.pkl')
+    train_dataloader = DataLoader(dataset, batch_size=64, collate_fn=dataset.get_collate_fn(), num_workers=2, prefetch_factor=2)#, pin_memory=True)
+
+    it = iter(train_dataloader)
+    x,y = next(it)
+    # print(dataset.decode_pred(y, 0))
+    # print(dataset.decode_pred(x, 0))
+    
+
+    # for i in range(0,1000):
+    #     x,y = next(it)
+
+
+
+
+    max_epochs = 10
+    num_train_iters = len(train_dataloader) * max_epochs
+
+    trainer = TrainerModule('Program-Encoder-Decoder', next(it), num_train_iters, num_classes=sum(dataset.segment_sizes))
+
+    trainer.train_model(train_dataloader, train_dataloader, num_epochs=max_epochs)
+
+
+
+
+    it = iter(train_dataloader)
+    x,y = next(it)
+    print(dataset.decode_pred(y, 0))
+    print(dataset.decode_pred(x, 0))
+
+
+    rng, dropout_apply_rng = random.split(trainer.rng)
+    logits = trainer.model.apply({'params': trainer.state.params}, x, train=False, rngs={'dropout': dropout_apply_rng})
+
+    print(dataset.decode_pred(logits, 0))
+
