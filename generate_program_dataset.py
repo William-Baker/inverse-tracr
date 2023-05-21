@@ -1,4 +1,5 @@
 #%%
+
 from utils.dataloaders import ProgramDataset
 from tqdm import tqdm
 
@@ -19,7 +20,13 @@ for j in tqdm(range(samples // 1000), desc='Generating batches of 1000 programs,
         #xs.append(x)
         programs.append(y)
     df = pd.DataFrame({'y': programs})
-    df.to_pickle('program_dataset.pkl')
+    df.to_pickle('.data/program_dataset.pkl')
+    
+
+#%%
+
+
+
 
 #%%
 
