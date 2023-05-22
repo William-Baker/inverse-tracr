@@ -611,7 +611,7 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
                             - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
                     ]
     """
-    OP_NAME_VOCAB = list(df.cls.apply(lambda x: x.__name__))
+    OP_VOCAB = list(df.cls.apply(lambda x: x.__name__))
     var_name_iter = iter_var_names()
     VAR_VOCAB = ['tokens', 'indices'] \
                     + [next(var_name_iter) for x in range(0, max(ops_range))]  \
@@ -624,7 +624,7 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
             # encoded_model = encode_craft_model(craft_model)
             yield encoded_model, encoded_ops
     
-    return gen, OP_NAME_VOCAB, VAR_VOCAB
+    return gen, OP_VOCAB, VAR_VOCAB
 
 
 def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6)):
@@ -648,7 +648,7 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_leng
                             - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
                     ]
     """
-    OP_NAME_VOCAB = list(df.cls.apply(lambda x: x.__name__))
+    OP_VOCAB = list(df.cls.apply(lambda x: x.__name__))
     var_name_iter = iter_var_names()
     VAR_VOCAB = ['tokens', 'indices'] \
                     + [next(var_name_iter) for x in range(0, max(ops_range))]  \
@@ -660,11 +660,11 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_leng
             encoded_ops = encode_ops(actual_ops)
             yield encoded_ops
     
-    return gen, OP_NAME_VOCAB, VAR_VOCAB
+    return gen, OP_VOCAB, VAR_VOCAB
 
 #%%
 
-#gen, OP_NAME_VOCAB, VAR_VOCAB = craft_dataset(ops_range=(30,30))
+#gen, OP_VOCAB, VAR_VOCAB = craft_dataset(ops_range=(30,30))
 
 # dataset = gen()
 

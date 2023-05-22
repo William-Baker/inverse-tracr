@@ -204,7 +204,7 @@ if __name__ == "__main__":
     torch.cuda.is_available = lambda : False
 
     from torch.utils.data import DataLoader
-    from program_dataset import TorchProgramDataset
+    from program_dataset_programs import TorchProgramDataset
 
     dataset = TorchProgramDataset()
     collate_fn = partial(TorchProgramDataset.collate_fn, dataset.prog_len)
