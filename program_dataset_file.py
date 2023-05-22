@@ -102,3 +102,13 @@ class ProgramDataset(torch.utils.data.Dataset):
 # print(dataset.decode_pred(x, 0))
 
 # # %%
+
+
+def collate_fn(prog_len, data):
+    #inputs = [torch.tensor(d[0], device='cpu') for d in data]
+    targets = [torch.tensor(d[1], device='cpu') for d in data]
+    #inputs = pad_sequence(inputs, batch_first=True)
+    targets = pad_sequence(targets, batch_first=True)
+    ammount_to_pad = prog_len + 2 - targets.shape[1]
+    targets = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(targets) # pad the target to the max possible length for the problem
+    return jnp.array(targets) #jnp.array(inputs), jnp.array(targets)
