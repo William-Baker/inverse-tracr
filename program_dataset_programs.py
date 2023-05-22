@@ -32,7 +32,7 @@ class TorchProgramDataset(torch.utils.data.Dataset):
         self.op_decoder = dict(zip(self.op_encoder.values(), self.op_encoder.keys()))
         self.var_decoder = dict(zip(self.var_encoder.values(), self.var_encoder.keys()))
 
-        self.segment_sizes = [self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.eVAR_VOCAB_SIZE]
+        self.segment_sizes = [self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE]
 
     def encode_program(program, op_encoder, var_encoder):
         encoded = np.zeros((len(program)+1, 5), np.int32)
@@ -64,11 +64,12 @@ class TorchProgramDataset(torch.utils.data.Dataset):
         targets = pad_sequence(targets, batch_first=True)
         ammount_to_pad = prog_len + 2 - targets.shape[1]
         targets = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(targets) # pad the target to the max possible length for the problem
-        return jnp.array(inputs), jnp.array(targets)
+        #return jnp.array(inputs), jnp.array(targets)
+        return inputs, targets
 
     def __len__(self):
         'Denotes the total number of samples'
-        return 1000
+        return 10000
 
     def __getitem__(self, index):
         y = next(self.it)
@@ -115,7 +116,7 @@ train_dataloader = DataLoader(dataset, batch_size=32, num_workers=8, prefetch_fa
 it = iter(train_dataloader)
 
 
-next(it)
+x,y = next(it)
 # %%
 
 x,y = next(it)
@@ -126,5 +127,13 @@ print(dataset.decode_pred(y, 0))
 
 # %%
 
-dataset.logit_classes_np(x[0, :, :])
+# dataset.logit_classes_np(x[0, :, :])
 
+
+#%%
+import time
+start = time.time()
+for i in range(10):
+    x,y = next(it)
+end = time.time()
+print(end - start)
