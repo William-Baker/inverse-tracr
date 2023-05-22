@@ -5,7 +5,6 @@ import jax.numpy as jnp
 from torch.nn.utils.rnn import pad_sequence
 from functools import partial
 import numpy as np
-from utils.sigterm import guard_timeout, TimeoutException
 
 START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'
@@ -16,16 +15,6 @@ class ProgramDataset(torch.utils.data.Dataset):
     def __len__(self):
         return 1000
     def __getitem__(self, index):
-        try:
-            with guard_timeout(1):
-                while True:
-                    pass
-        except Exception as E:
-            if isinstance(E, TimeoutException):
-                #print("timed out")
-                pass
-            else:
-                print(E)
         return np.ones((20, 219)), np.ones((20, 7))
     
 
@@ -40,9 +29,7 @@ train_dataloader = DataLoader(dataset, batch_size=32, num_workers=8, prefetch_fa
 it = iter(train_dataloader)
 #%%
 
-for i in range(100):
-    next(it)
-    print(1)
+next(it)
 # %%
 
 # x,y = next(it)

@@ -10,26 +10,42 @@ import numpy as np
 START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'
 
-from utils.dataloaders import ProgramDataset
+from dataset import program_dataset
 
 class TorchProgramDataset(torch.utils.data.Dataset):
     def __init__(self):
-        self.dataset = ProgramDataset(30, 1000)
-        self.it = iter(self.dataset)
-        meta = {'OP_VOCAB': list(self.dataset.op_encoder.keys()), 'VAR_VOCAB': list(self.dataset.var_encoder.keys()), 'PROG_LEN': self.dataset.prog_len}
-        OP_VOCAB = meta['OP_VOCAB']
-        VAR_VOCAB = meta['VAR_VOCAB']
-        self.prog_len = meta['PROG_LEN']
+        self.gen, OP_VOCAB, VAR_VOCAB = program_dataset((30,30))
+        self.it = iter(self.gen())
+        self.prog_len = 30
         OP_VOCAB_SIZE, VAR_VOCAB_SIZE = len(OP_VOCAB), len(VAR_VOCAB)
-        self.segment_sizes = [OP_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE, VAR_VOCAB_SIZE]
+        
         self.OP_VOCAB_SIZE = OP_VOCAB_SIZE
         self.VAR_VOCAB_SIZE = VAR_VOCAB_SIZE
+
+        self.op_encoder = dict(zip(OP_VOCAB, [i for i in range(OP_VOCAB_SIZE)]))
+        self.op_encoder[START_TOKEN] = self.OP_VOCAB_SIZE # Add a token for the start of the program
+        self.OP_VOCAB_SIZE += 1
+        self.op_encoder[END_TOKEN] = self.OP_VOCAB_SIZE # Add a token for the end of the program
+        self.OP_VOCAB_SIZE += 1
         
         self.var_encoder = dict(zip(VAR_VOCAB, [i for i in range(VAR_VOCAB_SIZE)]))
-        self.op_encoder = dict(zip(OP_VOCAB, [i for i in range(OP_VOCAB_SIZE)]))
         self.op_decoder = dict(zip(self.op_encoder.values(), self.op_encoder.keys()))
         self.var_decoder = dict(zip(self.var_encoder.values(), self.var_encoder.keys()))
 
+        self.segment_sizes = [self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.eVAR_VOCAB_SIZE]
+
+    def encode_program(program, op_encoder, var_encoder):
+        encoded = np.zeros((len(program)+1, 5), np.int32)
+        encoded[0, 0] = op_encoder[START_TOKEN]
+        for t, instruction in enumerate(program):
+            # Loop through each operation which cotains list of {'op': 'SelectorWidth', 'p1': 'v1', 'p2': 'NA', 'p3': 'NA', 'r': 'v2'}
+            encoded[t+1, 0] = op_encoder[instruction['op']]
+            encoded[t+1, 1] = var_encoder[instruction['p1']]
+            encoded[t+1, 2] = var_encoder[instruction['p2']]
+            encoded[t+1, 3] = var_encoder[instruction['p3']]
+            encoded[t+1, 4] = var_encoder[instruction['r']]
+        encoded[-1, 0] = op_encoder[END_TOKEN]
+        return encoded
     def encoded_program_to_onehot(encoded, OP_VOCAB_SIZE, VAR_VOCAB_SIZE, segment_sizes):
         one_hot = np.zeros((encoded.shape[0], OP_VOCAB_SIZE + 4 * VAR_VOCAB_SIZE))
         for t in range(encoded.shape[0]):
@@ -55,12 +71,13 @@ class TorchProgramDataset(torch.utils.data.Dataset):
         return 1000
 
     def __getitem__(self, index):
-        x, y = next(self.it)
+        y = next(self.it)
+        y = TorchProgramDataset.encode_program(y, self.op_encoder, self.var_encoder)
         x = TorchProgramDataset.encoded_program_to_onehot(y, self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.segment_sizes)
         return x,y
     
     def logit_classes_np(self, logits):
-        classes = np.zeros((logits.shape[0], 5))
+        classes = np.zeros((logits.shape[0], self.OP_VOCAB_SIZE))
         logits = np.array(logits)
         for t in range(logits.shape[0]):
             ptr = 0
@@ -93,10 +110,10 @@ from torch.utils.data import DataLoader
 dataset = TorchProgramDataset()
 train_dataloader = DataLoader(dataset, batch_size=32, num_workers=8, prefetch_factor=2, collate_fn=partial(TorchProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
 
-#%%
+
 
 it = iter(train_dataloader)
-#%%
+
 
 next(it)
 # %%
@@ -105,4 +122,9 @@ x,y = next(it)
 
 print(dataset.decode_pred(x, 0))
 
+print(dataset.decode_pred(y, 0))
+
 # %%
+
+dataset.logit_classes_np(x[0, :, :])
+
