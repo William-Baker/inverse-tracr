@@ -12,7 +12,7 @@ END_TOKEN = 'PROGRAM_END'
 class ProgramDataset(torch.utils.data.Dataset):
     def __init__(self, program_file='program_dataset.pkl'):
         self.df = pd.read_pickle(program_file)
-        meta = pd.read_pickle('program_meta.pkl')
+        meta = pd.read_pickle('.data/program_meta.pkl')
         OP_VOCAB = meta['OP_VOCAB']
         VAR_VOCAB = meta['VAR_VOCAB']
         self.prog_len = meta['PROG_LEN']
@@ -84,21 +84,21 @@ class ProgramDataset(torch.utils.data.Dataset):
             translated += "\n"
         return translated
     
-# from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader
 
-# dataset = Dataset(data_iterator)
-# train_dataloader = DataLoader(dataset, batch_size=32, num_workers=8, prefetch_factor=2, collate_fn=partial(Dataset.collate_fn, dataset.prog_len))#, pin_memory=True)
+dataset = ProgramDataset(program_file='.data/program_dataset1.pkl')
+train_dataloader = DataLoader(dataset, batch_size=32, num_workers=8, prefetch_factor=2, collate_fn=partial(ProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
 
 # #%%
 
-# it = iter(train_dataloader)
-# #%%
+it = iter(train_dataloader)
+#%%
 
-# next(it)
+next(it)
 # # %%
 
 # x,y = next(it)
 
 # print(dataset.decode_pred(x, 0))
 
-# # %%
+# %%
