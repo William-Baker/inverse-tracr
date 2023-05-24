@@ -185,66 +185,70 @@ class TrainerModule:
 
 #%%
 
-if __name__ == "__main__":
-    from models import EncoderDecoder, TransformerEncoder, EncoderBlock
-    from jax import random
-    import jax.numpy as jnp
-    from utils.jax_helpers import JaxSeeder
-    import os
-    CHECKPOINT_PATH = ".logs/"
-    from torch.utils.tensorboard import SummaryWriter
-    import jax
-    import optax
-    from flax.training import train_state, checkpoints
-    from tqdm import tqdm
-    import numpy as np
-    import torch
-    from functools import partial
 
-    torch.cuda.is_available = lambda : False
+from models import EncoderDecoder, TransformerEncoder, EncoderBlock
+from jax import random
+import jax.numpy as jnp
+from utils.jax_helpers import JaxSeeder
+import os
+CHECKPOINT_PATH = ".logs/"
+from torch.utils.tensorboard import SummaryWriter
+import jax
+import optax
+from flax.training import train_state, checkpoints
+from tqdm import tqdm
+import numpy as np
+import torch
+from functools import partial
 
-    from torch.utils.data import DataLoader
-    from program_dataset_programs import TorchProgramDataset
+torch.cuda.is_available = lambda : False
 
-    dataset = TorchProgramDataset()
-    collate_fn = partial(TorchProgramDataset.collate_fn, dataset.prog_len)
-    train_dataloader = DataLoader(dataset, batch_size=64, collate_fn=collate_fn, num_workers=2, prefetch_factor=2)#, pin_memory=True)
+from torch.utils.data import DataLoader
+from program_dataloader import TorchProgramDataset
 
-    it = iter(train_dataloader)
-    x,y = next(it)
+dataset = TorchProgramDataset()
+collate_fn = partial(TorchProgramDataset.collate_fn, dataset.prog_len)
+train_dataloader = DataLoader(dataset, batch_size=64, collate_fn=collate_fn, num_workers=8, prefetch_factor=2)#, pin_memory=True)
 
-    #%%
+it = iter(train_dataloader)
+x,y = next(it)
 
-
-    # print(dataset.decode_pred(y, 0))
-    # print(dataset.decode_pred(x, 0))
-    
-
-    # for i in range(0,1000):
-    #     x,y = next(it)
+#%%
 
 
+print(dataset.decode_pred(y, 0))
+print(dataset.decode_pred(x, 0))
 
+#%%
 
-    max_epochs = 10
-    num_train_iters = len(train_dataloader) * max_epochs
-
-    trainer = TrainerModule('Program-Encoder-Decoder', next(it), num_train_iters, num_classes=sum(dataset.segment_sizes))
-
-    trainer.train_model(train_dataloader, train_dataloader, num_epochs=max_epochs)
+# for i in range(0,1000):
+#     x,y = next(it)
 
 
 
 
-    it = iter(train_dataloader)
-    x,y = next(it)
-    print(dataset.decode_pred(y, 0))
-    print(dataset.decode_pred(x, 0))
+max_epochs = 50
+num_train_iters = len(train_dataloader) * max_epochs
+
+trainer = TrainerModule('Program-Encoder-Decoder', next(it), num_train_iters, num_classes=sum(dataset.segment_sizes))
 
 
-    rng, dropout_apply_rng = random.split(trainer.rng)
-    logits = trainer.model.apply({'params': trainer.state.params}, x, train=False, rngs={'dropout': dropout_apply_rng})
+#%%
 
-    print(dataset.decode_pred(logits, 0))
+trainer.train_model(train_dataloader, train_dataloader, num_epochs=max_epochs)
+
+
+#%%
+
+it = iter(train_dataloader)
+x,y = next(it)
+print(dataset.decode_pred(y, 0))
+print(dataset.decode_pred(x, 0))
+
+
+rng, dropout_apply_rng = random.split(trainer.rng)
+logits = trainer.model.apply({'params': trainer.state.params}, x, train=False, rngs={'dropout': dropout_apply_rng})
+
+print(dataset.decode_pred(logits, 0))
 
 #%%

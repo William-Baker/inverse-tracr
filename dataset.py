@@ -1,6 +1,6 @@
 #%%
 
-import jax
+
 import sys
 sys.path.append('tracr/')
 
@@ -18,9 +18,6 @@ from tracr.rasp import rasp
 from dataclasses import dataclass
 import pandas as pd
 
-# The default of float16 can lead to discrepancies between outputs of
-# the compiled model and the RASP program.
-jax.config.update('jax_default_matmul_precision', 'float32')
 
 
 
@@ -445,7 +442,7 @@ def program_generator(ops_range: tuple, vocab_size_range: tuple, max_sequence_le
     vocab_size = randint(*vocab_size_range)
     max_seq_len = randint(*max_sequence_lenghts_range)
     TARGET_PROGRAM_LENGTH = max(ops_range) // 2
-    vocab = gen_vocab(n_ops, prefix='t')
+    vocab = gen_vocab(max(ops_range), prefix='t')
     program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
     return actual_ops
 
@@ -455,7 +452,7 @@ def program_craft_generator(ops_range: tuple, vocab_size_range: tuple, max_seque
     vocab_size = randint(*vocab_size_range)
     max_seq_len = randint(*max_sequence_lenghts_range)
     TARGET_PROGRAM_LENGTH = max(ops_range) // 2
-    vocab = gen_vocab(n_ops, prefix='t')
+    vocab = gen_vocab(max(ops_range), prefix='t')
     program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
     craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
     return craft_model, actual_ops
@@ -536,53 +533,61 @@ def encode_craft_model(craft_model):
 
 
 #%% ====== encoder with timeout ==================
-# import multiprocessing
-# # dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
-# # multiprocessing.reduction.ForkingPickler = dill.Pickler
-# # multiprocessing.reduction.dump = dill.dump
-# # multiprocessing.context.reduction._ForkingPickler = dill.Pickler
+import multiprocessing
+# dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
+# multiprocessing.reduction.ForkingPickler = dill.Pickler
+# multiprocessing.reduction.dump = dill.dump
+# multiprocessing.context.reduction._ForkingPickler = dill.Pickler
 
-# def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
-#     n_ops = randint(*ops_range)
-#     vocab_size = randint(*vocab_size_range)
-#     max_seq_len = randint(*max_sequence_lenghts_range)
-#     TARGET_PROGRAM_LENGTH = max(ops_range) // 2
-#     CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs take 0.6
+def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
+    n_ops = randint(*ops_range)
+    vocab_size = randint(*vocab_size_range)
+    max_seq_len = randint(*max_sequence_lenghts_range)
+    TARGET_PROGRAM_LENGTH = max(ops_range) // 2
+    CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs take 0.6
 
-#     vocab = gen_vocab(n_ops, prefix='t')
+    vocab = gen_vocab(max(ops_range), prefix='t')
 
-#     def time_sensitive(return_dict):
-#         program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
-#         craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
-#         encoded_ops = encode_ops(actual_ops)
-#         encoded_model = encode_craft_model(craft_model)
-#         return_dict['craft_model'] = encoded_model
-#         return_dict['actual_ops'] = encoded_ops
+    def time_sensitive(return_dict):
+        program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
+        craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
+        encoded_ops = encode_ops(actual_ops)
+        encoded_model = encode_craft_model(craft_model)
+        return_dict['craft_model'] = encoded_model
+        return_dict['actual_ops'] = encoded_ops
 
-#     manager = multiprocessing.Manager()
-#     return_dict = manager.dict()
-#     craft_model, actual_ops = None, None
-#     while craft_model == None: # sometimes the thread doesnt work properly
-#         p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
-#         p.start()
-#         p.join(CRAFT_TIMEOUT)
-#         while p.is_alive(): # the process hasnt finished yet
-#             p.terminate()   # kill it
-#             p.join()        # delete the thread
-#             p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
-#             p.start()       # start a new one
-#             p.join(CRAFT_TIMEOUT)     # wait again and repeat
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+    encoded_model, encoded_ops = None, None
+    while encoded_model == None: # sometimes the thread doesnt work properly
+        p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
+        p.start()
+        p.join(CRAFT_TIMEOUT)
+        while p.is_alive(): # the process hasnt finished yet
+            p.terminate()   # kill it
+            p.join()        # delete the thread
+            p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
+            p.start()       # start a new one
+            p.join(CRAFT_TIMEOUT)     # wait again and repeat
 
-#         try:
-#             craft_model = return_dict['craft_model']
-#             actual_ops = return_dict['actual_ops'] 
-#         except:
-#             print("craft model was none, not sure why, but repeating")
-
-
-#     return craft_model, actual_ops
+        try:
+            encoded_model = return_dict['craft_model']
+            encoded_ops = return_dict['actual_ops'] 
+        except:
+            print("craft model was none, not sure why, but repeating")
 
 
+    return encoded_model, encoded_ops
+
+
+
+
+def program_craft_generator_unbounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
+    craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
+    encoded_ops = encode_ops(actual_ops)
+    encoded_model = encode_craft_model(craft_model)
+
+    return encoded_model, encoded_ops
 
 
 
@@ -590,7 +595,7 @@ def encode_craft_model(craft_model):
 # ========================= User Friendly Generators ============================================
 
 
-def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6)):
+def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6), func=program_craft_generator_unbounded):
     """
     Compile a generator of transformer weights and programs
     params:
@@ -619,9 +624,7 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
                     + list(x[-1] for x in UNI_LAMBDAS + SEQUNCE_LAMBDAS) + [NO_PARAM]
     def gen():
         while True:
-            encoded_model, encoded_ops = program_craft_generator_bounded(ops_range, vocab_size_range, max_sequence_lenghts_range)
-            # encoded_ops = encode_ops(actual_ops)
-            # encoded_model = encode_craft_model(craft_model)
+            encoded_model, encoded_ops = func(ops_range, vocab_size_range, max_sequence_lenghts_range)
             yield encoded_model, encoded_ops
     
     return gen, OP_VOCAB, VAR_VOCAB

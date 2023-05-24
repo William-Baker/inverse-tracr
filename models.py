@@ -147,6 +147,7 @@ class EncoderDecoder(nn.Module):
                         num_heads=4,
                         dim_feedforward=256,
                         dropout_prob=self.dropout_prob)
+        self.adapter_dense = nn.Dense(128 * 20)
         self.decoder = TransformerEncoder(num_layers=5,
                         input_dim=128,
                         num_heads=4,
@@ -164,6 +165,9 @@ class EncoderDecoder(nn.Module):
         x = self.input_dropout(x, deterministic=not train)
         i = self.input_layer(x)
         e = self.encoder(i, mask, train=train)
+        e = jnp.mean(e, axis=1)
+        e = self.adapter_dense(e)
+        e = e.reshape(-1, 20, 128)
         d = self.decoder(e, mask, train=train)
         o = d
         for l in self.output_net:
