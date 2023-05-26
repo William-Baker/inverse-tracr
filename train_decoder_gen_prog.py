@@ -186,6 +186,9 @@ class TrainerModule:
 #%%
 
 
+
+
+
 from models import EncoderDecoder, TransformerEncoder, EncoderBlock
 from jax import random
 import jax.numpy as jnp

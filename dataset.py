@@ -36,7 +36,7 @@ lambda2 = TypeVar("lambda2")
 NO_PARAM = 'NA'
 
 
-df = [
+RASP_OPS = [
     # Class name,         input types,                 output type, weight
     [ rasp.Map,          [lambda1, SOp],                  SOp     , 4],
     [ rasp.Select,       [SOp, SOp, rasp.Predicate],           Selector, 3],
@@ -48,9 +48,10 @@ df = [
     # [ rasp.SelectorNot,  [Selector, Selector],            Selector, 1], 
 ]
 
-df = pd.DataFrame(df, columns = ['cls', 'inp', 'out', 'weight'])
-df_no_selector = pd.DataFrame(df[df.inp.apply(lambda x: Selector not in x)])
-df_returns_sop = pd.DataFrame(df[df.out == SOp])
+RASP_OPS = pd.DataFrame(RASP_OPS, columns = ['cls', 'inp', 'out', 'weight'])
+RASP_OPS['cls_name'] = RASP_OPS.cls.apply(lambda x: x.__name__)
+RASP_OPS_NO_SELECTOR = pd.DataFrame(RASP_OPS[RASP_OPS.inp.apply(lambda x: Selector not in x)])
+RASP_OPS_RETURNS_SOP = pd.DataFrame(RASP_OPS[RASP_OPS.out == SOp])
 
 
 
@@ -188,11 +189,11 @@ class Operation:
 # =================================== Program Sampling ====================================
 
 
-def sample_function(scope: Scope, ops, df=df):
+def sample_function(scope: Scope, ops, df=RASP_OPS):
     if scope.var_exists(Selector):
         sampled = df.sample(weights=df.weight).iloc[0]
     else:
-        sampled = df_no_selector.sample(weights=df_no_selector.weight).iloc[0]
+        sampled = RASP_OPS_NO_SELECTOR.sample(weights=RASP_OPS_NO_SELECTOR.weight).iloc[0]
 
 
     if sampled.cls == rasp.Map:
@@ -338,8 +339,8 @@ def generate_ops(max_ops: int, vocab: Sequence, max_seq_len: int):
     ops = []
 
     for i in range(0, max_ops-1):
-        sample_function(scope, ops, df )
-    sample_function(scope, ops, df_returns_sop)
+        sample_function(scope, ops, RASP_OPS )
+    sample_function(scope, ops, RASP_OPS_RETURNS_SOP)
 
     return ops
 
@@ -616,7 +617,7 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
                             - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
                     ]
     """
-    OP_VOCAB = list(df.cls.apply(lambda x: x.__name__))
+    OP_VOCAB = list(RASP_OPS.cls.apply(lambda x: x.__name__))
     var_name_iter = iter_var_names()
     VAR_VOCAB = ['tokens', 'indices'] \
                     + [next(var_name_iter) for x in range(0, max(ops_range))]  \
@@ -651,7 +652,7 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_leng
                             - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
                     ]
     """
-    OP_VOCAB = list(df.cls.apply(lambda x: x.__name__))
+    OP_VOCAB = list(RASP_OPS.cls.apply(lambda x: x.__name__))
     var_name_iter = iter_var_names()
     VAR_VOCAB = ['tokens', 'indices'] \
                     + [next(var_name_iter) for x in range(0, max(ops_range))]  \
