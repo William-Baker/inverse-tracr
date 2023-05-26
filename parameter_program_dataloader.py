@@ -109,7 +109,9 @@ from torch.utils.data import DataLoader
 
 dataset = TorchParameterProgramDataset()
 #train_dataloader = DataLoader(dataset, batch_size=2, num_workers=8, prefetch_factor=2, collate_fn=partial(TorchParameterProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
-train_dataloader = DataLoader(dataset, batch_size=1)#, num_workers=8, prefetch_factor=2, collate_fn=partial(TorchParameterProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
+train_dataloader = DataLoader(dataset, batch_size=1, num_workers=8, 
+                              prefetch_factor=2, )
+                              #collate_fn=partial(TorchParameterProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
 
 
 
@@ -119,11 +121,11 @@ it = iter(train_dataloader)
 x,y = next(it)
 # %%
 
-x,y = next(it)
+# x,y = next(it)
 
-print(dataset.decode_pred(x, 0))
+# print(dataset.decode_pred(x, 0))
 
-print(dataset.decode_pred(y, 0))
+# print(dataset.decode_pred(y, 0))
 
 # %%
 
@@ -132,6 +134,7 @@ print(dataset.decode_pred(y, 0))
 
 #%%
 import time
+print("timing")
 start = time.time()
 for i in range(10):
     x,y = next(it)
