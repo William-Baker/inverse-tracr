@@ -28,15 +28,6 @@ class StreamWriter:
             x, y = next(it)#self.dataset.__getitem__(idx)
             np.savez(self.dir + str(idx).zfill(7), x=x, y=y)
 
-#%%
-from os import chdir
-chdir('../')
-from data.program_dataloader import TorchProgramDataset
-dataset = TorchProgramDataset(500)
-sw = StreamWriter('.data/p2p_dataset/', dataset)
-sw.write_samples(num_threads=4)
-
-#%%
 from os import listdir
 class StreamReader:
     def __init__(self, dir:str) -> None:
@@ -48,6 +39,22 @@ class StreamReader:
         loaded = np.load(self.dir + self.files[idx])
         return loaded['x'], loaded['y']
 
-reader = StreamReader('.data/p2p_dataset/')
-x,y = reader.__getitem__(1)
-# %%
+#%%
+if __name__ == "__main__":
+    # from os import chdir
+    # chdir('../')
+    from data.program_dataloader import TorchProgramDataset
+    dataset = TorchProgramDataset(500000)
+    sw = StreamWriter('.data/p2p_dataset/', dataset)
+    sw.write_samples(num_threads=20)
+
+    reader = StreamReader('.data/p2p_dataset/')
+    x,y = reader.__getitem__(1)
+
+
+    dataloader = TorchDataLoader(reader, batch_size=1, num_workers=8, prefetch_factor=2)
+    it = iter(dataloader)
+
+    for i in range(5000):
+        x,y = next(it)
+    
