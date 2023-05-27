@@ -37,7 +37,9 @@ class StreamReader:
         return len(self.files)
     def __getitem__(self, idx):
         loaded = np.load(self.dir + self.files[idx])
-        return loaded['x'], loaded['y']
+        return loaded['x'].squeeze(), loaded['y'].squeeze()
+
+
 
 #%%
 if __name__ == "__main__":

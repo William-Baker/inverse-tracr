@@ -7,7 +7,7 @@
 
 class TrainerModule:
 
-    def __init__(self, model_name, exmp_batch, max_iters, lr=1e-3, warmup=100, seed=42, **model_kwargs):
+    def __init__(self, model_name, exmp_batch, max_iters, seg_sizes, lr=1e-3, warmup=100, seed=42, **model_kwargs):
         """
         Inputs:
             model_name - Name of the model. Used for saving and checkpointing
@@ -23,6 +23,7 @@ class TrainerModule:
         self.lr = lr
         self.warmup = warmup
         self.seed = seed
+        self.seg_sizes = seg_sizes
         # Create empty model. Note: no parameters yet
         self.model = EncoderDecoder(**model_kwargs)
         # Prepare logging
@@ -47,7 +48,7 @@ class TrainerModule:
             logits = jnp.array(logits)
             
             ptr = 0
-            for i, seg_size in enumerate(dataset.segment_sizes):
+            for i, seg_size in enumerate(self.seg_sizes):
                 #classes[:, i] = logits[:, ptr:ptr + seg_size].argmax(axis=1)
                 classes.append(logits[:, :, ptr:ptr + seg_size].argmax(axis=2))
                 ptr += seg_size
@@ -72,7 +73,7 @@ class TrainerModule:
 
             ptr = 0
             loss = 0
-            for i, seg_size in enumerate(dataset.segment_sizes):
+            for i, seg_size in enumerate(self.seg_sizes):
                 loss += optax.softmax_cross_entropy_with_integer_labels(logits[:, :, ptr:ptr + seg_size], labels[:, :time_steps, i])
                 ptr += seg_size
 
@@ -206,11 +207,14 @@ from functools import partial
 torch.cuda.is_available = lambda : False
 
 from torch.utils.data import DataLoader
-from program_dataloader import TorchProgramDataset
+from data.program_dataloader import TorchProgramDataset
+src_dataset = TorchProgramDataset()
 
-dataset = TorchProgramDataset()
-collate_fn = partial(TorchProgramDataset.collate_fn, dataset.prog_len)
-train_dataloader = DataLoader(dataset, batch_size=4, collate_fn=collate_fn, num_workers=2, prefetch_factor=2)#, pin_memory=True)
+from data.dataloader_streams import StreamReader
+dataset = StreamReader('.data/p2p_dataset/')
+
+collate_fn = partial(TorchProgramDataset.collate_fn, 30)
+train_dataloader = DataLoader(dataset, batch_size=4, collate_fn=collate_fn)#, num_workers=2, prefetch_factor=2)#, pin_memory=True)
 
 it = iter(train_dataloader)
 x,y = next(it)
@@ -218,8 +222,8 @@ x,y = next(it)
 #%%
 
 
-print(dataset.decode_pred(y, 0))
-print(dataset.decode_pred(x, 0))
+print(src_dataset.decode_pred(y, 0))
+print(src_dataset.decode_pred(x, 0))
 
 #%%
 
@@ -232,7 +236,7 @@ print(dataset.decode_pred(x, 0))
 max_epochs = 50
 num_train_iters = len(train_dataloader) * max_epochs
 
-trainer = TrainerModule('Program-Encoder-Decoder', next(it), num_train_iters, num_classes=sum(dataset.segment_sizes))
+trainer = TrainerModule('Program-Encoder-Decoder', next(it), num_train_iters, num_classes=sum(src_dataset.segment_sizes), seg_sizes=src_dataset.segment_sizes)
 
 
 #%%
