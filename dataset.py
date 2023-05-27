@@ -468,6 +468,8 @@ def iter_var_names(prefix='v'):
         i += 1
         yield prefix + str(i)
 
+from utils.canonical_ordering import sort_program
+
 
 def encode_ops(ops):
     features = []
@@ -506,6 +508,7 @@ def encode_ops(ops):
             r = ret_name
         )
         features.append(feature)
+
     return features
 
 
@@ -540,7 +543,7 @@ import multiprocessing
 # multiprocessing.reduction.dump = dill.dump
 # multiprocessing.context.reduction._ForkingPickler = dill.Pickler
 
-def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
+"""def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
     n_ops = randint(*ops_range)
     vocab_size = randint(*vocab_size_range)
     max_seq_len = randint(*max_sequence_lenghts_range)
@@ -578,10 +581,27 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, m
             print("craft model was none, not sure why, but repeating")
 
 
+    return encoded_model, encoded_ops"""
+
+from utils.sigterm import time_limit, TimeoutException
+
+def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
+    CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs take 0.6
+    craft_model, actual_ops = None, None
+    while craft_model is None:
+        try:
+            with time_limit(CRAFT_TIMEOUT):
+                craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
+        except Exception as E:
+            if isinstance(E, TimeoutException):
+                pass
+            else:
+                raise(E)
+            
+    encoded_ops = encode_ops(actual_ops)
+    encoded_model = encode_craft_model(craft_model)
+
     return encoded_model, encoded_ops
-
-
-
 
 def program_craft_generator_unbounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
     craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
