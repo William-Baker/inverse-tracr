@@ -14,11 +14,12 @@ END_TOKEN = 'PROGRAM_END'
 from dataset import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
 
 class TorchParameterProgramDataset(torch.utils.data.Dataset):
-    def __init__(self, generator_backend=Union['bounded', 'unbounded']):
+    def __init__(self, no_samples = 10000, generator_backend=Union['bounded', 'unbounded'], bounded_timeout_multiplier=1):
+        self.no_samples = no_samples
         func = program_craft_generator_unbounded
         if generator_backend == 'bounded':
             func = program_craft_generator_bounded
-        self.gen, OP_VOCAB, VAR_VOCAB = craft_dataset((30,30), func=func)
+        self.gen, OP_VOCAB, VAR_VOCAB = craft_dataset((30,30), func=func, timeout_multiplier=bounded_timeout_multiplier)
         self.it = iter(self.gen())
         self.prog_len = 30
         OP_VOCAB_SIZE, VAR_VOCAB_SIZE = len(OP_VOCAB), len(VAR_VOCAB)
@@ -72,7 +73,7 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         'Denotes the total number of samples'
-        return 10000
+        return self.no_samples
 
     def __getitem__(self, index):
         x, y = next(self.it)
@@ -111,9 +112,9 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
     
 from torch.utils.data import DataLoader
 
-dataset = TorchParameterProgramDataset()
+dataset = TorchParameterProgramDataset('bounded', bounded_timeout_multiplier=10)
 #train_dataloader = DataLoader(dataset, batch_size=2, num_workers=8, prefetch_factor=2, collate_fn=partial(TorchParameterProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
-train_dataloader = DataLoader(dataset, batch_size=1, num_workers=8, 
+train_dataloader = DataLoader(dataset, batch_size=1, num_workers=2, 
                               prefetch_factor=2, )
                               #collate_fn=partial(TorchParameterProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
 

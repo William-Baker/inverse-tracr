@@ -13,8 +13,9 @@ END_TOKEN = 'PROGRAM_END'
 from dataset import program_dataset
 
 class TorchProgramDataset(torch.utils.data.Dataset):
-    def __init__(self, shuffled_inputs=True):
+    def __init__(self, no_samples = 10000, shuffled_inputs=True):
         self.shuffled_inputs = shuffled_inputs
+        self.no_samples = no_samples
         self.gen, OP_VOCAB, VAR_VOCAB = program_dataset((30,30))
         self.it = iter(self.gen())
         self.prog_len = 30
@@ -69,7 +70,7 @@ class TorchProgramDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         'Denotes the total number of samples'
-        return 10000
+        return self.no_samples
 
     def __getitem__(self, index):
         prog = next(self.it)

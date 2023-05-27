@@ -462,7 +462,7 @@ def encode_craft_model(craft_model):
 
 
 #%% ====== encoder with timeout ==================
-import multiprocessing
+#import multiprocessing
 # dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
 # multiprocessing.reduction.ForkingPickler = dill.Pickler
 # multiprocessing.reduction.dump = dill.dump
@@ -508,14 +508,15 @@ import multiprocessing
 
     return encoded_model, encoded_ops"""
 
-from utils.sigterm import time_limit, TimeoutException
+from utils.sigterm import guard_timeout, TimeoutException
 
-def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
+def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple, timeout_multiplier=1.0):
     CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs take 0.6
+    CRAFT_TIMEOUT *= timeout_multiplier
     craft_model, actual_ops = None, None
     while craft_model is None:
         try:
-            with time_limit(CRAFT_TIMEOUT):
+            with guard_timeout(CRAFT_TIMEOUT):
                 craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
         except Exception as E:
             if isinstance(E, TimeoutException):
@@ -541,7 +542,7 @@ def program_craft_generator_unbounded(ops_range: tuple, vocab_size_range: tuple,
 # ========================= User Friendly Generators ============================================
 
 
-def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6), func=program_craft_generator_unbounded):
+def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6), func=program_craft_generator_unbounded, timeout_multiplier=None):
     """
     Compile a generator of transformer weights and programs
     params:
@@ -568,6 +569,9 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
                     + [next(var_name_iter) for x in range(0, max(ops_range))]  \
                     + list(NAMED_PREDICATES.values()) \
                     + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM]
+    
+    if timeout_multiplier is not None:
+        lambda x,y,z: func(x,y,z, timeout_multiplier=timeout_multiplier)
     def gen():
         while True:
             encoded_model, encoded_ops = func(ops_range, vocab_size_range, max_sequence_lenghts_range)
