@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from torch.nn.utils.rnn import pad_sequence
 from functools import partial
 import numpy as np
-
+from random import shuffle
 
 START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'
@@ -13,7 +13,8 @@ END_TOKEN = 'PROGRAM_END'
 from dataset import program_dataset
 
 class TorchProgramDataset(torch.utils.data.Dataset):
-    def __init__(self):
+    def __init__(self, shuffled_inputs=True):
+        self.shuffled_inputs = shuffled_inputs
         self.gen, OP_VOCAB, VAR_VOCAB = program_dataset((30,30))
         self.it = iter(self.gen())
         self.prog_len = 30
@@ -71,9 +72,14 @@ class TorchProgramDataset(torch.utils.data.Dataset):
         return 10000
 
     def __getitem__(self, index):
-        y = next(self.it)
-        y = TorchProgramDataset.encode_program(y, self.op_encoder, self.var_encoder)
-        x = TorchProgramDataset.encoded_program_to_onehot(y, self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.segment_sizes)
+        prog = next(self.it)
+        y = TorchProgramDataset.encode_program(prog, self.op_encoder, self.var_encoder)
+        if not self.shuffled_inputs:
+            x = TorchProgramDataset.encoded_program_to_onehot(y, self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.segment_sizes)
+        else:
+            shuffle(prog)
+            x = TorchProgramDataset.encode_program(prog, self.op_encoder, self.var_encoder)
+            x = TorchProgramDataset.encoded_program_to_onehot(x, self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.segment_sizes)
         return x,y
     
     def logit_classes_np(self, logits):

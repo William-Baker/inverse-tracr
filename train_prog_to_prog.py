@@ -183,7 +183,6 @@ class TrainerModule:
         return os.path.isfile(os.path.join(CHECKPOINT_PATH, f'{self.model_name}.ckpt'))
 
 
-#%%
 
 
 
@@ -209,9 +208,9 @@ torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from program_dataloader import TorchProgramDataset
 
-dataset = TorchProgramDataset('bounded')
+dataset = TorchProgramDataset()
 collate_fn = partial(TorchProgramDataset.collate_fn, dataset.prog_len)
-train_dataloader = DataLoader(dataset, batch_size=64, collate_fn=collate_fn, num_workers=8, prefetch_factor=2)#, pin_memory=True)
+train_dataloader = DataLoader(dataset, batch_size=4, collate_fn=collate_fn, num_workers=2, prefetch_factor=2)#, pin_memory=True)
 
 it = iter(train_dataloader)
 x,y = next(it)

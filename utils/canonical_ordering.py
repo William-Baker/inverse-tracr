@@ -40,19 +40,20 @@
 
 #%%
 
-from dataset import RASP_OPS, UNI_LAMBDAS, SEQUNCE_LAMBDAS
+from utils.rasp_operators import RASP_OPS, UNI_LAMBDAS, SEQUENCE_LAMBDAS, NAMED_PREDICATES
 import numpy as np
 
 # In decending order of predence here is our operator ordering
 INPUT_TOKENS = ["tokens", "indices"] # List of the input tokens
 RASP_OPS = list(RASP_OPS.cls_name)
+NAMED_PREDICATES = list(NAMED_PREDICATES.values())
 UNI_LAMBDAS = [lam_name[-1] for lam_name in UNI_LAMBDAS]
-SEQUNCE_LAMBDAS = [lam_name[-1] for lam_name in SEQUNCE_LAMBDAS]
+SEQUENCE_LAMBDAS = [lam_name[-1] for lam_name in SEQUENCE_LAMBDAS]
 
 # develop scoring that can be applied to each token in a line of a program, giving a score for that unique line vs others
-scores = np.arange(len(SEQUNCE_LAMBDAS))
-token_weight = dict(zip(SEQUNCE_LAMBDAS, scores))
-for names in [UNI_LAMBDAS, RASP_OPS, INPUT_TOKENS]:
+scores = np.arange(len(NAMED_PREDICATES))
+token_weight = dict(zip(NAMED_PREDICATES, scores))
+for names in [SEQUENCE_LAMBDAS, UNI_LAMBDAS, RASP_OPS, INPUT_TOKENS]:
     scores = np.arange(len(names))
     token_weight = token_weight | dict(zip(names, 4 * max(token_weight.values()) + scores))
 
@@ -158,6 +159,7 @@ def __sort_depths_within_depth_sorting__(depth_sorting):
     sorted_prog = []
     for depth_set in depth_sorting:
         scores = []
+        lines = []
         for line in depth_set:
             if line is not None:
                 score = 0
@@ -166,12 +168,15 @@ def __sort_depths_within_depth_sorting__(depth_sorting):
                     if token in token_weight:
                         score += token_weight[token]
                 scores.append(score)
+                lines.append(line)
         # print(depth_set)
         # print(scores)
-        sorted_depth = [line for _, line in sorted(zip(scores, depth_set))]
-        sorted_prog.append(sorted_depth)
+        sorting = np.argsort(scores)
+        sorted_depth = [lines[x] for x in sorting]
+        #sorted_depth = [line for _, line in sorted(scored_lines)]
+        sorted_prog += sorted_depth
 
-    sorted_prog = sum(sorted_prog, [])
+    #sorted_prog = sum(sorted_prog, [])
     return sorted_prog
 
 
@@ -184,10 +189,10 @@ def sort_program(prog):
         sorted_program - the input program sorted canonically
         program_mask - a mask over the input, value 1 for program instructions otherwise 0 for start/end tokens or padding
     """
-    tree, program_mask = __build_tree__(prog)
+    tree, _ = __build_tree__(prog)
     depth_sorting = __compute_depth_sorted__(tree)
     sorted_program = __sort_depths_within_depth_sorting__(depth_sorting)
-    return sorted_program, program_mask
+    return sorted_program
 
 #%%
 

@@ -14,88 +14,10 @@ from tracr.compiler import rasp_to_graph
 from tracr.craft import bases
 from tracr.rasp import rasp
 from tracr.craft.transformers import MultiAttentionHead, MLP
-from tracr.rasp import rasp
 from dataclasses import dataclass
-import pandas as pd
 from utils.canonical_ordering import sort_program
+from utils.rasp_operators import *
 
-
-
-
-
-
-SOp = rasp.SOp
-Selector = rasp.Selector
-
-
-NumericValue = Union[int, float]
-SOpNumericValue = Union[SOp, int, float]
-Value = Union[None, int, float, str, bool]
-lambda1 = TypeVar("lambda1")
-lambda2 = TypeVar("lambda2")
-NO_PARAM = 'NA'
-
-
-RASP_OPS = [
-    # Class name,         input types,                 output type, weight
-    [ rasp.Map,          [lambda1, SOp],                  SOp     , 4],
-    [ rasp.Select,       [SOp, SOp, rasp.Predicate],           Selector, 3],
-    [ rasp.SequenceMap,  [SOp, SOpNumericValue, lambda2], SOp,      2],
-    [ rasp.Aggregate,    [Selector, SOp],                 SOp,      2],
-    [ rasp.SelectorWidth,[Selector],                      SOp,      2],
-    # [ rasp.SelectorOr,   [Selector, Selector],            Selector, 1],  # These arent implemented correclty in RASP
-    # [ rasp.SelectorAnd,  [Selector, Selector],            Selector, 1], 
-    # [ rasp.SelectorNot,  [Selector, Selector],            Selector, 1], 
-]
-
-RASP_OPS = pd.DataFrame(RASP_OPS, columns = ['cls', 'inp', 'out', 'weight'])
-RASP_OPS['cls_name'] = RASP_OPS.cls.apply(lambda x: x.__name__)
-RASP_OPS_NO_SELECTOR = pd.DataFrame(RASP_OPS[RASP_OPS.inp.apply(lambda x: Selector not in x)])
-RASP_OPS_RETURNS_SOP = pd.DataFrame(RASP_OPS[RASP_OPS.out == SOp])
-
-
-
-UNI_LAMBDAS = [
-    (lambda x, y: x < y,  'LAM_LT'), 
-    (lambda x, y: x <= y, 'LAM_LE'),       
-    (lambda x, y: x > y,  'LAM_GT'),      
-    (lambda x, y: x >= y, 'LAM_GE'),       
-    (lambda x, y: x != y, 'LAM_NE'),     
-    (lambda x, y: x == y, 'LAM_EQ'),      
-    (lambda x, y: not x,  'LAM_IV'),   
-]
-
-SEQUNCE_LAMBDAS = [
-    (lambda x, y: x + y,  [] , 'LAM_ADD'),
-    (lambda x, y: x * y,  [] , 'LAM_MUL'),
-    (lambda x, y: x - y,  [] , 'LAM_SUB'),
-    #(lambda x, y: x / y,  [0], 'LAM_DIV'),
-    (lambda x, y: x and y,[] , 'LAM_AND'),
-    (lambda x, y: x or y, [] , 'LAM_OR'),
-]
-
-
-PREDICATES = [
-    rasp.Comparison.EQ,
-    rasp.Comparison.FALSE,
-    rasp.Comparison.TRUE,
-    rasp.Comparison.GEQ,
-    rasp.Comparison.GT,
-    rasp.Comparison.LEQ,
-    rasp.Comparison.LT,
-    rasp.Comparison.NEQ,
-]
-
-named_predicates = dict([
-    (rasp.Comparison.EQ,    'PRED_EQ'),
-    (rasp.Comparison.FALSE, 'PRED_FALSE'),
-    (rasp.Comparison.TRUE,  'PRED_TRUE'),
-    (rasp.Comparison.GEQ,   'PRED_GEQ'),
-    (rasp.Comparison.GT,    'PRED_GT'),
-    (rasp.Comparison.LEQ,   'PRED_LEQ'),
-    (rasp.Comparison.LT,    'PRED_LT'),
-    (rasp.Comparison.NEQ,   'PRED_NEQ'),
-])
 
 
 
@@ -227,7 +149,7 @@ def sample_function(scope: Scope, ops, df=RASP_OPS):
             return_cat = Cat.numeric
             s1 = scope.pick_var_cat(SOp, return_cat)
             # TODO we can guarentee that the operand is non-zero, so lets make it possible to do division
-            f1, bad_vals, lambda_name = choice(SEQUNCE_LAMBDAS)# + [(lambda x, y: x / y,  [0])]) 
+            f1, bad_vals, lambda_name = choice(SEQUENCE_LAMBDAS)# + [(lambda x, y: x / y,  [0])]) 
             if  randint(0,2) <= 1: # 2/3 of the time generate an int
                 s2 = scope.gen_const(Cat.numeric)
             else: # occasionally generate a float - may have a different impl
@@ -257,7 +179,7 @@ def sample_function(scope: Scope, ops, df=RASP_OPS):
             print("dead end")
             return
             
-        f1, bad, lambda_name = choice(SEQUNCE_LAMBDAS)
+        f1, bad, lambda_name = choice(SEQUENCE_LAMBDAS)
 
         return_type = SOp
         return_cat = s1_cat
@@ -486,8 +408,8 @@ def encode_ops(ops):
                     var_names[inp] = next(var_name_iter)
                     params[i] = var_names[inp]
             # elif isinstance(inp, partial): # ignore the value of the parameter when using a given lambda
-            elif inp in named_predicates.keys():
-                params[i] = named_predicates[inp]  
+            elif inp in NAMED_PREDICATES.keys():
+                params[i] = NAMED_PREDICATES[inp]  
             elif isinstance(inp, Callable):
                 assert op.lambda_name != None
                 params[i] = op.lambda_name
@@ -508,7 +430,10 @@ def encode_ops(ops):
             r = ret_name
         )
         features.append(feature)
-
+    
+    # Apply our canonical program ordering to the program
+    features = sort_program(features)
+    
     return features
 
 
@@ -641,8 +566,8 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
     var_name_iter = iter_var_names()
     VAR_VOCAB = ['tokens', 'indices'] \
                     + [next(var_name_iter) for x in range(0, max(ops_range))]  \
-                    + list(named_predicates.values()) \
-                    + list(x[-1] for x in UNI_LAMBDAS + SEQUNCE_LAMBDAS) + [NO_PARAM]
+                    + list(NAMED_PREDICATES.values()) \
+                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM]
     def gen():
         while True:
             encoded_model, encoded_ops = func(ops_range, vocab_size_range, max_sequence_lenghts_range)
@@ -676,8 +601,8 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_leng
     var_name_iter = iter_var_names()
     VAR_VOCAB = ['tokens', 'indices'] \
                     + [next(var_name_iter) for x in range(0, max(ops_range))]  \
-                    + list(named_predicates.values()) \
-                    + list(x[-1] for x in UNI_LAMBDAS + SEQUNCE_LAMBDAS) + [NO_PARAM]
+                    + list(NAMED_PREDICATES.values()) \
+                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM]
     def gen():
         while True:
             actual_ops = program_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
