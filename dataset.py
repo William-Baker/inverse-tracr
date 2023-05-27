@@ -17,7 +17,7 @@ from tracr.craft.transformers import MultiAttentionHead, MLP
 from tracr.rasp import rasp
 from dataclasses import dataclass
 import pandas as pd
-
+from utils.canonical_ordering import sort_program
 
 
 
@@ -468,7 +468,7 @@ def iter_var_names(prefix='v'):
         i += 1
         yield prefix + str(i)
 
-from utils.canonical_ordering import sort_program
+
 
 
 def encode_ops(ops):

@@ -209,7 +209,7 @@ torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from program_dataloader import TorchProgramDataset
 
-dataset = TorchProgramDataset()
+dataset = TorchProgramDataset('bounded')
 collate_fn = partial(TorchProgramDataset.collate_fn, dataset.prog_len)
 train_dataloader = DataLoader(dataset, batch_size=64, collate_fn=collate_fn, num_workers=8, prefetch_factor=2)#, pin_memory=True)
 

@@ -5,16 +5,20 @@ import jax.numpy as jnp
 from torch.nn.utils.rnn import pad_sequence
 from functools import partial
 import numpy as np
+from typing import Union
 
 
 START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'
 
-from dataset import craft_dataset
+from dataset import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
 
 class TorchParameterProgramDataset(torch.utils.data.Dataset):
-    def __init__(self):
-        self.gen, OP_VOCAB, VAR_VOCAB = craft_dataset((30,30))
+    def __init__(self, generator_backend=Union['bounded', 'unbounded']):
+        func = program_craft_generator_unbounded
+        if generator_backend == 'bounded':
+            func = program_craft_generator_bounded
+        self.gen, OP_VOCAB, VAR_VOCAB = craft_dataset((30,30), func=func)
         self.it = iter(self.gen())
         self.prog_len = 30
         OP_VOCAB_SIZE, VAR_VOCAB_SIZE = len(OP_VOCAB), len(VAR_VOCAB)
