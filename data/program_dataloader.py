@@ -83,6 +83,8 @@ class TorchProgramDataset(torch.utils.data.Dataset):
             x = TorchProgramDataset.encoded_program_to_onehot(x, self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.segment_sizes)
         return x,y
     
+
+
     def logit_classes_np(self, logits):
         classes = np.zeros((logits.shape[0], self.OP_VOCAB_SIZE))
         logits = np.array(logits)
@@ -92,6 +94,7 @@ class TorchProgramDataset(torch.utils.data.Dataset):
                 classes[t, i] = logits[t, ptr:ptr + seg_size].argmax()
                 ptr += seg_size
         return classes
+
 
     def decode_pred(self, y, batch_index: int):
         pred = y[batch_index, :, :]
@@ -111,35 +114,44 @@ class TorchProgramDataset(torch.utils.data.Dataset):
                     translated += " " + self.var_decoder[pred[t, i].item()]
             translated += "\n"
         return translated
-    
-# from torch.utils.data import DataLoader
-
-# dataset = TorchProgramDataset()
-# train_dataloader = DataLoader(dataset, batch_size=32, num_workers=8, prefetch_factor=2, collate_fn=partial(TorchProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
 
 
+if __name__ == "__main__":
+    from torch.utils.data import DataLoader
 
-# it = iter(train_dataloader)
-
-
-# x,y = next(it)
-# # %%
-
-# x,y = next(it)
-
-# print(dataset.decode_pred(x, 0))
-
-# print(dataset.decode_pred(y, 0))
-
-# # %%
-
-# # dataset.logit_classes_np(x[0, :, :])
+    dataset = TorchProgramDataset()
+    train_dataloader = DataLoader(dataset, batch_size=32, num_workers=8, prefetch_factor=2, collate_fn=partial(TorchProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
 
 
-# #%%
-# import time
-# start = time.time()
-# for i in range(10):
-#     x,y = next(it)
-# end = time.time()
-# print(end - start)
+
+    it = iter(train_dataloader)
+
+
+    x,y = next(it)
+    # %%
+
+    x,y = next(it)
+
+    print(dataset.decode_pred(x, 0))
+
+    print(dataset.decode_pred(y, 0))
+
+
+
+    #%%
+    pred = y - np.random.randint(0,2, size=y.shape)
+    pred = np.maximum(pred, 0)#np.zeros(y.shape))
+
+    #img = plot_orginal_heatmaps(y, pred, dataset)
+    # %%
+
+    # dataset.logit_classes_np(x[0, :, :])
+
+
+    #%%
+    import time
+    start = time.time()
+    for i in range(10):
+        x,y = next(it)
+    end = time.time()
+    print(end - start)

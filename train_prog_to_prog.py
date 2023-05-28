@@ -1,13 +1,31 @@
 
 #%%
 
+from models import EncoderDecoder, TransformerEncoder, EncoderBlock
+from jax import random
+import jax.numpy as jnp
+from utils.jax_helpers import JaxSeeder
+import os
+CHECKPOINT_PATH = ".logs/"
+from torch.utils.tensorboard import SummaryWriter
+import jax
+import optax
+from flax.training import train_state, checkpoints
+from tqdm import tqdm
+import numpy as np
+import torch
+from functools import partial
 
+torch.cuda.is_available = lambda : False
 
+from torch.utils.data import DataLoader
+from data.program_dataloader import TorchProgramDataset
+from data.plot_true_v_pred import plot_orginal_heatmaps
 
 
 class TrainerModule:
 
-    def __init__(self, model_name, exmp_batch, max_iters, seg_sizes, lr=1e-3, warmup=100, seed=42, **model_kwargs):
+    def __init__(self, model_name, exmp_batch, max_iters, dataset, lr=1e-3, warmup=100, seed=42, **model_kwargs):
         """
         Inputs:
             model_name - Name of the model. Used for saving and checkpointing
@@ -23,9 +41,10 @@ class TrainerModule:
         self.lr = lr
         self.warmup = warmup
         self.seed = seed
-        self.seg_sizes = seg_sizes
+        self.seg_sizes=src_dataset.segment_sizes
+        self.dataset = dataset
         # Create empty model. Note: no parameters yet
-        self.model = EncoderDecoder(**model_kwargs)
+        self.model = EncoderDecoder(num_classes=sum(src_dataset.segment_sizes), **model_kwargs)
         # Prepare logging
         self.log_dir = os.path.join(CHECKPOINT_PATH, self.model_name)
         self.logger = SummaryWriter(log_dir=self.log_dir)
@@ -34,11 +53,7 @@ class TrainerModule:
         # Initialize model
         self.init_model(exmp_batch)
 
-    def batch_to_input(self, batch):
-        # Map batch to input data to the model
-        inp_data, _ = batch
-        return inp_data
-    
+
 
     
     def get_accuracy_function(self):
@@ -102,14 +117,49 @@ class TrainerModule:
             return acc, rng
         self.eval_step = jax.jit(eval_step)
 
+        def verbose_step(state, batch, step):
+            inp_data, labels = batch
+            #rng, dropout_apply_rng = random.split(rng)
+            logits = self.model.apply({'params': state.params}, inp_data, train=False)#, rngs={'dropout': dropout_apply_rng})
+
+           
+            acc = self.accuracy_fn(logits, labels)
+
+            def logit_classes_jnp(logits):
+                classes = [] #jnp.zeros((logits.shape[0], 5))
+                logits = jnp.array(logits)
+                
+                ptr = 0
+                for i, seg_size in enumerate(self.seg_sizes):
+                    #classes[:, i] = logits[:, ptr:ptr + seg_size].argmax(axis=1)
+                    classes.append(logits[:, :, ptr:ptr + seg_size].argmax(axis=2))
+                    ptr += seg_size
+                classes = jnp.stack(classes, axis=2)
+                return classes
+            classes = logit_classes_jnp(logits)
+            
+            time_steps = inp_data.shape[1]
+            heat_img = plot_orginal_heatmaps(labels[:, :time_steps, :], classes[:, :time_steps, :], self.dataset)
+
+            self.logger.add_image("verbose/heatmap", heat_img, global_step=step, dataformats='HWC')
+
+            self.logger.add_histogram("verbose/output", np.array(logits), global_step=step)
+
+            self.logger.add_scalar("verbose/acc", acc.item(), global_step=step)
+
+
+        # self.verbose_step = jax.jit(verbose_step)
+        self.verbose_step = verbose_step
+
         self.accuracy_fn = self.get_accuracy_function()
 
     def init_model(self, exmp_batch):
         # Initialize model
         self.rng = jax.random.PRNGKey(self.seed)
         self.rng, init_rng, dropout_init_rng = jax.random.split(self.rng, 3)
-        exmp_input = self.batch_to_input(exmp_batch)
+        exmp_input, examp_output = exmp_batch
         params = self.model.init({'params': init_rng, 'dropout': dropout_init_rng}, exmp_input, train=True)['params']
+        
         # Initialize learning rate schedule and optimizer
         lr_schedule = optax.warmup_cosine_decay_schedule(
             init_value=0.0,
@@ -121,10 +171,67 @@ class TrainerModule:
         optimizer = optax.chain(
             optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
             optax.adam(lr_schedule)
+            #optax.adamw(learning_rate=config.lr, weight_decay=config.weight_decay)
         )
+        
         # Initialize training state
         self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=params, tx=optimizer)
 
+    
+
+    # TODO optimise away item() to be minimised
+    def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=4):
+        # Train model for one epoch, and log avg loss and accuracy
+        dataloader_len = len(train_loader)
+        LOGGING_INTERVAL = dataloader_len // LOGS_PER_EPOCH
+
+        with tqdm(total=len(train_loader), unit='batch') as tepoch:
+            tepoch.set_description(f"Epoch {epoch}")
+
+            # ======================================= Training =======================================
+            accs, losses = [], []
+            for idx, batch in enumerate(train_loader):
+                
+                # -------------------------- Train ---------------------------------------------
+                self.state, self.rng, loss, accuracy = self.train_step(self.state, self.rng, batch)
+
+                # ----------- metrics -------------
+                losses.append(loss)
+                accs.append(accuracy)
+
+                
+                # ----------- TF metrics ----------
+                self.logger.add_scalar('train_hf/loss', loss.item(), global_step=idx + epoch * dataloader_len)
+                self.logger.add_scalar('train_hf/accuracy', accuracy.item(), global_step=idx + epoch * dataloader_len)
+                
+                
+                # ------------ Low freq metrics --------------
+                if idx % LOGGING_INTERVAL == 0:
+                    self.verbose_step(state=self.state, batch=batch, step=idx + epoch * dataloader_len)
+
+                
+                
+                # ----------- TQDM ----------------
+                tepoch.set_postfix({'Batch': idx, 'Train Loss': loss.item(), 'Acc': accuracy.item()})
+                tepoch.update(1)
+
+                
+
+            avg_loss = np.stack(jax.device_get(losses)).mean()
+            avg_acc = np.stack(jax.device_get(accs)).mean()
+            self.logger.add_scalar('train/loss', avg_loss, global_step=epoch)
+            self.logger.add_scalar('train/accuracy', avg_acc, global_step=epoch)
+
+    def eval_model(self, data_loader):
+        # Test model on all data points of a data loader and return avg accuracy
+        correct_class, count = 0, 0
+        for batch in data_loader:
+            acc, self.rng = self.eval_step(self.state, self.rng, batch)
+            correct_class += acc * batch[0].shape[0]
+            count += batch[0].shape[0]
+        eval_acc = (correct_class / count).item()
+        return eval_acc
+    
     def train_model(self, train_loader, val_loader, num_epochs=500):
         # Train model for defined number of epochs
         best_acc = 0.0
@@ -137,35 +244,6 @@ class TrainerModule:
                     best_acc = eval_acc
                     self.save_model(step=epoch_idx)
                 self.logger.flush()
-
-    def train_epoch(self, train_loader, epoch):
-        # Train model for one epoch, and log avg loss and accuracy
-        with tqdm(total=len(train_loader), unit='batch') as tepoch:
-          tepoch.set_description(f"Epoch {epoch}")
-          
-          accs, losses = [], []
-          for idx, batch in enumerate(train_loader):
-              self.state, self.rng, loss, accuracy = self.train_step(self.state, self.rng, batch)
-              losses.append(loss)
-              accs.append(accuracy)
-
-              tepoch.set_postfix({'Batch': idx, 'Train Loss': loss.item(), 'Acc': accuracy.item()})
-              tepoch.update(1)
-
-          avg_loss = np.stack(jax.device_get(losses)).mean()
-          avg_acc = np.stack(jax.device_get(accs)).mean()
-          self.logger.add_scalar('train/loss', avg_loss, global_step=epoch)
-          self.logger.add_scalar('train/accuracy', avg_acc, global_step=epoch)
-
-    def eval_model(self, data_loader):
-        # Test model on all data points of a data loader and return avg accuracy
-        correct_class, count = 0, 0
-        for batch in data_loader:
-            acc, self.rng = self.eval_step(self.state, self.rng, batch)
-            correct_class += acc * batch[0].shape[0]
-            count += batch[0].shape[0]
-        eval_acc = (correct_class / count).item()
-        return eval_acc
 
     def save_model(self, step=0):
         # Save current model at certain training iteration
@@ -189,25 +267,7 @@ class TrainerModule:
 
 
 
-from models import EncoderDecoder, TransformerEncoder, EncoderBlock
-from jax import random
-import jax.numpy as jnp
-from utils.jax_helpers import JaxSeeder
-import os
-CHECKPOINT_PATH = ".logs/"
-from torch.utils.tensorboard import SummaryWriter
-import jax
-import optax
-from flax.training import train_state, checkpoints
-from tqdm import tqdm
-import numpy as np
-import torch
-from functools import partial
 
-torch.cuda.is_available = lambda : False
-
-from torch.utils.data import DataLoader
-from data.program_dataloader import TorchProgramDataset
 src_dataset = TorchProgramDataset()
 
 from data.dataloader_streams import StreamReader
@@ -236,7 +296,7 @@ print(src_dataset.decode_pred(x, 0))
 max_epochs = 50
 num_train_iters = len(train_dataloader) * max_epochs
 
-trainer = TrainerModule('Program-Encoder-Decoder', next(it), num_train_iters, num_classes=sum(src_dataset.segment_sizes), seg_sizes=src_dataset.segment_sizes)
+trainer = TrainerModule('Program-Encoder-Decoder', next(it), num_train_iters, dataset=src_dataset)
 
 
 #%%
