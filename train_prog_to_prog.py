@@ -214,7 +214,7 @@ from data.dataloader_streams import StreamReader
 dataset = StreamReader('.data/p2p_dataset/')
 
 collate_fn = partial(TorchProgramDataset.collate_fn, 30)
-train_dataloader = DataLoader(dataset, batch_size=4, collate_fn=collate_fn)#, num_workers=2, prefetch_factor=2)#, pin_memory=True)
+train_dataloader = DataLoader(dataset, batch_size=64, collate_fn=collate_fn, num_workers=8, prefetch_factor=4)#, pin_memory=True)
 
 it = iter(train_dataloader)
 x,y = next(it)
@@ -233,7 +233,7 @@ print(src_dataset.decode_pred(x, 0))
 
 
 
-max_epochs = 50
+max_epochs = 100
 num_train_iters = len(train_dataloader) * max_epochs
 
 trainer = TrainerModule('Program-Encoder-Decoder', next(it), num_train_iters, num_classes=sum(src_dataset.segment_sizes), seg_sizes=src_dataset.segment_sizes)
