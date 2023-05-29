@@ -46,11 +46,16 @@ if __name__ == "__main__":
     # from os import chdir
     # chdir('../')
     from data.program_dataloader import TorchProgramDataset
-    dataset = TorchProgramDataset(500000)
-    sw = StreamWriter('.data/p2p_dataset/', dataset)
+    dataset = TorchProgramDataset(100000, shuffled_inputs=False)
+    sw = StreamWriter('.data/p2p_dataset_unshuffled/', dataset)
     sw.write_samples(num_threads=20)
 
-    reader = StreamReader('.data/p2p_dataset/')
+    reader = StreamReader('.data/p2p_dataset_unshuffled/')
+    # dataset = TorchProgramDataset(500000)
+    # sw = StreamWriter('.data/p2p_dataset/', dataset)
+    # sw.write_samples(num_threads=20)
+
+    # reader = StreamReader('.data/p2p_dataset/')
     x,y = reader.__getitem__(1)
 
 
@@ -60,3 +65,4 @@ if __name__ == "__main__":
     for i in range(5000):
         x,y = next(it)
     
+#%%
