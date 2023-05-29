@@ -301,7 +301,7 @@ model_args = dict(enc_layers=2,
                   attention_dim=240, 
                   attention_heads=24, 
                   dim_feedforward=256, 
-                  latent_dim=240, latent_reshaped_steps=20,
+                  latent_dim=240, #latent_reshaped_steps=20,
                   dropout_prob=0.0,
                   input_dropout_prob=0.0)
 
@@ -336,7 +336,7 @@ print(src_dataset.decode_pred(x, 0))
 
 
 #%%
-trainer = TrainerModule(f'4 P2P lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs} - {model_args}', 
+trainer = TrainerModule(f'9 pose P2P lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
                         next(it), 
                         num_train_iters, 
                         dataset=src_dataset, 
