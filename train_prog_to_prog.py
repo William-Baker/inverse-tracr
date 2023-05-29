@@ -281,7 +281,8 @@ from data.dataloader_streams import StreamReader
 dataset = StreamReader('.data/p2p_dataset/')
 
 collate_fn = partial(TorchProgramDataset.collate_fn, 30)
-train_dataloader = DataLoader(dataset, batch_size=64, collate_fn=collate_fn, num_workers=8, prefetch_factor=4, shuffle=True)#, pin_memory=True)
+batch_size=256
+train_dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=3, shuffle=True)#, pin_memory=True)
 
 it = iter(train_dataloader)
 x,y = next(it)
@@ -300,21 +301,27 @@ print(src_dataset.decode_pred(x, 0))
 
 
 
-max_epochs = 100
+max_epochs = 30
+LEARNING_RATE=1e-5
 num_train_iters = len(train_dataloader) * max_epochs
 #model_args = dict(enc_layers=7, dec_layers=7, input_dense=512, attention_dim=128, attention_heads=24, dim_feedforward=512, latent_dim=256, latent_reshaped_steps=20)
 model_args = dict(enc_layers=7, 
                   dec_layers=7, 
-                  input_dense=240, 
-                  attention_dim=240, 
+                  input_dense=960, 
+                  attention_dim=960, 
                   attention_heads=24, 
-                  dim_feedforward=256, 
-                  latent_dim=240, latent_reshaped_steps=20,
+                  dim_feedforward=1024, 
+                  latent_dim=960, latent_reshaped_steps=20,
                   dropout_prob=0.0,
                   input_dropout_prob=0.0)
 
 #%%
-trainer = TrainerModule(f'P2P epcs: {max_epochs} - {model_args}', next(it), num_train_iters, dataset=src_dataset, **model_args)
+trainer = TrainerModule(f'P2P lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs} - {model_args}', 
+                        next(it), 
+                        num_train_iters, 
+                        dataset=src_dataset, 
+                        lr=LEARNING_RATE,
+                        **model_args)
 
 
 #%%
