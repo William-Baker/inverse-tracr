@@ -274,7 +274,7 @@ from data.dataloader_streams import StreamReader
 dataset = StreamReader('.data/p2p_dataset/')
 
 collate_fn = partial(TorchProgramDataset.collate_fn, 30)
-train_dataloader = DataLoader(dataset, batch_size=64, collate_fn=collate_fn, num_workers=8, prefetch_factor=4)#, pin_memory=True)
+train_dataloader = DataLoader(dataset, batch_size=64, collate_fn=collate_fn, num_workers=8, prefetch_factor=4, shuffle=True)#, pin_memory=True)
 
 it = iter(train_dataloader)
 x,y = next(it)
