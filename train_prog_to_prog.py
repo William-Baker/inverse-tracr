@@ -122,6 +122,13 @@ class TrainerModule:
             #rng, dropout_apply_rng = random.split(rng)
             logits = self.model.apply({'params': state.params}, inp_data, train=False)#, rngs={'dropout': dropout_apply_rng})
 
+            ptr = 0
+            loss = []
+            for i, seg_size in enumerate(self.seg_sizes):
+                loss.append(np.array(optax.softmax_cross_entropy_with_integer_labels(logits[:, :, ptr:ptr + seg_size], labels[:, :time_steps, i])))
+                ptr += seg_size
+
+            loss = np.stack(loss)
            
             acc = self.accuracy_fn(logits, labels)
 
@@ -139,7 +146,7 @@ class TrainerModule:
             classes = logit_classes_jnp(logits)
             
             time_steps = inp_data.shape[1]
-            heat_img = plot_orginal_heatmaps(labels[:, :time_steps, :], classes[:, :time_steps, :], self.dataset)
+            heat_img = plot_orginal_heatmaps(labels[:, :time_steps, :], classes[:, :time_steps, :], self.dataset, eq=loss)
 
             self.logger.add_image("verbose/heatmap", heat_img, global_step=step, dataformats='HWC')
 
