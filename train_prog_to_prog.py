@@ -295,8 +295,17 @@ print(src_dataset.decode_pred(x, 0))
 
 max_epochs = 100
 num_train_iters = len(train_dataloader) * max_epochs
+#model_args = dict(enc_layers=7, dec_layers=7, input_dense=512, attention_dim=128, attention_heads=24, dim_feedforward=512, latent_dim=256, latent_reshaped_steps=20)
+model_args = dict(enc_layers=7, 
+                  dec_layers=7, 
+                  input_dense=240, 
+                  attention_dim=240, 
+                  attention_heads=24, 
+                  dim_feedforward=256, 
+                  latent_dim=240, latent_reshaped_steps=20)
 
-trainer = TrainerModule('Program-Encoder-Decoder', next(it), num_train_iters, dataset=src_dataset)
+#%%
+trainer = TrainerModule(f'P2P epcs: {max_epochs} - {model_args}', next(it), num_train_iters, dataset=src_dataset, **model_args)
 
 
 #%%
