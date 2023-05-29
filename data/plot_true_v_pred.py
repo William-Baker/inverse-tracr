@@ -4,8 +4,9 @@ import plotly.figure_factory as ff
 from PIL import Image
 import io
 import numpy as np
-def plot_orginal_heatmaps(y, pred, dataset, BATCH_ID=0):
-    eq = y == pred
+def plot_orginal_heatmaps(y, pred, dataset, BATCH_ID=0, loss=None):
+    eq = (y == pred).astype(int)
+    
 
     desc_y = [i.split(" ") for i in dataset.decode_pred(y, BATCH_ID).split("\n")]
     desc_y_other = [i.split(" ") for i in dataset.decode_pred(pred, BATCH_ID).split("\n")]
@@ -15,8 +16,8 @@ def plot_orginal_heatmaps(y, pred, dataset, BATCH_ID=0):
 
 
     
-
-    batch_eq = np.flip(eq[BATCH_ID, :, :].astype(int), 0)
+    
+    batch_eq = np.flip(eq[BATCH_ID, :, :], 0)
     text = np.flip(np.array(padded_desc_y)[:-1, :], 0)
     
     fig1 = ff.create_annotated_heatmap(batch_eq, annotation_text=text)
@@ -24,6 +25,9 @@ def plot_orginal_heatmaps(y, pred, dataset, BATCH_ID=0):
                     margin=dict(l=20, r=20, t=20, b=20),
     )
     
+    if loss is None:
+        loss = eq
+    batch_eq = np.flip(loss[BATCH_ID, :, :], 0)
     text = np.flip(np.array(padded_desc_y_other)[:-1, :], 0)
     
     fig2 = ff.create_annotated_heatmap(batch_eq, annotation_text=text)

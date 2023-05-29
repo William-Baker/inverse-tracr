@@ -118,10 +118,23 @@ class TrainerModule:
         self.eval_step = jax.jit(eval_step)
 
         def verbose_step(state, batch, step):
+            # labels = (batch_size, max_time_steps, ordinal_features)
             inp_data, labels = batch
             #rng, dropout_apply_rng = random.split(rng)
-            logits = self.model.apply({'params': state.params}, inp_data, train=False)#, rngs={'dropout': dropout_apply_rng})
 
+            # logits = (batch_size, time_steps, features)
+            logits = self.model.apply({'params': state.params}, inp_data, train=False)#, rngs={'dropout': dropout_apply_rng})
+            
+            time_steps = inp_data.shape[1]
+            ptr = 0
+            loss = []
+            for i, seg_size in enumerate(self.seg_sizes):
+                loss.append(np.array(optax.softmax_cross_entropy_with_integer_labels(logits[:, :, ptr:ptr + seg_size], labels[:, :time_steps, i])))
+                ptr += seg_size
+
+            # loss = (batch_size, time_steps, features)
+            loss = np.stack(loss, axis=2)
+            assert (loss.shape[0] == labels.shape[0]) and (loss.shape[2] == labels.shape[2])
            
             acc = self.accuracy_fn(logits, labels)
 
@@ -138,8 +151,8 @@ class TrainerModule:
                 return classes
             classes = logit_classes_jnp(logits)
             
-            time_steps = inp_data.shape[1]
-            heat_img = plot_orginal_heatmaps(labels[:, :time_steps, :], classes[:, :time_steps, :], self.dataset)
+            
+            heat_img = plot_orginal_heatmaps(labels[:, :time_steps, :], classes[:, :time_steps, :], self.dataset, loss=loss)
 
             self.logger.add_image("verbose/heatmap", heat_img, global_step=step, dataformats='HWC')
 
@@ -262,7 +275,39 @@ class TrainerModule:
         return os.path.isfile(os.path.join(CHECKPOINT_PATH, f'{self.model_name}.ckpt'))
 
 
+#%%
 
+# max_epochs = 30
+# LEARNING_RATE=1e-5
+
+# model_args = dict(enc_layers=7, 
+#                   dec_layers=7, 
+#                   input_dense=960, 
+#                   attention_dim=960, 
+#                   attention_heads=24, 
+#                   dim_feedforward=1024, 
+#                   latent_dim=960, latent_reshaped_steps=20,
+#                   dropout_prob=0.0,
+#                   input_dropout_prob=0.0)
+
+# batch_size=128
+
+max_epochs = 30
+LEARNING_RATE=1e-3
+
+model_args = dict(enc_layers=2, 
+                  dec_layers=2, 
+                  input_dense=240, 
+                  attention_dim=240, 
+                  attention_heads=24, 
+                  dim_feedforward=256, 
+                  latent_dim=240, latent_reshaped_steps=20,
+                  dropout_prob=0.0,
+                  input_dropout_prob=0.0)
+
+batch_size=2
+
+#%%
 
 
 
@@ -274,42 +319,24 @@ from data.dataloader_streams import StreamReader
 dataset = StreamReader('.data/p2p_dataset_unshuffled/')
 
 collate_fn = partial(TorchProgramDataset.collate_fn, 30)
-batch_size=256
+
+
+
+
 train_dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=3, shuffle=True)#, pin_memory=True)
+num_train_iters = len(train_dataloader) * max_epochs
 
 it = iter(train_dataloader)
 x,y = next(it)
 
-#%%
-
-
 print(src_dataset.decode_pred(y, 0))
 print(src_dataset.decode_pred(x, 0))
 
-#%%
-
-# for i in range(0,1000):
-#     x,y = next(it)
 
 
-
-
-max_epochs = 30
-LEARNING_RATE=1e-5
-num_train_iters = len(train_dataloader) * max_epochs
-#model_args = dict(enc_layers=7, dec_layers=7, input_dense=512, attention_dim=128, attention_heads=24, dim_feedforward=512, latent_dim=256, latent_reshaped_steps=20)
-model_args = dict(enc_layers=4, 
-                  dec_layers=4, 
-                  input_dense=240, 
-                  attention_dim=240, 
-                  attention_heads=24, 
-                  dim_feedforward=2048, 
-                  latent_dim=240, latent_reshaped_steps=20,
-                  dropout_prob=0.0,
-                  input_dropout_prob=0.0)
 
 #%%
-trainer = TrainerModule(f'2 P2P lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs} - {model_args}', 
+trainer = TrainerModule(f'4 P2P lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs} - {model_args}', 
                         next(it), 
                         num_train_iters, 
                         dataset=src_dataset, 
