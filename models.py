@@ -146,7 +146,6 @@ class EncoderDecoder(nn.Module):
     attention_heads: int =20
     dim_feedforward: int =512
     latent_dim: int =256
-    latent_reshaped_steps: int =20
     def setup(self):
         # attention heads will not work unless this equality is integer
         assert ((3*self.attention_dim / self.attention_heads) / 3).is_integer()
@@ -157,7 +156,8 @@ class EncoderDecoder(nn.Module):
                         num_heads=self.attention_heads,
                         dim_feedforward=self.dim_feedforward,
                         dropout_prob=self.dropout_prob)
-        self.adapter_dense = nn.Dense(self.latent_dim * self.latent_reshaped_steps)
+        self.adapter_dense = nn.Dense(self.latent_dim * self.attention_heads)
+        self.pos_enc = PositionalEncoding(self.latent_dim)
         self.decoder = TransformerEncoder(num_layers=self.dec_layers,
                         input_dim=self.attention_dim,
                         num_heads=self.attention_heads,
@@ -178,7 +178,8 @@ class EncoderDecoder(nn.Module):
         e = self.encoder(i, mask, train=train)
         e = jnp.mean(e, axis=1)
         e = self.adapter_dense(e)
-        e = e.reshape(-1, self.latent_reshaped_steps, self.latent_dim)
+        e = e.reshape(-1, self.attention_heads, self.latent_dim)
+        e = self.pos_enc(e)
         d = self.decoder(e, mask, train=train)
         o = d
         for l in self.output_net:
