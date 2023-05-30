@@ -151,6 +151,7 @@ class EncoderDecoder(nn.Module):
         assert ((3*self.attention_dim / self.attention_heads) / 3).is_integer()
         self.input_dropout = nn.Dropout(self.input_dropout_prob)
         self.input_layer = nn.Dense(self.input_dense)
+        self.input_pos_encoder = PositionalEncoding(self.input_dense)
         self.encoder = TransformerEncoder(num_layers=self.enc_layers,
                         input_dim=self.attention_dim,
                         num_heads=self.attention_heads,
@@ -175,6 +176,7 @@ class EncoderDecoder(nn.Module):
     def __call__(self, x, mask=None, train=True):
         x = self.input_dropout(x, deterministic=not train)
         i = self.input_layer(x)
+        i = self.input_pos_encoder(i)
         e = self.encoder(i, mask, train=train)
         e = jnp.mean(e, axis=1)
         e = self.adapter_dense(e)
