@@ -15,8 +15,10 @@ from tracr.craft import bases
 from tracr.rasp import rasp
 from tracr.craft.transformers import MultiAttentionHead, MLP
 from dataclasses import dataclass
-from utils.canonical_ordering import sort_program
-from utils.rasp_operators import *
+from canonical_ordering import sort_program
+from rasp_operators import *
+import numpy as np
+from sigterm import guard_timeout, TimeoutException
 
 
 
@@ -462,23 +464,31 @@ def encode_craft_model(craft_model):
 
 
 #%% ====== encoder with timeout ==================
-#import multiprocessing
-# dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
-# multiprocessing.reduction.ForkingPickler = dill.Pickler
-# multiprocessing.reduction.dump = dill.dump
-# multiprocessing.context.reduction._ForkingPickler = dill.Pickler
+import multiprocessing, dill
+dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
+multiprocessing.reduction.ForkingPickler = dill.Pickler
+multiprocessing.reduction.dump = dill.dump
+multiprocessing.context.reduction._ForkingPickler = dill.Pickler
 
-"""def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
+def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple, timeout_multiplier=1.0):
+    max_prog_complexity = max(ops_range)
+    CRAFT_TIMEOUT = 0.2 + 0.00001 * max_prog_complexity ** 4 # 10 op programs take 0.2 seconds, 15 op programs take 0.5, 30 op programs take 4 seconds
+    CRAFT_TIMEOUT *= timeout_multiplier
     n_ops = randint(*ops_range)
     vocab_size = randint(*vocab_size_range)
     max_seq_len = randint(*max_sequence_lenghts_range)
     TARGET_PROGRAM_LENGTH = max(ops_range) // 2
-    CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs take 0.6
 
     vocab = gen_vocab(max(ops_range), prefix='t')
 
     def time_sensitive(return_dict):
-        program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
+        try:
+            program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
+        except Exception as E:
+            if isinstance(E, np.core._exceptions._ArrayMemoryError):
+                print("mem alloc err")
+            else:
+                raise E
         craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
         encoded_ops = encode_ops(actual_ops)
         encoded_model = encode_craft_model(craft_model)
@@ -506,28 +516,35 @@ def encode_craft_model(craft_model):
             print("craft model was none, not sure why, but repeating")
 
 
-    return encoded_model, encoded_ops"""
-
-from utils.sigterm import guard_timeout, TimeoutException
-
-def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple, timeout_multiplier=1.0):
-    CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs take 0.6
-    CRAFT_TIMEOUT *= timeout_multiplier
-    craft_model, actual_ops = None, None
-    while craft_model is None:
-        try:
-            with guard_timeout(CRAFT_TIMEOUT):
-                craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
-        except Exception as E:
-            if isinstance(E, TimeoutException):
-                pass
-            else:
-                raise(E)
-            
-    encoded_ops = encode_ops(actual_ops)
-    encoded_model = encode_craft_model(craft_model)
-
     return encoded_model, encoded_ops
+
+
+
+# def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple, timeout_multiplier=1.0):
+#     CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs take 0.6
+#     CRAFT_TIMEOUT *= timeout_multiplier
+#     craft_model, actual_ops = None, None
+#     while craft_model is None:
+#         try:
+#             with guard_timeout(CRAFT_TIMEOUT):
+#                 craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
+#         except Exception as E:
+#             if isinstance(E, TimeoutException):
+#                 #print("timeout handled")
+#                 pass
+#             elif isinstance(E, np.core._exceptions._ArrayMemoryError):
+#                 # occassionally a really large memory allocation is attempted
+#                 # /tracr/compiler/expr_to_craft_graph.py ln 181
+#                 # /tracr/craft/vectorspace_fns.py, ln 85
+#                 # /tracr/craft/bases.py ln 176 
+#                 print("mem alloc handled")
+#             else:
+#                 raise(E)
+            
+#     encoded_ops = encode_ops(actual_ops)
+#     encoded_model = encode_craft_model(craft_model)
+
+#     return encoded_model, encoded_ops
 
 def program_craft_generator_unbounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
     craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)

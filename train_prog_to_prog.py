@@ -346,7 +346,7 @@ batch_size=128
 src_dataset = TorchProgramDataset()
 
 from data.dataloader_streams import StreamReader
-dataset = StreamReader('.data/p2p_dataset_unshuffled/')
+dataset = StreamReader('.data/p2p_dataset/')#_unshuffled/')
 
 collate_fn = partial(TorchProgramDataset.collate_fn, 30)
 
@@ -366,7 +366,7 @@ print(src_dataset.decode_pred(x, 0))
 
 
 #%%
-trainer = TrainerModule(f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
+trainer = TrainerModule('no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
                         next(it), 
                         num_train_iters, 
                         dataset=src_dataset, 

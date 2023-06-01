@@ -178,7 +178,7 @@ class EncoderDecoder(nn.Module):
         i = self.input_layer(x)
         i = self.input_pos_encoder(i)
         e = self.encoder(i, mask, train=train)
-        e = jnp.mean(e, axis=1)
+        # e = jnp.mean(e, axis=1)
         e = self.adapter_dense(e)
         e = e.reshape(-1, self.attention_heads, self.latent_dim)
         e = self.pos_enc(e)

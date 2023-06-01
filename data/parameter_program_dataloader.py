@@ -14,14 +14,15 @@ END_TOKEN = 'PROGRAM_END'
 from dataset import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
 
 class TorchParameterProgramDataset(torch.utils.data.Dataset):
-    def __init__(self, no_samples = 10000, generator_backend=Union['bounded', 'unbounded'], bounded_timeout_multiplier=1):
+    def __init__(self, prog_len: int, no_samples = 10000, generator_backend=Union['bounded', 'unbounded'], bounded_timeout_multiplier=1):
         self.no_samples = no_samples
         func = program_craft_generator_unbounded
         if generator_backend == 'bounded':
             func = program_craft_generator_bounded
-        self.gen, OP_VOCAB, VAR_VOCAB = craft_dataset((30,30), func=func, timeout_multiplier=bounded_timeout_multiplier)
+        self.prog_len = prog_len
+        self.gen, OP_VOCAB, VAR_VOCAB = craft_dataset((prog_len,prog_len), func=func, timeout_multiplier=bounded_timeout_multiplier)
         self.it = iter(self.gen())
-        self.prog_len = 30
+        
         OP_VOCAB_SIZE, VAR_VOCAB_SIZE = len(OP_VOCAB), len(VAR_VOCAB)
         
         self.OP_VOCAB_SIZE = OP_VOCAB_SIZE
@@ -109,39 +110,45 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
                     translated += " " + self.var_decoder[pred[t, i].item()]
             translated += "\n"
         return translated
-    
-from torch.utils.data import DataLoader
-
-dataset = TorchParameterProgramDataset('bounded', bounded_timeout_multiplier=10)
-#train_dataloader = DataLoader(dataset, batch_size=2, num_workers=8, prefetch_factor=2, collate_fn=partial(TorchParameterProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
-train_dataloader = DataLoader(dataset, batch_size=1, num_workers=2, 
-                              prefetch_factor=2, )
-                              #collate_fn=partial(TorchParameterProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
 
 
 
-it = iter(train_dataloader)
 
 
-x,y = next(it)
-# %%
+if __name__ == "__main__":
+    from torch.utils.data import DataLoader
 
-# x,y = next(it)
+    dataset = TorchParameterProgramDataset(generator_backend='bounded', bounded_timeout_multiplier=10)
 
-# print(dataset.decode_pred(x, 0))
-
-# print(dataset.decode_pred(y, 0))
-
-# %%
-
-# dataset.logit_classes_np(x[0, :, :])
-
-
-#%%
-import time
-print("timing")
-start = time.time()
-for i in range(10):
+    it = iter(dataset)
     x,y = next(it)
-end = time.time()
-print(end - start)
+
+    #train_dataloader = DataLoader(dataset, batch_size=2, num_workers=8, prefetch_factor=2, collate_fn=partial(TorchParameterProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
+    train_dataloader = DataLoader(dataset, batch_size=1, num_workers=1, 
+                                prefetch_factor=2, )
+                                #collate_fn=partial(TorchParameterProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
+
+
+
+    it = iter(train_dataloader)
+
+
+    x,y = next(it)
+
+    # x,y = next(it)
+
+    # print(dataset.decode_pred(x, 0))
+
+    # print(dataset.decode_pred(y, 0))
+
+
+    # dataset.logit_classes_np(x[0, :, :])
+
+
+    import time
+    print("timing")
+    start = time.time()
+    for i in range(10):
+        x,y = next(it)
+    end = time.time()
+    print(end - start)

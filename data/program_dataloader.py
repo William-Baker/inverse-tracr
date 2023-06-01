@@ -10,7 +10,7 @@ from random import shuffle
 START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'
 
-from data.dataset import program_dataset
+from dataset import program_dataset
 
 class TorchProgramDataset(torch.utils.data.Dataset):
     def __init__(self, no_samples = 10000, shuffled_inputs=True):

@@ -132,7 +132,7 @@ class ProgramDataset(torch.utils.data.Dataset):
 
 import pandas as pd
 
-class ProgramDatasetFromFile(torch.utils.data.Dataset):
+class ProgramDatasetFromFile(torch.utils.Dataset):
     def __init__(self, program_file='program_dataset.pkl'):
         self.programs = pd.read_pickle(program_file)
         meta = pd.read_pickle('program_meta.pkl')
