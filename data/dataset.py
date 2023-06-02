@@ -469,6 +469,8 @@ dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
 multiprocessing.reduction.ForkingPickler = dill.Pickler
 multiprocessing.reduction.dump = dill.dump
 multiprocessing.context.reduction._ForkingPickler = dill.Pickler
+from collections import deque
+from statistics import mean
 
 def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple, timeout_multiplier=1.0):
     max_prog_complexity = max(ops_range)
@@ -480,6 +482,15 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, m
     TARGET_PROGRAM_LENGTH = max(ops_range) // 2
 
     vocab = gen_vocab(max(ops_range), prefix='t')
+
+    # Self optimising timeout to adapt to local compute performance
+    # if the average of the tally of successes to failures is less thatn the target, 
+    # the time will increase to be successful more often
+    termination_tally = deque([0, 0, 0, 0, 0, 0, 1, 1, 1, 1],maxlen=30)
+    IDEAL_FAILURE_RATIO = 0.4
+
+    
+        
 
     def time_sensitive(return_dict):
         try:
@@ -503,6 +514,8 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, m
         p.start()
         p.join(CRAFT_TIMEOUT)
         while p.is_alive(): # the process hasnt finished yet
+            termination_tally.append(1) # we had a failure
+            CRAFT_TIMEOUT = max(0.2, CRAFT_TIMEOUT + mean(termination_tally) - IDEAL_FAILURE_RATIO) # update timeout
             p.terminate()   # kill it
             p.join()        # delete the thread
             p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
@@ -514,6 +527,8 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, m
             encoded_ops = return_dict['actual_ops'] 
         except:
             print("craft model was none, not sure why, but repeating")
+        termination_tally.append(0)
+        CRAFT_TIMEOUT = max(0.2, CRAFT_TIMEOUT + mean(termination_tally) - IDEAL_FAILURE_RATIO) # update timeout
 
 
     return encoded_model, encoded_ops
