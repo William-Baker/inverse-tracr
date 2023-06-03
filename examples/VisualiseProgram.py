@@ -4,6 +4,7 @@ import jax
 import sys
 sys.path.append('tracr/')
 
+
 from utils.plot import *
 
 # The default of float16 can lead to discrepancies between outputs of
@@ -75,13 +76,34 @@ def get_program(program_name, max_seq_len):
     program = lib.make_pair_balance(
         sop=rasp.tokens, open_token="(", close_token=")")
     input_seq = "(()()"
+  elif program_name == "map_test":
+    vocab = {1,2,3,4,5}
+    program = rasp.Map(lambda x: x > 4, rasp.tokens)
+    input_seq = [1,2]
+  elif program_name == "map_test_b":
+    vocab = {1,2,3,4,5}
+    program = rasp.Map(lambda x: x < 1, rasp.Map(lambda x: x > 1, rasp.tokens))
+    input_seq = [1,2]
+  elif program_name == "map_test_c":
+    vocab = {1,2,3,4,5}
+    input_seq = [1,2]
+    def p():
+      a = rasp.Map(lambda x: x > 1, rasp.tokens)
+      b = rasp.Map(lambda x: x > 2, a)
+      c = rasp.Map(lambda x: x >= 3, b)
+      d = rasp.Map(lambda x: x < 2, c)
+      e = rasp.Map(lambda x: x >= 2, d)
+      f = rasp.Map(lambda x: x <= 1, e)
+      return f
+    program = p()
+    
   else:
     raise NotImplementedError(f"Program {program_name} not implemented.")
   return program, vocab, input_seq
 
 
 #%%
-prog_name = "sort_unique"
+prog_name = "map_test_c"
 program, vocab, input_seq = get_program(prog_name, 6)
 vocab = set(list(input_seq))
 formatted_input = ["bos"] + list(input_seq)

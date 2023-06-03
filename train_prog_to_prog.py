@@ -343,7 +343,7 @@ batch_size=128
 
 
 
-src_dataset = TorchProgramDataset()
+src_dataset = TorchProgramDataset(30)
 
 from data.dataloader_streams import StreamReader
 dataset = StreamReader('.data/p2p_dataset/')#_unshuffled/')
@@ -366,7 +366,7 @@ print(src_dataset.decode_pred(x, 0))
 
 
 #%%
-trainer = TrainerModule('no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
+trainer = TrainerModule('testing',#'no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
                         next(it), 
                         num_train_iters, 
                         dataset=src_dataset, 

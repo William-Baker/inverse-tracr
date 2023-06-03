@@ -10,15 +10,16 @@ from random import shuffle
 START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'
 
-from dataset import program_dataset
+from data.dataset import program_dataset
 
 class TorchProgramDataset(torch.utils.data.Dataset):
-    def __init__(self, no_samples = 10000, shuffled_inputs=True):
+    def __init__(self, prog_len, no_samples = 10000, shuffled_inputs=True):
         self.shuffled_inputs = shuffled_inputs
         self.no_samples = no_samples
-        self.gen, OP_VOCAB, VAR_VOCAB = program_dataset((30,30))
+        self.prog_len = prog_len
+        self.gen, OP_VOCAB, VAR_VOCAB = program_dataset((prog_len,prog_len))
         self.it = iter(self.gen())
-        self.prog_len = 30
+        
         OP_VOCAB_SIZE, VAR_VOCAB_SIZE = len(OP_VOCAB), len(VAR_VOCAB)
         
         self.OP_VOCAB_SIZE = OP_VOCAB_SIZE
@@ -119,7 +120,7 @@ class TorchProgramDataset(torch.utils.data.Dataset):
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
 
-    dataset = TorchProgramDataset()
+    dataset = TorchProgramDataset(30)
     train_dataloader = DataLoader(dataset, batch_size=32, num_workers=8, prefetch_factor=2, collate_fn=partial(TorchProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
 
 

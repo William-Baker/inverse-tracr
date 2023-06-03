@@ -51,7 +51,7 @@ class StreamReader:
     def __len__(self):
         return len(self.files)
     def __getitem__(self, idx):
-        loaded = np.load(self.dir + self.files[idx])
+        loaded = np.load(self.dir + self.files[idx], allow_pickle=True)
         return loaded['x'].squeeze(), loaded['y'].squeeze()
 
 
@@ -64,7 +64,7 @@ if __name__ == "__main__":
     # from os import chdir
     # chdir('../')
     if mode == 'programs':
-        from program_dataloader import TorchProgramDataset
+        from data.program_dataloader import TorchProgramDataset
         dataset = TorchProgramDataset(100000, shuffled_inputs=shuffled)
         pth = '.data/p2p_dataset/' if shuffled else '.data/p2p_dataset_unshuffled/'
         sw = StreamWriter(pth, dataset)
@@ -78,14 +78,15 @@ if __name__ == "__main__":
         N = 10
         samples = 100000
         for i in range(10):
-            cmd = f"python data/generate_parameter_partial_dataset.py -off 800 -s {samples} -pn {N} -idn {i}"
+            #os.chdir('../')
+            cmd = f"python generate_parameter_partial_dataset.py -off 200000 -s {samples} -pn {N} -idn {i}"
             #os.system(f"python data/generate_parameter_partial_dataset.py -s {samples} -pn {N} -idn {i}")
             #pid = subprocess.Popen([sys.executable, cmd])
             #p = subprocess.Popen(["start", "cmd", "/k", cmd], shell = True)#os.system("start /wait cmd /c {command}")
             #os.system(f"cmd /c {cmd}")
             #subprocess.call(cmd, shell=True)
-            #subprocess.Popen(cmd, shell=True)
-            print(cmd)
+            subprocess.Popen(cmd, shell=True)
+            # print(cmd)
 
             
 

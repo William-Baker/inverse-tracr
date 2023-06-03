@@ -11,7 +11,7 @@ from typing import Union
 START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'
 
-from dataset import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
+from data.dataset import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
 
 class TorchParameterProgramDataset(torch.utils.data.Dataset):
     def __init__(self, prog_len: int, no_samples = 10000, generator_backend=Union['bounded', 'unbounded'], bounded_timeout_multiplier=1):

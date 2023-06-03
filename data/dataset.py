@@ -15,10 +15,10 @@ from tracr.craft import bases
 from tracr.rasp import rasp
 from tracr.craft.transformers import MultiAttentionHead, MLP
 from dataclasses import dataclass
-from canonical_ordering import sort_program
-from rasp_operators import *
+from data.canonical_ordering import sort_program
+from data.rasp_operators import *
 import numpy as np
-from sigterm import guard_timeout, TimeoutException
+from data.sigterm import guard_timeout, TimeoutException
 
 
 
@@ -598,9 +598,9 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
     OP_VOCAB = list(RASP_OPS.cls.apply(lambda x: x.__name__))
     var_name_iter = iter_var_names()
     VAR_VOCAB = ['tokens', 'indices'] \
-                    + [next(var_name_iter) for x in range(0, max(ops_range))]  \
                     + list(NAMED_PREDICATES.values()) \
-                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM]
+                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM] \
+                    + [next(var_name_iter) for x in range(0, max(ops_range))] 
     
     if timeout_multiplier is not None:
         lambda x,y,z: func(x,y,z, timeout_multiplier=timeout_multiplier)
@@ -636,9 +636,10 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_leng
     OP_VOCAB = list(RASP_OPS.cls.apply(lambda x: x.__name__))
     var_name_iter = iter_var_names()
     VAR_VOCAB = ['tokens', 'indices'] \
-                    + [next(var_name_iter) for x in range(0, max(ops_range))]  \
                     + list(NAMED_PREDICATES.values()) \
-                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM]
+                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM] \
+                    + [next(var_name_iter) for x in range(0, max(ops_range))] 
+                    
     def gen():
         while True:
             actual_ops = program_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)

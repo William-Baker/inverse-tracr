@@ -40,7 +40,7 @@
 
 #%%
 
-from rasp_operators import RASP_OPS, UNI_LAMBDAS, SEQUENCE_LAMBDAS, NAMED_PREDICATES
+from data.rasp_operators import RASP_OPS, UNI_LAMBDAS, SEQUENCE_LAMBDAS, NAMED_PREDICATES
 import numpy as np
 
 # In decending order of predence here is our operator ordering
