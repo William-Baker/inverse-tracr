@@ -14,6 +14,8 @@ layer_components = []
 it = iter(dataset)
 for _ in range(len(dataset)):
     x,y = next(it)
+    x = x.reshape(-1)
+    y = y.reshape(-1)
     if x.shape == ():
         print("empty sample")
         print(y)
@@ -31,6 +33,62 @@ for _ in range(len(dataset)):
 import pandas as pd
 print(pd.Series(layer_names).value_counts())
 print(pd.Series(layer_components).value_counts())
+
+# HEAD    383036
+# MLP     293807
+
+#%%
+
+# inputs will be formatted as
+# | Timestep type | Parameter block | Architecture |
+# 
+# Timestep type: {PAD, w_qk, w_ov, fst, snd}
+# Parameter block upto 512 floats 
+# Architecture concatenated onehot encoded layer types e.g. Head, MLP, head = [100110<PAD>]
+#  (padded upto the program length x2)
+
+TIMESTEP_ENCODER = dict(zip(['PAD', 'w_qk', 'w_ov', 'fst', 'snd'], range(5)))
+PARAMETER_BLOCK_SZ = 512
+ARCHITECTURE_ENCODER = {'PAD': 0, 'HEAD': 1, 'MLP': 2}
+
+TIMESTEP_DECODER = dict(zip(TIMESTEP_ENCODER.values(), TIMESTEP_ENCODER.keys()))
+ARCHITECTURE_DECODER = dict(zip(ARCHITECTURE_ENCODER.values(), ARCHITECTURE_ENCODER.keys()))
+
+from typing import Sequence
+def encode_architecture(layer_types: Sequence[str], max_prog_length: int):
+    encoding = np.zeros((max_prog_length, len(ARCHITECTURE_ENCODER)))
+    for layer_no, layer_name in enumerate(layer_types):
+        encoding[layer_no, ARCHITECTURE_ENCODER[layer_name]] = 1
+    return encoding.reshape(-1)
+
+def decoder_architecture(encoding: np.ndarray):
+    encoding = encoding.reshape(-1, len(ARCHITECTURE_DECODER))
+    layer_types = [ARCHITECTURE_DECODER[idx] for idx in encoding.argmax(axis=1) if idx != 0]
+    return layer_types
+
+    
+
+def block_params(input_sequence: np.ndarray):
+    # dict of dict with values being the parameters
+    blocks = []
+    block_names = []
+    for layer in input_sequence:
+        for layer_name, layer_components in layer.items():
+            for component_name, component_params in layer_components.items():
+                flat_params = component_params.reshape(-1)
+                windows = np.arange(start=0, stop=flat_params.shape[0], step=PARAMETER_BLOCK_SZ)
+                for start in windows:
+                    end = start + PARAMETER_BLOCK_SZ
+                    if end < flat_params.shape[0]:
+                        blocks.append(flat_params[start:end])
+                    else:
+                        pad_wanting = flat_params[start:]
+                        padded = np.concatenate([pad_wanting, np.zeros(PARAMETER_BLOCK_SZ - pad_wanting.shape[0])])
+                        blocks.append(padded)
+                    block_names.append(component_name)
+    return (block_names, blocks)
+
+names, blocks = block_params(x)
 
 
 
