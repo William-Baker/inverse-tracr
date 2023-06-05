@@ -190,6 +190,48 @@ class EncoderDecoder(nn.Module):
 
 
 
+class Decoder(nn.Module):
+    num_classes: int
+    dropout_prob: float = 0.15
+    input_dropout_prob: float = 0.0
+    enc_layers: int =5
+    dec_layers: int =5
+    input_dense: int =512
+    attention_dim: int =128
+    attention_heads: int =20
+    dim_feedforward: int =512
+    latent_dim: int =256
+    def setup(self):
+        # attention heads will not work unless this equality is integer
+        assert ((3*self.attention_dim / self.attention_heads) / 3).is_integer()
+        self.input_dropout = nn.Dropout(self.input_dropout_prob)
+        self.input_layer = nn.Dense(self.input_dense)
+        self.input_pos_encoder = PositionalEncoding(self.input_dense)
+        self.decoder = TransformerEncoder(num_layers=self.dec_layers,
+                        input_dim=self.attention_dim,
+                        num_heads=self.attention_heads,
+                        dim_feedforward=self.dim_feedforward,
+                        dropout_prob=self.dropout_prob)
+        self.output_net = [
+            nn.Dense(self.dim_feedforward),
+            nn.LayerNorm(),
+            nn.relu,
+            nn.Dropout(self.dropout_prob),
+            nn.Dense(self.num_classes)
+        ]
+
+
+    def __call__(self, x, mask=None, train=True):
+        x = self.input_dropout(x, deterministic=not train)
+        i = self.input_layer(x)
+        i = self.input_pos_encoder(i)
+        d = self.decoder(i, mask, train=train)
+        o = d
+        for l in self.output_net:
+            o = l(o) if not isinstance(l, nn.Dropout) else l(x, deterministic=not train)
+        return o
+
+
 from flax.linen import combine_masks, make_causal_mask
 from typing import Any, Optional
 from flax.linen.attention import dot_product_attention_weights
