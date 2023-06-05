@@ -267,10 +267,11 @@ class TrainerModule:
         # Save current model at certain training iteration
         checkpoints.save_checkpoint(ckpt_dir=self.log_dir, target=self.state.params, step=step)
 
-    def load_model(self, pretrained=False):
+    def load_model(self, pretrained=False, log_dir=None):
         # Load model. We use different checkpoint for the pretrained model
+        log_dir = self.log_dir if log_dir is None else log_dir
         if not pretrained:
-            params = checkpoints.restore_checkpoint(ckpt_dir=self.log_dir, target=self.state.params)
+            params = checkpoints.restore_checkpoint(ckpt_dir=log_dir, target=self.state.params)
         else:
             params = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(CHECKPOINT_PATH, f'{self.model_name}.ckpt'), target=self.state.params)
         self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=params, tx=self.state.tx)
@@ -282,26 +283,13 @@ class TrainerModule:
 
 #%%
 
-# max_epochs = 30
-# LEARNING_RATE=1e-5
 
-# model_args = dict(enc_layers=7, 
-#                   dec_layers=7, 
-#                   input_dense=960, 
-#                   attention_dim=960, 
-#                   attention_heads=24, 
-#                   dim_feedforward=1024, 
-#                   latent_dim=960, 
-#                   dropout_prob=0.0,
-#                   input_dropout_prob=0.0)
-
-# batch_size=128
-
+# PARAMS_2
 # max_epochs = 100
 # LEARNING_RATE=1e-5
 
-# model_args = dict(enc_layers=7, 
-#                   dec_layers=7, 
+# model_args = dict(enc_layers=10, 
+#                   dec_layers=10, 
 #                   input_dense=1200, 
 #                   attention_dim=1200, 
 #                   attention_heads=30, 
@@ -312,8 +300,10 @@ class TrainerModule:
 
 # batch_size=128
 
+
+# PARAMS_2 fine
 max_epochs = 100
-LEARNING_RATE=1e-5
+LEARNING_RATE=1e-6
 
 model_args = dict(enc_layers=10, 
                   dec_layers=10, 
@@ -325,22 +315,8 @@ model_args = dict(enc_layers=10,
                   dropout_prob=0.05,
                   input_dropout_prob=0.0)
 
-batch_size=128
+batch_size=16
 
-# max_epochs = 30
-# LEARNING_RATE=1e-3
-
-# model_args = dict(enc_layers=2, 
-#                   dec_layers=2, 
-#                   input_dense=240, 
-#                   attention_dim=240, 
-#                   attention_heads=24, 
-#                   dim_feedforward=256, 
-#                   latent_dim=240, #latent_reshaped_steps=20,
-#                   dropout_prob=0.0,
-#                   input_dropout_prob=0.0)
-
-# batch_size=2
 
 #%%
 
@@ -389,13 +365,17 @@ x,y = next(it)
 
 
 #%%
-trainer = TrainerModule('PARAM_2',#'no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
+trainer = TrainerModule('PARAM_2_tune',#'no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
                         next(it), 
                         num_train_iters, 
                         dataset=src_dataset, 
                         lr=LEARNING_RATE,
                         **model_args)
 
+
+#%%
+
+trainer.load_model(log_dir='PARAM_2')
 
 #%%
 
