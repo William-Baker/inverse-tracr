@@ -120,16 +120,16 @@ def test_flat_match(src, B):
 
 
 
-class ParameterEncoderWrapper:
-    def __init__(self, src, max_prog_len: int) -> None:
-        self.src = src
-        self.max_prog_len = max_prog_len
-    def __len__(self):
-        return len(self.src)
-    def __getitem__(self, idx):
-        x,y = self.src.__getitem__(idx)
-        enc_x, y = encode_sample(x, y, max_prog_len=self.max_prog_len)
-        return enc_x, y
+# class ParameterEncoderWrapper:
+#     def __init__(self, src, max_prog_len: int) -> None:
+#         self.src = src
+#         self.max_prog_len = max_prog_len
+#     def __len__(self):
+#         return len(self.src)
+#     def __getitem__(self, idx):
+#         x,y = self.src.__getitem__(idx)
+#         enc_x, y = encode_sample(x, y, max_prog_len=self.max_prog_len)
+#         return enc_x, y
 
 
 

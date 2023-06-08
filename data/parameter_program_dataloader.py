@@ -6,6 +6,7 @@ from torch.nn.utils.rnn import pad_sequence
 from functools import partial
 import numpy as np
 from typing import Union
+from data.parameter_encoder import encode_sample
 
 
 START_TOKEN = 'PROGRAM_START'
@@ -67,14 +68,18 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
     def collate_fn(PROG_LEN, data):
         inputs = [torch.tensor(d[0], device='cpu') for d in data]
         targets = [torch.tensor(d[1], device='cpu') for d in data]
+        masks = [torch.tensor(d[2], device='cpu') for d in data]
         inputs = pad_sequence(inputs, batch_first=True)
-        targets = pad_sequence(targets, batch_first=True)
+        #targets = pad_sequence(targets, batch_first=True)
+
+        targets = torch.stack(targets)
+        masks = torch.stack(masks)
         
         # pad the inputs to be at least as long as the max output program length
         ammount_to_pad = PROG_LEN + 2 - inputs.shape[1]
         if ammount_to_pad > 0:
             inputs = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(inputs) # pad the inputs to the same length as the target at leas
-        return np.array(inputs), np.array(targets)
+        return np.array(inputs), np.array(targets), np.array(masks)
 
     def __len__(self):
         'Denotes the total number of samples'
@@ -103,7 +108,9 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
         mask = np.ones((sample_prog_length, y.shape[1]))
         mask = np.concatenate((mask,padding), axis=0)
 
-        return x,y,mask
+        enc_x, y = encode_sample(x, y, max_prog_len=max_prog_len)
+
+        return enc_x,y,mask
     
     def logit_classes_np(self, logits):
         classes = np.zeros((logits.shape[0], self.OP_VOCAB_SIZE))

@@ -345,12 +345,23 @@ PROG_LEN = 15
 src_dataset = TorchParameterProgramDataset(PROG_LEN)
 
 from data.dataloader_streams import StreamReader
-from data.parameter_exploratory import ParameterEncoderWrapper
-raw_dataset = StreamReader('.data/iTracr_dataset/')#_unshuffled/')
-dataset = ParameterEncoderWrapper(raw_dataset, PROG_LEN)
+
+
+class WrappedDataset(StreamReader):
+    def __init__(self, dir: str, max_prog_len: int) -> None:
+        super().__init__(dir)
+        self.max_prog_len = max_prog_len
+    
+    def __getitem__(self, idx):
+        x,y = super().__getitem__(idx)
+        x,y,mask = TorchParameterProgramDataset.post_process_step(self.max_prog_len, x=x, y=y)
+        return x,y,mask
+
+
+dataset = WrappedDataset('.data/iTracr_dataset/', PROG_LEN)
 
 import torch
-from torch.nn.utils.rnn import pad_sequence
+
 
 
 
@@ -363,7 +374,7 @@ train_dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate
 num_train_iters = len(train_dataloader) * max_epochs
 
 it = iter(train_dataloader)
-x,y = next(it)
+x,y,mask = next(it)
 
 print(src_dataset.decode_pred(y, 0))
 # print(src_dataset.decode_pred(x, 0))
