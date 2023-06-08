@@ -19,7 +19,7 @@ from functools import partial
 torch.cuda.is_available = lambda : False
 
 from torch.utils.data import DataLoader
-from data.program_dataloader import TorchProgramDataset
+from data.parameter_program_dataloader import TorchParameterProgramDataset
 from data.plot_true_v_pred import plot_orginal_heatmaps
 
 
@@ -301,22 +301,40 @@ class TrainerModule:
 # batch_size=128
 
 
-# PARAMS_2 fine
-max_epochs = 100
-LEARNING_RATE=1e-6
+# # PARAMS_2 fine
+# max_epochs = 100
+# LEARNING_RATE=1e-6
 
-model_args = dict(enc_layers=10, 
+# model_args = dict( 
+#                   dec_layers=10, 
+#                   input_dense=1200, 
+#                   attention_dim=1200, 
+#                   attention_heads=30, 
+#                   dim_feedforward=1024, 
+#                   latent_dim=1200, 
+#                   dropout_prob=0.05,
+#                   input_dropout_prob=0.0)
+
+# batch_size=16
+
+#10*30*1200*1200*3
+
+
+# PARAMS_2 fine
+max_epochs = 200
+LEARNING_RATE=1e-5
+
+model_args = dict( 
                   dec_layers=10, 
-                  input_dense=1200, 
-                  attention_dim=1200, 
+                  input_dense=300, 
+                  attention_dim=300, 
                   attention_heads=30, 
                   dim_feedforward=1024, 
-                  latent_dim=1200, 
+                  latent_dim=300, 
                   dropout_prob=0.05,
-                  input_dropout_prob=0.0)
+                  input_dropout_prob=0.05)
 
-batch_size=16
-
+batch_size=128
 
 #%%
 
@@ -324,7 +342,7 @@ batch_size=16
 
 PROG_LEN = 15
 
-src_dataset = TorchProgramDataset(PROG_LEN)
+src_dataset = TorchParameterProgramDataset(PROG_LEN)
 
 from data.dataloader_streams import StreamReader
 from data.parameter_exploratory import ParameterEncoderWrapper
@@ -334,20 +352,9 @@ dataset = ParameterEncoderWrapper(raw_dataset, PROG_LEN)
 import torch
 from torch.nn.utils.rnn import pad_sequence
 
-def collate_fn(data):
-        inputs = [torch.tensor(d[0], device='cpu') for d in data]
-        targets = [torch.tensor(d[1], device='cpu') for d in data]
-        inputs = pad_sequence(inputs, batch_first=True)
-        targets = pad_sequence(targets, batch_first=True)
-        ammount_to_pad = PROG_LEN + 2 - targets.shape[1]
-        targets = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(targets) # pad the target to the max possible length for the problem
 
-        ammount_to_pad = PROG_LEN + 2 - inputs.shape[1]
-        if ammount_to_pad > 0:
-            inputs = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(inputs) # pad the inputs to the same length as the target at leas
-        return np.array(inputs), np.array(targets)
 
-#collate_fn = partial(TorchProgramDataset.collate_fn, PROG_LEN)
+collate_fn = partial(TorchParameterProgramDataset.collate_fn, PROG_LEN)
 
 
 
@@ -358,14 +365,18 @@ num_train_iters = len(train_dataloader) * max_epochs
 it = iter(train_dataloader)
 x,y = next(it)
 
-# print(src_dataset.decode_pred(y, 0))
+print(src_dataset.decode_pred(y, 0))
 # print(src_dataset.decode_pred(x, 0))
 
+#%%
 
+d = iter(raw_dataset)
+x,y = next(d)
+y
 
 
 #%%
-trainer = TrainerModule('PARAM_2_tune',#'no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
+trainer = TrainerModule('PARAM_4_small',#'no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
                         next(it), 
                         num_train_iters, 
                         dataset=src_dataset, 
@@ -375,10 +386,10 @@ trainer = TrainerModule('PARAM_2_tune',#'no mean shuffled inputs pose in hid',#f
 
 #%%
 
-trainer.load_model(log_dir='PARAM_2')
+#trainer.load_model(log_dir='PARAM_2')
 
 #%%
-
+b
 trainer.train_model(train_dataloader, train_dataloader, num_epochs=max_epochs)
 
 

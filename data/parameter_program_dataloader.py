@@ -39,9 +39,10 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
         self.var_decoder = dict(zip(self.var_encoder.values(), self.var_encoder.keys()))
 
         self.segment_sizes = [self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE]
+        self.encoders = [self.op_encoder, self.var_encoder, self.var_encoder, self.var_encoder, self.var_encoder]
 
     def encode_program(program, op_encoder, var_encoder):
-        encoded = np.zeros((len(program)+1, 5), np.int32)
+        encoded = np.zeros((len(program)+2, 5), np.int32)
         encoded[0, 0] = op_encoder[START_TOKEN]
         for t, instruction in enumerate(program):
             # Loop through each operation which cotains list of {'op': 'SelectorWidth', 'p1': 'v1', 'p2': 'NA', 'p3': 'NA', 'r': 'v2'}
@@ -63,14 +64,17 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
                 ptr += segment_sizes[i]
         return one_hot
 
-    def collate_fn(prog_len, data):
+    def collate_fn(PROG_LEN, data):
         inputs = [torch.tensor(d[0], device='cpu') for d in data]
         targets = [torch.tensor(d[1], device='cpu') for d in data]
-        #inputs = pad_sequence(inputs, batch_first=True)
+        inputs = pad_sequence(inputs, batch_first=True)
         targets = pad_sequence(targets, batch_first=True)
-        ammount_to_pad = prog_len + 2 - targets.shape[1]
-        targets = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(targets) # pad the target to the max possible length for the problem
-        return inputs, targets
+        
+        # pad the inputs to be at least as long as the max output program length
+        ammount_to_pad = PROG_LEN + 2 - inputs.shape[1]
+        if ammount_to_pad > 0:
+            inputs = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(inputs) # pad the inputs to the same length as the target at leas
+        return np.array(inputs), np.array(targets)
 
     def __len__(self):
         'Denotes the total number of samples'
@@ -80,7 +84,26 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
         x, y = next(self.it)
         y = TorchParameterProgramDataset.encode_program(y, self.op_encoder, self.var_encoder)
         # x = TorchProgramDataset.encoded_program_to_onehot(y, self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.segment_sizes)
+        
+        # ammount_to_pad = self.prog_len + 2 - y.shape[0]
+        # y = np.concatenate((y,np.zeros((ammount_to_pad, y.shape[1]))), axis=0)
+        # y = y.astype(int)
+        # print(y.shape)
+        # assert (y.shape[0] == self.prog_len + 2) and (y.shape[1] == 5)
+
         return x,y
+
+    def post_process_step(max_prog_len, x, y):
+        sample_prog_length = y.shape[0]
+        ammount_to_pad = max_prog_len + 2 - y.shape[0]
+        padding = np.zeros((ammount_to_pad, y.shape[1]))
+        y = np.concatenate((y,padding), axis=0)
+        y = y.astype(int)
+
+        mask = np.ones((sample_prog_length, y.shape[1]))
+        mask = np.concatenate((mask,padding), axis=0)
+
+        return x,y,mask
     
     def logit_classes_np(self, logits):
         classes = np.zeros((logits.shape[0], self.OP_VOCAB_SIZE))
@@ -100,14 +123,14 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
 
         translated = str()
         for t in range(pred.shape[0]):
-            if pred[t, :].sum().item() == 0:
-                translated += "<PAD>\n"
-                continue
+            # if pred[t, :].sum().item() == 0:
+            #     translated += "<PAD>\n"
+            #     continue
             op = self.op_decoder[pred[t, 0].item()]
             translated += op
-            if op not in [START_TOKEN, END_TOKEN]:
-                for i in range(1,5):
-                    translated += " " + self.var_decoder[pred[t, i].item()]
+            # if op not in [START_TOKEN, END_TOKEN]:
+            for i in range(1,5):
+                translated += " " + self.var_decoder[pred[t, i].item()]
             translated += "\n"
         return translated
 
@@ -118,26 +141,23 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
 
-    dataset = TorchParameterProgramDataset(generator_backend='bounded', bounded_timeout_multiplier=10)
+    dataset = TorchParameterProgramDataset(15, generator_backend='bounded', bounded_timeout_multiplier=10)
 
     it = iter(dataset)
     x,y = next(it)
 
     #train_dataloader = DataLoader(dataset, batch_size=2, num_workers=8, prefetch_factor=2, collate_fn=partial(TorchParameterProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
-    train_dataloader = DataLoader(dataset, batch_size=1, num_workers=1, 
-                                prefetch_factor=2, )
+    # train_dataloader = DataLoader(dataset, batch_size=1, num_workers=1, 
+    #                             prefetch_factor=2, )
                                 #collate_fn=partial(TorchParameterProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
 
 
 
-    it = iter(train_dataloader)
 
-
-    x,y = next(it)
 
     # x,y = next(it)
 
-    # print(dataset.decode_pred(x, 0))
+    print(dataset.decode_pred(y.reshape(1, -1, 5), 0))
 
     # print(dataset.decode_pred(y, 0))
 
@@ -152,3 +172,5 @@ if __name__ == "__main__":
         x,y = next(it)
     end = time.time()
     print(end - start)
+
+# %%

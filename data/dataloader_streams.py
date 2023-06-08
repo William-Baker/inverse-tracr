@@ -75,11 +75,12 @@ if __name__ == "__main__":
         # pth = '.data/iTracr_dataset/'
         # sw = StreamWriter(pth, dataset)
         # sw.write_samples(num_threads=1)
-        N = 10
+        N = 20
         samples = 100000
-        for i in range(10):
+        offset  = 0
+        for i in range(N):
             #os.chdir('../')
-            cmd = f"python generate_parameter_partial_dataset.py -off 200000 -s {samples} -pn {N} -idn {i}"
+            cmd = f"python generate_parameter_partial_dataset.py -off {offset} -s {samples} -pn {N} -idn {i}"
             #os.system(f"python data/generate_parameter_partial_dataset.py -s {samples} -pn {N} -idn {i}")
             #pid = subprocess.Popen([sys.executable, cmd])
             #p = subprocess.Popen(["start", "cmd", "/k", cmd], shell = True)#os.system("start /wait cmd /c {command}")

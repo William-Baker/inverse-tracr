@@ -595,9 +595,9 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
                             - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
                     ]
     """
-    OP_VOCAB = list(RASP_OPS.cls.apply(lambda x: x.__name__))
+    OP_VOCAB = ['<PAD>'] + list(RASP_OPS.cls.apply(lambda x: x.__name__))
     var_name_iter = iter_var_names()
-    VAR_VOCAB = ['tokens', 'indices'] \
+    VAR_VOCAB = ['<PAD>'] + ['tokens', 'indices'] \
                     + list(NAMED_PREDICATES.values()) \
                     + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM] \
                     + [next(var_name_iter) for x in range(0, max(ops_range))] 
@@ -633,9 +633,9 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_leng
                             - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
                     ]
     """
-    OP_VOCAB = list(RASP_OPS.cls.apply(lambda x: x.__name__))
+    OP_VOCAB = ['<PAD>'] + list(RASP_OPS.cls.apply(lambda x: x.__name__))
     var_name_iter = iter_var_names()
-    VAR_VOCAB = ['tokens', 'indices'] \
+    VAR_VOCAB = ['<PAD>'] + ['tokens', 'indices'] \
                     + list(NAMED_PREDICATES.values()) \
                     + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM] \
                     + [next(var_name_iter) for x in range(0, max(ops_range))] 
