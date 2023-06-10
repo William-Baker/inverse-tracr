@@ -1,3 +1,5 @@
+import sys
+sys.path.append('tracr/')
 from tracr.rasp import rasp
 from tracr.rasp import rasp
 import pandas as pd

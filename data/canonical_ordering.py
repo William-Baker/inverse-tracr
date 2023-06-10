@@ -179,6 +179,32 @@ def __sort_depths_within_depth_sorting__(depth_sorting):
     #sorted_prog = sum(sorted_prog, [])
     return sorted_prog
 
+def remap_vars(prog):
+    var_mapper = dict(zip([x['r'] for x in prog], [f'v{i+1}' for i in range(len(prog))]))
+    new_prog = []
+    for line in prog:
+        new_line = {}
+        for k,v in line.items():
+            if v not in var_mapper:
+                new_line[k] = v
+            else:
+                new_line[k] = var_mapper[v]
+        new_prog.append(new_line)
+    return new_prog
+
+ARG_ORDERING = UNI_LAMBDAS + SEQUENCE_LAMBDAS + NAMED_PREDICATES + ['indices', 'tokens']
+
+def sort_args(prog):
+    local_arg_ordreing = ARG_ORDERING + [f"v{i}" for i in range(len(prog))]  + ['NA']
+    for line in prog:
+        args = [line['p1'], line['p2'], line['p3']]
+        token_weights = [local_arg_ordreing.index(arg) for arg in args]
+        sorted_args = [args[i] for i in np.argsort(token_weights)]
+        line['p1'] = sorted_args[0]
+        line['p2'] = sorted_args[1]
+        line['p3'] = sorted_args[2]
+    return prog
+
 
 
 def sort_program(prog):
@@ -192,53 +218,89 @@ def sort_program(prog):
     tree, _ = __build_tree__(prog)
     depth_sorting = __compute_depth_sorted__(tree)
     sorted_program = __sort_depths_within_depth_sorting__(depth_sorting)
+    sorted_program = remap_vars(sorted_program)
+    sorted_program = sort_args(sorted_program)
     return sorted_program
 
 #%%
 
-# prog = [
-#         ['PROGRAM_START', 'NA', 'NA', 'NA', 'NA' ],
-#         ['Map', 'LAM_ADD', 'tokens', 'NA', 'v1'],
-#         ['Map', 'LAM_MUL', 'v1', 'NA', 'v2'],
-#         ['Map', 'LAM_MUL', 'indices', 'NA', 'v3'],
-#         ['Select', 'v1', 'v2', 'PRED_NEQ', 'v4'],
-#         ['Aggregate', 'v4', 'v3', 'NA', 'v5'],
-#         ['Map', 'LAM_ADD', 'indices', 'NA', 'v6'],
-#         ['SequenceMap', 'LAM_OR', 'v6', 'v5', 'v7'],
-#         ['PROGRAM_END', 'NA', 'NA', 'NA', 'NA' ],
-#         ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
-#         ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
-# ]
 
-
-
-# prog = [
-#         ['PROGRAM_START', 'NA', 'NA', 'NA', 'NA' ],
-#         ['Map', 'LAM_MUL', 'v1', 'NA', 'v2'],
-#         ['Map', 'LAM_MUL', 'indices', 'NA', 'v3'],
-#         ['Aggregate', 'v4', 'v3', 'NA', 'v5'],
-#         ['SequenceMap', 'LAM_OR', 'v6', 'indices', 'v7'],
-#         ['Map', 'LAM_ADD', 'v7', 'NA', 'v8'],
-#         ['Map', 'LAM_SUB', 'v8', 'NA', 'v9'],
-#         ['Map', 'LAM_SUB', 'v9', 'NA', 'v10'],
-#         ['SequenceMap', 'LAM_OR', 'v10', 'v5', 'v1'],
-#         ['Map', 'LAM_ADD', 'indices', 'NA', 'v6'],
-#         ['Map', 'LAM_LT', 'v6', 'NA', 'v11'],
-#         ['Select', 'v11', 'v11', 'PRED_NEQ', 'v4'],
-#         ['Aggregate', 'v4', 'v1', 'NA', 'v12'],
-#         ['Map', 'LAM_SUB', 'v12', 'NA', 'v13'],
-#         ['SequenceMap', 'LAM_SUB', 'v13', 'v2', 'v14'],
-#         ['PROGRAM_END', 'NA', 'NA', 'NA', 'NA' ],
-#         ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
-#         ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
-#         ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
-#         ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
-#         ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
-#         ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
-# ]
-
-# prog = [dict(op=x[0], p1=x[1], p2=x[2], p3=x[3], r=x[4]) for x in prog]
-
-# sorted_prog, mask = sort_program(prog)
 
 #%%
+if __name__ == "__main__":
+    prog = [
+        ['PROGRAM_START', 'NA', 'NA', 'NA', 'NA' ],
+        ['Map', 'LAM_ADD', 'tokens', 'NA', 'v1'],
+        ['Map', 'LAM_MUL', 'v1', 'NA', 'v2'],
+        ['Map', 'LAM_MUL', 'indices', 'NA', 'v3'],
+        ['Select', 'v1', 'v2', 'PRED_NEQ', 'v4'],
+        ['Aggregate', 'v4', 'v3', 'NA', 'v5'],
+        ['Map', 'LAM_ADD', 'indices', 'NA', 'v6'],
+        ['SequenceMap', 'LAM_OR', 'v6', 'v5', 'v7'],
+        ['PROGRAM_END', 'NA', 'NA', 'NA', 'NA' ],
+        ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
+        ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
+    ]
+
+    prog = [dict(op=x[0], p1=x[1], p2=x[2], p3=x[3], r=x[4]) for x in prog]
+
+    sorted_prog = sort_program(prog)
+
+    assert( sorted_prog == [{'op': 'Map', 'p1': 'LAM_ADD', 'p2': 'tokens', 'p3': 'NA', 'r': 'v1'},
+ {'op': 'Map', 'p1': 'LAM_ADD', 'p2': 'indices', 'p3': 'NA', 'r': 'v2'},
+ {'op': 'Map', 'p1': 'LAM_MUL', 'p2': 'indices', 'p3': 'NA', 'r': 'v3'},
+ {'op': 'Map', 'p1': 'LAM_MUL', 'p2': 'v1', 'p3': 'NA', 'r': 'v4'},
+ {'op': 'Select', 'p1': 'PRED_NEQ', 'p2': 'v1', 'p3': 'v4', 'r': 'v5'},
+ {'op': 'Aggregate', 'p1': 'v3', 'p2': 'v5', 'p3': 'NA', 'r': 'v6'},
+ {'op': 'SequenceMap', 'p1': 'LAM_OR', 'p2': 'v2', 'p3': 'v6', 'r': 'v7'}])
+    
+    prog = [
+            ['PROGRAM_START', 'NA', 'NA', 'NA', 'NA' ],
+            ['Map', 'LAM_MUL', 'v1', 'NA', 'v2'],
+            ['Map', 'LAM_MUL', 'indices', 'NA', 'v3'],
+            ['Aggregate', 'v4', 'v3', 'NA', 'v5'],
+            ['SequenceMap', 'LAM_OR', 'v6', 'indices', 'v7'],
+            ['Map', 'LAM_ADD', 'v7', 'NA', 'v8'],
+            ['Map', 'LAM_SUB', 'v8', 'NA', 'v9'],
+            ['Map', 'LAM_SUB', 'v9', 'NA', 'v10'],
+            ['SequenceMap', 'LAM_OR', 'v10', 'v5', 'v1'],
+            ['Map', 'LAM_ADD', 'indices', 'NA', 'v6'],
+            ['Map', 'LAM_LT', 'v6', 'NA', 'v11'],
+            ['Select', 'v11', 'v11', 'PRED_NEQ', 'v4'],
+            ['Aggregate', 'v4', 'v1', 'NA', 'v12'],
+            ['Map', 'LAM_SUB', 'v12', 'NA', 'v13'],
+            ['SequenceMap', 'LAM_SUB', 'v13', 'v2', 'v14'],
+            ['PROGRAM_END', 'NA', 'NA', 'NA', 'NA' ],
+            ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
+            ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
+            ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
+            ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
+            ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
+            ['<PAD>', 'NA', 'NA', 'NA', 'NA' ],
+    ]
+
+    prog = [dict(op=x[0], p1=x[1], p2=x[2], p3=x[3], r=x[4]) for x in prog]
+
+    sorted_prog = sort_program(prog)
+
+    assert sorted_prog == [{'op': 'Map', 'p1': 'LAM_ADD', 'p2': 'indices', 'p3': 'NA', 'r': 'v1'},
+ {'op': 'Map', 'p1': 'LAM_MUL', 'p2': 'indices', 'p3': 'NA', 'r': 'v2'},
+ {'op': 'Map', 'p1': 'LAM_LT', 'p2': 'v1', 'p3': 'NA', 'r': 'v3'},
+ {'op': 'SequenceMap', 'p1': 'LAM_OR', 'p2': 'indices', 'p3': 'v1', 'r': 'v4'},
+ {'op': 'Select', 'p1': 'PRED_NEQ', 'p2': 'v3', 'p3': 'v3', 'r': 'v5'},
+ {'op': 'Map', 'p1': 'LAM_ADD', 'p2': 'v4', 'p3': 'NA', 'r': 'v6'},
+ {'op': 'Aggregate', 'p1': 'v2', 'p2': 'v5', 'p3': 'NA', 'r': 'v7'},
+ {'op': 'Map', 'p1': 'LAM_SUB', 'p2': 'v6', 'p3': 'NA', 'r': 'v8'},
+ {'op': 'Map', 'p1': 'LAM_SUB', 'p2': 'v8', 'p3': 'NA', 'r': 'v9'},
+ {'op': 'SequenceMap', 'p1': 'LAM_OR', 'p2': 'v7', 'p3': 'v9', 'r': 'v10'},
+ {'op': 'Aggregate', 'p1': 'v5', 'p2': 'v10', 'p3': 'NA', 'r': 'v11'},
+ {'op': 'Map', 'p1': 'LAM_MUL', 'p2': 'v10', 'p3': 'NA', 'r': 'v12'},
+ {'op': 'Map', 'p1': 'LAM_SUB', 'p2': 'v11', 'p3': 'NA', 'r': 'v13'},
+ {'op': 'SequenceMap', 'p1': 'LAM_SUB', 'p2': 'v12', 'p3': 'v13', 'r': 'v14'}]
+
+
+
+#%%
+
+
+# %%

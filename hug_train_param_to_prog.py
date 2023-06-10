@@ -1,12 +1,11 @@
 
 #%%
+from jax_smi import initialise_tracking
+initialise_tracking()
 
-from models import Decoder
 from jax import random
 import jax.numpy as jnp
-from utils.jax_helpers import JaxSeeder
 import os
-CHECKPOINT_PATH = ".logs/"
 from torch.utils.tensorboard import SummaryWriter
 import jax
 import optax
@@ -15,17 +14,20 @@ from tqdm import tqdm
 import numpy as np
 import torch
 from functools import partial
-
 torch.cuda.is_available = lambda : False
-
 from torch.utils.data import DataLoader
 from data.parameter_program_dataloader import TorchParameterProgramDataset
 from data.plot_true_v_pred import plot_orginal_heatmaps
-
+#from transformers import FlaxGPT2Model, 
+from transformers.models.gpt2.modeling_flax_gpt2 import FlaxGPT2BlockCollection
+from flax import linen as nn
+from models import PositionalEncoding
+from jax import jit
+CHECKPOINT_PATH = ".logs/"
 
 class TrainerModule:
 
-    def __init__(self, model_name, exmp_batch, max_iters, dataset, lr=1e-3, warmup=100, seed=42, **model_kwargs):
+    def __init__(self, model,  model_name, exmp_batch, max_iters, dataset, lr=1e-3, warmup=100, seed=42):
         """
         Inputs:
             model_name - Name of the model. Used for saving and checkpointing
@@ -44,7 +46,7 @@ class TrainerModule:
         self.seg_sizes=src_dataset.segment_sizes
         self.dataset = dataset
         # Create empty model. Note: no parameters yet
-        self.model = Decoder(num_classes=sum(src_dataset.segment_sizes), **model_kwargs)
+        self.model = model
         # Prepare logging
         self.log_dir = os.path.join(CHECKPOINT_PATH, self.model_name)
         self.logger = SummaryWriter(log_dir=self.log_dir)
@@ -126,6 +128,7 @@ class TrainerModule:
             #rng, dropout_apply_rng = random.split(rng)
 
             # logits = (batch_size, time_steps, features)
+            # with jax.profiler.trace("jax-trace", create_perfetto_link=True):
             logits = self.model.apply({'params': state.params}, inp_data, train=False)#, rngs={'dropout': dropout_apply_rng})
             
             #time_steps = inp_data.shape[1]
@@ -165,7 +168,7 @@ class TrainerModule:
             self.logger.add_scalar("verbose/acc", acc.item(), global_step=step)
 
 
-        # self.verbose_step = jax.jit(verbose_step)
+        #self.verbose_step = jax.jit(verbose_step)
         self.verbose_step = verbose_step
 
         self.accuracy_fn = self.get_accuracy_function()
@@ -197,7 +200,7 @@ class TrainerModule:
     
 
     # TODO optimise away item() to be minimised
-    def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=4):
+    def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=2):
         # Train model for one epoch, and log avg loss and accuracy
         dataloader_len = len(train_loader)
         LOGGING_INTERVAL = dataloader_len // LOGS_PER_EPOCH
@@ -218,12 +221,12 @@ class TrainerModule:
 
                 
                 # ----------- TF metrics ----------
-                self.logger.add_scalar('train_hf/loss', loss.item(), global_step=idx + epoch * dataloader_len)
-                self.logger.add_scalar('train_hf/accuracy', accuracy.item(), global_step=idx + epoch * dataloader_len)
+                self.logger.add_scalar('train_hf/loss', loss.item(), global_step=idx + (epoch - 1) * dataloader_len)
+                self.logger.add_scalar('train_hf/accuracy', accuracy.item(), global_step=idx + (epoch - 1) * dataloader_len)
                 
                 
                 # ------------ Low freq metrics --------------
-                if idx % LOGGING_INTERVAL == 0:
+                if (idx + 1) % LOGGING_INTERVAL == 10:
                     self.verbose_step(state=self.state, batch=batch, step=idx + epoch * dataloader_len)
 
                 
@@ -280,66 +283,13 @@ class TrainerModule:
         return os.path.isfile(os.path.join(CHECKPOINT_PATH, f'{self.model_name}.ckpt'))
 
 
-#%%
-
-
-# PARAMS_2
-# max_epochs = 100
-# LEARNING_RATE=1e-5
-
-# model_args = dict(enc_layers=10, 
-#                   dec_layers=10, 
-#                   input_dense=1200, 
-#                   attention_dim=1200, 
-#                   attention_heads=30, 
-#                   dim_feedforward=1024, 
-#                   latent_dim=1200, 
-#                   dropout_prob=0.05,
-#                   input_dropout_prob=0.0)
-
-# batch_size=128
-
-
-# # PARAMS_2 fine
-# max_epochs = 100
-# LEARNING_RATE=1e-6
-
-# model_args = dict( 
-#                   dec_layers=10, 
-#                   input_dense=1200, 
-#                   attention_dim=1200, 
-#                   attention_heads=30, 
-#                   dim_feedforward=1024, 
-#                   latent_dim=1200, 
-#                   dropout_prob=0.05,
-#                   input_dropout_prob=0.0)
-
-# batch_size=16
-
-#10*30*1200*1200*3
-
-
-# PARAMS_2 fine
-max_epochs = 200
-LEARNING_RATE=1e-4
-
-model_args = dict( 
-                  dec_layers=10, 
-                  input_dense=600, 
-                  attention_dim=600, 
-                  attention_heads=30, 
-                  dim_feedforward=1024, 
-                  latent_dim=600, 
-                  dropout_prob=0.0,
-                  input_dropout_prob=0.0)
-
-batch_size=128
 
 #%%
 
 
-
+batch_size=32
 PROG_LEN = 15
+max_epochs = 200
 
 src_dataset = TorchParameterProgramDataset(PROG_LEN)
 
@@ -359,14 +309,9 @@ class WrappedDataset(StreamReader):
 
 dataset = WrappedDataset('.data/iTracr_dataset/', PROG_LEN)
 
-import torch
-
-
 
 
 collate_fn = partial(TorchParameterProgramDataset.collate_fn, PROG_LEN)
-
-
 
 
 train_dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=3, shuffle=True)#, pin_memory=True)
@@ -376,18 +321,82 @@ it = iter(train_dataloader)
 x,y,mask = next(it)
 
 print(src_dataset.decode_pred(y, 0))
-# print(src_dataset.decode_pred(x, 0))
 
 
 
 
 #%%
-trainer = TrainerModule('temp_PARAM_7_medium_masking_ordering',#'no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
+
+
+# PARAMS_2 fine
+
+LEARNING_RATE=1e-4
+
+
+
+#%%
+from transformers import GPT2Config
+
+
+
+# config_GPT2_medium = GPT2Config(vocab_size=x.shape[2], n_positions=1024, n_embd=1024, n_layer=24, n_head=16, 
+#                                 n_inner=None, activation_function='gelu_new', resid_pdrop=0.1, layer_norm_epsilon=1e-05,
+#                                 initializer_range=0.02, summary_type='cls_index', summary_use_proj = True, 
+#                                 summary_activation = None, summary_proj_to_labels = True, summary_first_dropout = 0.1, 
+#                                 scale_attn_weights = True, use_cache = True, bos_token_id = x.shape[2], eos_token_id = x.shape[2], 
+#                                 scale_attn_by_inverse_layer_idx = False, reorder_and_upcast_attn = False )
+
+config_GPT2_medium = GPT2Config(vocab_size=x.shape[2], n_positions=1024, n_embd=1024, n_layer=12, n_head=8, 
+                                n_inner=None, activation_function='gelu_new', resid_pdrop=0.1, layer_norm_epsilon=1e-05,
+                                initializer_range=0.02, summary_type='cls_index', summary_use_proj = True, 
+                                summary_activation = None, summary_proj_to_labels = True, summary_first_dropout = 0.1, 
+                                scale_attn_weights = True, use_cache = True, bos_token_id = x.shape[2], eos_token_id = x.shape[2], 
+                                scale_attn_by_inverse_layer_idx = False, reorder_and_upcast_attn = False )
+
+#%%
+
+
+
+
+class GPT_Decoder(nn.Module):
+    num_classes: int
+    gpt_config: GPT2Config
+    input_dropout_prob: float = 0.0
+    input_dense: int =512
+    dtype: jnp.dtype = jnp.float32
+    
+    def setup(self):
+        self.input_dropout = nn.Dropout(self.input_dropout_prob)
+        self.input_layer = nn.Dense(self.input_dense)
+        self.input_pos_encoder = PositionalEncoding(self.input_dense)
+        self.h = FlaxGPT2BlockCollection(self.gpt_config)
+        
+        self.output_net = [
+            nn.Dense(1024),
+            nn.LayerNorm(),
+            nn.relu,
+            #nn.Dropout(self.dropout_prob),
+            nn.Dense(self.num_classes)
+        ]
+    
+    def __call__(self, x, mask=None, train=True):
+        x = self.input_dropout(x, deterministic=not train)
+        i = self.input_layer(x)
+        i = self.input_pos_encoder(i)
+        hidden_states, all_hidden_states, all_attentions, all_cross_attentions = self.h(i)
+        o = hidden_states
+        for l in self.output_net:
+            o = l(o) if not isinstance(l, nn.Dropout) else l(x, deterministic=not train)
+        return o
+
+model = GPT_Decoder(num_classes=sum(src_dataset.segment_sizes), gpt_config=config_GPT2_medium, input_dropout_prob=0.0, input_dense=1024) # if you forget input dense must match gpt hidden
+
+#%%
+trainer = TrainerModule(model, 'PARAM_11_GPT2',#'no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
                         next(it), 
                         num_train_iters, 
                         dataset=src_dataset, 
-                        lr=LEARNING_RATE,
-                        **model_args)
+                        lr=LEARNING_RATE)
 
 
 #%%

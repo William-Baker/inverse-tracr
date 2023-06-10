@@ -105,8 +105,8 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
         y = np.concatenate((y,padding), axis=0)
         y = y.astype(int)
 
-        mask = np.ones((sample_prog_length, y.shape[1]))
-        mask = np.concatenate((mask,padding), axis=0)
+        mask = np.ones((sample_prog_length))#, y.shape[1]))
+        mask = np.concatenate((mask,padding[:, 0]), axis=0)
 
         enc_x, y = encode_sample(x, y, max_prog_len=max_prog_len)
 
