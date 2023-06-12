@@ -1,10 +1,9 @@
 import jax
 import jax.numpy as jnp
-from jax import jit, grad, lax, random
-from jax.example_libraries import optimizers
-from jax.example_libraries import stax
-from jax.example_libraries.stax import Dense, FanOut, Relu, Softplus
 from flax import linen as nn
+#from transformers.models.gpt2.modeling_flax_gpt2 import FlaxGPT2BlockCollection
+from flax_gpt2 import FlaxGPT2BlockCollection
+from transformers import GPT2Config
 import math
 import numpy as np
 
@@ -231,197 +230,34 @@ class Decoder(nn.Module):
             o = l(o) if not isinstance(l, nn.Dropout) else l(x, deterministic=not train)
         return o
 
-
-from flax.linen import combine_masks, make_causal_mask
-from typing import Any, Optional
-from flax.linen.attention import dot_product_attention_weights
-
-class FlaxConv1D(nn.Module):
-    features: int
-    use_bias: bool = True
-    dtype: Any = jnp.float32
-    precision: Any = None
-
-    @nn.compact
-    def __call__(self, inputs):
-        inputs = jnp.asarray(inputs, self.dtype)
-        kernel = self.param("kernel", jax.nn.initializers.normal(stddev=0.02), (self.features, inputs.shape[-1]))
-        kernel = jnp.asarray(kernel.transpose(), self.dtype)
-        y = lax.dot_general(inputs, kernel, (((inputs.ndim - 1,), (0,)), ((), ())), precision=self.precision)
-        if self.use_bias:
-            bias = self.param("bias", jax.nn.initializers.zeros, (self.features,))
-            bias = jnp.asarray(bias, self.dtype)
-            y = y + bias
-        return y
-    
-# GPT2 - Hugging Face
-class FlaxGPT2Attention(nn.Module):
-    hidden_size: int
-    num_attention_heads: int
-    max_position_embeddings: int
-    attn_pdrop: float = 0.1
-    resid_pdrop: float = 0.1
+class GPT_Decoder(nn.Module):
+    num_classes: int
+    gpt_config: GPT2Config
+    input_dropout_prob: float = 0.0
     dtype: jnp.dtype = jnp.float32
-    causal: bool = True
-    is_cross_attention: bool = False
-
+    
     def setup(self):
-        self.embed_dim = self.hidden_size
-        self.num_heads = self.num_attention_heads
-        self.head_dim = self.embed_dim // self.num_heads
+        self.input_dropout = nn.Dropout(self.input_dropout_prob)
+        self.input_layer = nn.Dense(self.gpt_config.n_embd)
+        self.input_pos_encoder = PositionalEncoding(self.gpt_config.n_embd)
+        self.h = FlaxGPT2BlockCollection(self.gpt_config)
+        
+        self.output_net = [
+            nn.Dense(1024),
+            nn.LayerNorm(),
+            nn.relu,
+            #nn.Dropout(self.dropout_prob),
+            nn.Dense(self.num_classes)
+        ]
+    
+    def __call__(self, x, mask=None, train=True):
+        x = self.input_dropout(x, deterministic=not train)
+        i = self.input_layer(x)
+        i = self.input_pos_encoder(i)
+         # hidden_states, all_hidden_states, all_attentions, all_cross_attentions
+        hidden_states, _, _, _ = self.h(i)
+        o = hidden_states
+        for l in self.output_net:
+            o = l(o) if not isinstance(l, nn.Dropout) else l(x, deterministic=not train)
+        return o
 
-        if self.is_cross_attention:
-            self.c_attn = FlaxConv1D(2 * self.embed_dim, dtype=self.dtype)
-            self.q_attn = FlaxConv1D(self.embed_dim, dtype=self.dtype)
-        else:
-            self.c_attn = FlaxConv1D(3 * self.embed_dim, dtype=self.dtype)
-        self.c_proj = FlaxConv1D(self.embed_dim, dtype=self.dtype)
-
-        self.resid_dropout = nn.Dropout(rate=self.resid_pdrop)
-
-        if self.causal:
-            self.causal_mask = make_causal_mask(
-                jnp.ones((1, self.max_position_embeddings), dtype="bool"), dtype="bool"
-            )
-
-    def _split_heads(self, hidden_states):
-        return hidden_states.reshape(hidden_states.shape[:2] + (self.num_heads, self.head_dim))
-
-    def _merge_heads(self, hidden_states):
-        return hidden_states.reshape(hidden_states.shape[:2] + (self.embed_dim,))
-
-    @nn.compact
-    def _concatenate_to_cache(self, key, value, query, attention_mask):
-        """
-        This function takes projected key, value states from a single input token and concatenates the states to cached
-        states from previous steps. This function is slighly adapted from the official Flax repository:
-        https://github.com/google/flax/blob/491ce18759622506588784b4fca0e4bf05f8c8cd/flax/linen/attention.py#L252
-        """
-        # detect if we're initializing by absence of existing cache data.
-        is_initialized = self.has_variable("cache", "cached_key")
-        cached_key = self.variable("cache", "cached_key", jnp.zeros, key.shape, key.dtype)
-        cached_value = self.variable("cache", "cached_value", jnp.zeros, value.shape, value.dtype)
-        cache_index = self.variable("cache", "cache_index", lambda: jnp.array(0, dtype=jnp.int32))
-
-        if is_initialized:
-            *batch_dims, max_length, num_heads, depth_per_head = cached_key.value.shape
-            # update key, value caches with our new 1d spatial slices
-            cur_index = cache_index.value
-            indices = (0,) * len(batch_dims) + (cur_index, 0, 0)
-            key = lax.dynamic_update_slice(cached_key.value, key, indices)
-            value = lax.dynamic_update_slice(cached_value.value, value, indices)
-            cached_key.value = key
-            cached_value.value = value
-            num_updated_cache_vectors = query.shape[1]
-            cache_index.value = cache_index.value + num_updated_cache_vectors
-            # causal mask for cached decoder self-attention: our single query position should only attend to those key positions that have already been generated and cached, not the remaining zero elements.
-            pad_mask = jnp.broadcast_to(
-                jnp.arange(max_length) < cur_index + num_updated_cache_vectors,
-                tuple(batch_dims) + (1, num_updated_cache_vectors, max_length),
-            )
-            attention_mask = combine_masks(pad_mask, attention_mask)
-        return key, value, attention_mask
-
-    def __call__(
-        self,
-        hidden_states,
-        key_value_states: Optional[jnp.ndarray] = None,
-        attention_mask=None,
-        deterministic: bool = True,
-        init_cache: bool = False,
-        output_attentions: bool = False,
-    ):
-        # if key_value_states are provided this layer is used as a cross-attention layer
-        # for the decoder
-        is_cross_attention = key_value_states is not None
-        batch_size = hidden_states.shape[0]
-
-        if not is_cross_attention:
-            qkv_out = self.c_attn(hidden_states)
-            query, key, value = jnp.split(qkv_out, 3, axis=2)
-        else:
-            q_out = self.q_attn(hidden_states)
-            (query,) = jnp.split(q_out, 1, axis=2)
-            kv_out = self.c_attn(key_value_states)
-            key, value = jnp.split(kv_out, 2, axis=2)
-
-        query = self._split_heads(query)
-        key = self._split_heads(key)
-        value = self._split_heads(value)
-
-        query_length, key_length = query.shape[1], key.shape[1]
-
-        if self.causal:
-            if self.has_variable("cache", "cached_key"):
-                mask_shift = self.variables["cache"]["cache_index"]
-                max_decoder_length = self.variables["cache"]["cached_key"].shape[1]
-                causal_mask = lax.dynamic_slice(
-                    self.causal_mask, (0, 0, mask_shift, 0), (1, 1, query_length, max_decoder_length)
-                )
-            else:
-                causal_mask = self.causal_mask[:, :, :query_length, :key_length]
-            causal_mask = jnp.broadcast_to(causal_mask, (batch_size,) + causal_mask.shape[1:])
-
-        # combine masks if needed
-        if attention_mask is not None and self.causal:
-            attention_mask = jnp.broadcast_to(jnp.expand_dims(attention_mask, axis=(-3, -2)), causal_mask.shape)
-            attention_mask = combine_masks(attention_mask, causal_mask)
-        elif self.causal:
-            attention_mask = causal_mask
-        elif attention_mask is not None:
-            attention_mask = jnp.expand_dims(attention_mask, axis=(-3, -2))
-
-        dropout_rng = None
-        if not deterministic and self.attn_pdrop > 0.0:
-            dropout_rng = self.make_rng("dropout")
-
-        # During fast autoregressive decoding, we feed one position at a time,
-        # and cache the keys and values step by step.
-        if self.causal and (self.has_variable("cache", "cached_key") or init_cache):
-            key, value, attention_mask = self._concatenate_to_cache(key, value, query, attention_mask)
-
-        # transform boolean mask into float mask
-        if attention_mask is not None:
-            attention_bias = lax.select(
-                attention_mask > 0,
-                jnp.full(attention_mask.shape, 0.0).astype(self.dtype),
-                jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
-            )
-        else:
-            attention_bias = None
-
-        # usual dot product attention
-        attn_weights = dot_product_attention_weights(
-            query,
-            key,
-            bias=attention_bias,
-            dropout_rng=dropout_rng,
-            dropout_rate=self.attn_pdrop,
-            deterministic=deterministic,
-            dtype=self.dtype,
-            precision=None,
-        )
-
-        attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, value)
-        attn_output = self._merge_heads(attn_output)
-        attn_output = self.c_proj(attn_output)
-        attn_output = self.resid_dropout(attn_output, deterministic=deterministic)
-
-        outputs = (attn_output, attn_weights) if output_attentions else (attn_output,)
-        return outputs
-
-
-
-
-class MLP(nn.Module):
-  def setup(self):
-    # Submodule names are derived by the attributes you assign to. In this
-    # case, "dense1" and "dense2". This follows the logic in PyTorch.
-    self.dense1 = nn.Dense(32)
-    self.dense2 = nn.Dense(32)
-
-  def __call__(self, x):
-    x = self.dense1(x)
-    x = nn.relu(x)
-    x = self.dense2(x)
-    return x

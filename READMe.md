@@ -1,0 +1,1 @@
+`~/go/bin/pprof -svg ~/inverse-tracr/memory.prof`

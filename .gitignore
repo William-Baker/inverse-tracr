@@ -165,3 +165,8 @@ cudnn-local-repo-ubuntu2204-8.8.0.121_1.0-1_amd64.deb
 .logs/
 *.pkl
 *.npz
+*.svg
+*.json
+*.html
+*.prof
+jax-trace/
