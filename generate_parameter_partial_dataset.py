@@ -1,7 +1,5 @@
 #%%
 import argparse
-import os
-print(os.listdir())
 import sys
 
 from data.dataloader_streams import StreamReader, StreamWriter

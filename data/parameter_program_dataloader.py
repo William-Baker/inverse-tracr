@@ -68,18 +68,21 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
     def collate_fn(PROG_LEN, data):
         inputs = [torch.tensor(d[0], device='cpu') for d in data]
         targets = [torch.tensor(d[1], device='cpu') for d in data]
-        masks = [torch.tensor(d[2], device='cpu') for d in data]
+        loss_masks = [torch.tensor(d[2], device='cpu') for d in data]
+        attention_masks = [torch.tensor(d[3], device='cpu') for d in data]
         inputs = pad_sequence(inputs, batch_first=True)
+        attention_masks = pad_sequence(attention_masks, batch_first=True)
         #targets = pad_sequence(targets, batch_first=True)
 
         targets = torch.stack(targets)
-        masks = torch.stack(masks)
+        loss_masks = torch.stack(loss_masks)
         
         # pad the inputs to be at least as long as the max output program length
         ammount_to_pad = PROG_LEN + 2 - inputs.shape[1]
         if ammount_to_pad > 0:
-            inputs = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(inputs) # pad the inputs to the same length as the target at leas
-        return np.array(inputs), np.array(targets), np.array(masks)
+            inputs = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(inputs) # pad the inputs to the same length as the target at least
+            attention_masks = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(attention_masks)
+        return np.array(inputs), np.array(targets), np.array(loss_masks), np.array(attention_masks)
 
     def __len__(self):
         'Denotes the total number of samples'
@@ -105,12 +108,13 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
         y = np.concatenate((y,padding), axis=0)
         y = y.astype(int)
 
-        mask = np.ones((sample_prog_length))#, y.shape[1]))
-        mask = np.concatenate((mask,padding[:, 0]), axis=0)
+        loss_mask = np.ones((sample_prog_length))#, y.shape[1]))
+        loss_mask = np.concatenate((loss_mask,padding[:, 0]), axis=0)
 
         enc_x, y = encode_sample(x, y, max_prog_len=max_prog_len)
+        attention_mask = np.ones(enc_x.shape)
 
-        return enc_x,y,mask
+        return enc_x,y,loss_mask, attention_mask
     
     def logit_classes_np(self, logits):
         classes = np.zeros((logits.shape[0], self.OP_VOCAB_SIZE))

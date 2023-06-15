@@ -1,3 +1,7 @@
 {
-    "python.analysis.extraPaths": ["${workspaceFolder}/tracr", "${workspaceFolder}/RASP"]
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/tracr",
+        "${workspaceFolder}/RASP"
+    ],
+    "svg.preview.background": "transparent"
 }

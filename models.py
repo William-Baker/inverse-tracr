@@ -250,7 +250,7 @@ class GPT_Decoder(nn.Module):
             nn.Dense(self.num_classes)
         ]
     
-    def __call__(self, x, mask=None, train=True):
+    def __call__(self, x, attention_mask=None, train=True):
         x = self.input_dropout(x, deterministic=not train)
         i = self.input_layer(x)
         i = self.input_pos_encoder(i)
