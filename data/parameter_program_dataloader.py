@@ -82,7 +82,29 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
         if ammount_to_pad > 0:
             inputs = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(inputs) # pad the inputs to the same length as the target at least
             attention_masks = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(attention_masks)
-        return np.array(inputs), np.array(targets), np.array(loss_masks), np.array(attention_masks)
+        return np.array(inputs), np.array(targets), np.array(loss_masks), np.array(attention_masks[:,:,0])
+    
+    def collate_fn_w_posid(PROG_LEN, data):
+        inputs = [torch.tensor(d[0], device='cpu') for d in data]
+        targets = [torch.tensor(d[1], device='cpu') for d in data]
+        loss_masks = [torch.tensor(d[2], device='cpu') for d in data]
+        attention_masks = [torch.tensor(d[3], device='cpu') for d in data]
+        pos_ids = [torch.tensor(d[4], device='cpu') for d in data]
+        inputs = pad_sequence(inputs, batch_first=True)
+        attention_masks = pad_sequence(attention_masks, batch_first=True)
+        pos_ids = pad_sequence(pos_ids, batch_first=True)
+        
+
+        targets = torch.stack(targets)
+        loss_masks = torch.stack(loss_masks)
+        
+        # pad the inputs to be at least as long as the max output program length
+        ammount_to_pad = PROG_LEN + 2 - inputs.shape[1]
+        if ammount_to_pad > 0:
+            inputs = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(inputs) # pad the inputs to the same length as the target at least
+            attention_masks = torch.nn.ConstantPad2d((0, 0, 0, ammount_to_pad), 0)(attention_masks)
+            pos_ids = torch.nn.ConstantPad1d((0, ammount_to_pad), 0)(pos_ids)
+        return np.array(inputs), np.array(targets), np.array(loss_masks), np.array(attention_masks[:,:,0]), np.array(pos_ids)
 
     def __len__(self):
         'Denotes the total number of samples'

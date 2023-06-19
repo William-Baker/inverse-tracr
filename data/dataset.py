@@ -108,6 +108,7 @@ class Operation:
     inputs: Sequence[Union[str, Callable, rasp.Predicate ]]
     output: str
     lambda_name: Optional[str] = None
+    
 
 
 # =================================== Program Sampling ====================================

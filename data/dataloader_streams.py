@@ -77,8 +77,8 @@ if __name__ == "__main__":
         # sw = StreamWriter(pth, dataset)
         # sw.write_samples(num_threads=1)
         N = 20
-        samples = 800000
-        offset  = 100000
+        samples = 200000
+        offset  = 900000
         for i in range(N):
             #os.chdir('../')
             cmd = f"python generate_parameter_partial_dataset.py -off {offset} -s {samples} -pn {N} -idn {i}"

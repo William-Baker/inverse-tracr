@@ -255,7 +255,7 @@ class GPT_Decoder(nn.Module):
         i = self.input_layer(x)
         i = self.input_pos_encoder(i)
          # hidden_states, all_hidden_states, all_attentions, all_cross_attentions
-        hidden_states, _, _, _ = self.h(i)
+        hidden_states, _, _, _ = self.h(i, attention_mask=attention_mask)
         o = hidden_states
         for l in self.output_net:
             o = l(o) if not isinstance(l, nn.Dropout) else l(x, deterministic=not train)
