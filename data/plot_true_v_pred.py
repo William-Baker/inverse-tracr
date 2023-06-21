@@ -4,7 +4,17 @@ import plotly.figure_factory as ff
 from PIL import Image
 import io
 import numpy as np
-def plot_orginal_heatmaps(y, pred, dataset, BATCH_ID=0, loss=None):
+
+def figure_to_array(fig):
+    image_bytes = fig.to_image(format='png')
+
+    picture_stream = io.BytesIO(image_bytes)
+
+    img = np.array(Image.open(picture_stream))
+    
+    return img
+
+def plot_orginal_heatmaps(y, pred, dataset, BATCH_ID=0, loss=None, return_fig=False):
     eq = (y == pred).astype(int)
     
 
@@ -47,15 +57,12 @@ def plot_orginal_heatmaps(y, pred, dataset, BATCH_ID=0, loss=None):
     fig.update_layout(annotations=annot1+annot2, 
                     margin=dict(l=20, r=20, t=30, b=20),
                     height=800, width=1200)  
-
+    
+    if return_fig:
+        return fig
 
     
 
-    image_bytes = fig.to_image(format='png')
-
-
-    picture_stream = io.BytesIO(image_bytes)
-
-    img = np.array(Image.open(picture_stream))
+    img = figure_to_array(fig)
     return img
 

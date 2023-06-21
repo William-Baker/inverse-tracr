@@ -19,10 +19,7 @@ from data.canonical_ordering import sort_program
 from data.rasp_operators import *
 import numpy as np
 from data.sigterm import guard_timeout, TimeoutException
-
-
-
-
+import inspect
 from collections import defaultdict
 from enum import Enum
 class Cat(Enum):
@@ -650,6 +647,93 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_leng
     return gen, OP_VOCAB, VAR_VOCAB
 
 #%%
+
+
+
+def traverse_prog(prog, lambdas = []):
+    """lambdas: provide the names of lambdas in order of program depth, from:
+         LAM_LT LAM_LE LAM_GT LAM_GE LAM_NE LAM_EQ LAM_IV LAM_ADD LAM_MUL LAM_SUB LAM_AND LAM_OR"""
+    def check_lam_name(lam_name):
+        possible_names = set(x[-1] for x in UNI_LAMBDAS) | set(x[-1] for x in  SEQUENCE_LAMBDAS)
+        if lam_name in possible_names:
+            return lam_name
+        else:
+            raise(Exception(f"Lambda name {lam_name} was not in the list of possible names: {possible_names}"))
+    lambdas = [check_lam_name(lam) for lam in reversed(lambdas)]
+
+    object_names = dict()
+    type_assingments = defaultdict(lambda: 0)
+    def get_name(obj):
+        if isinstance(obj, rasp.TokensType):
+            return "tokens"
+        elif isinstance(obj, rasp.IndicesType):
+            return "indices"
+        elif id(obj) not in object_names:
+            t = type(obj)
+            type_assingments[t] += 1
+            object_names[id(obj)] = f"{t.__name__} {type_assingments[t]}"
+        return object_names[id(obj)]
+    
+    def rasp_expr_to_op(expr: rasp.RASPExpr):
+        if isinstance(expr, rasp.Select):
+            sop1 = get_name(expr.keys)
+            sop2 = get_name(expr.queries)
+            pred = expr.predicate
+            return Operation(type(expr), [sop1, sop2, pred], get_name(expr))
+        elif isinstance(expr,  rasp.SelectorWidth):
+            sel = get_name(expr.selector)
+            return Operation(type(expr), [sel], get_name(expr))
+        elif isinstance(expr, rasp.Aggregate):
+            sel = get_name(expr.selector)
+            sop = get_name(expr.sop)
+            return Operation(type(expr), [sel, sop], get_name(expr))
+        elif isinstance(expr, rasp.Map):
+            sop = get_name(expr.inner)
+            lam = expr.f
+            if lambdas:
+                lam_name = lambdas.pop(0)
+            else:
+                print("Please input the name of the lambda for:")
+                print(expr)
+                print(sop)
+                print(lam)
+                
+                print(inspect.getsourcelines(lam))
+                lam_name = check_lam_name(input())
+            return Operation(type(expr), [sop, lam], get_name(expr), lambda_name=lam_name)
+        elif isinstance(expr, rasp.SequenceMap):
+            sop1 = get_name(expr.fst)
+            sop2 = get_name(expr.snd)
+            lam = expr.f
+            return Operation(type(expr), [sop1, sop2, lam], get_name(expr))
+        else:
+            print(f"No translation exists for operator: {expr}")
+
+    actual_ops = [rasp_expr_to_op(prog)]
+
+
+    current_node = prog
+    univisted = prog.children
+    while univisted:
+        current_node = univisted.pop(0)
+        if isinstance(current_node, rasp.TokensType) or isinstance(current_node, rasp.IndicesType):
+            continue # terminal input node
+        else:
+            actual_ops.append(rasp_expr_to_op(current_node))
+            univisted += current_node.children
+    return actual_ops
+
+def encode_rasp_program(program, PROG_LEN, lambdas=[]):
+    actual_ops = traverse_prog(program, lambdas)
+    vocab = gen_vocab(PROG_LEN, prefix='t')
+    craft_model = compile_program_into_craft_model(program, vocab, PROG_LEN)
+
+    encoded_ops = encode_ops(actual_ops)
+    encoded_model = encode_craft_model(craft_model)
+    return encoded_model, encoded_ops
+
+#%%
+
 
 #gen, OP_VOCAB, VAR_VOCAB = craft_dataset(ops_range=(30,30))
 

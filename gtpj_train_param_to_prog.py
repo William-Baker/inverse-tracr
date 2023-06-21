@@ -1,4 +1,4 @@
-
+ 
 #%%
 import os
 import jax
@@ -16,7 +16,6 @@ from jax import random
 import jax.numpy as jnp
 import os
 from torch.utils.tensorboard import SummaryWriter
-
 import optax
 from flax.training import train_state, checkpoints
 from tqdm import tqdm
@@ -26,50 +25,16 @@ from functools import partial
 torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from data.parameter_program_dataloader import TorchParameterProgramDataset
-from data.plot_true_v_pred import plot_orginal_heatmaps
-#from transformers import FlaxGPT2Model, 
-from transformers.models.gptj.modeling_flax_gptj import FlaxGPTJBlockCollection
+from data.plot_true_v_pred import plot_orginal_heatmaps, figure_to_array
 from transformers.models.gptj.configuration_gptj import GPTJConfig
-from models import GPT_Decoder
 from utils.jax_helpers import JaxMemUsage
-JaxMemUsage.launch(interval=0.001)
+JaxMemUsage.launch(interval=0.01)
 from dill import dump, load
 from jaxlib.xla_extension import XlaRuntimeError
-# for storing the optimiser state
-#from jax.experimental import optimizers
 
-from flax import linen as nn
-from models import PositionalEncoding
-class GPTJ(nn.Module):
-    num_classes: int
-    gpt_config: GPTJConfig
-    input_dropout_prob: float = 0.0
-    dtype: jnp.dtype = jnp.float32
-    
-    def setup(self):
-        self.input_dropout = nn.Dropout(self.input_dropout_prob)
-        self.input_layer = nn.Dense(self.gpt_config.n_embd)
-        self.input_pos_encoder = PositionalEncoding(self.gpt_config.n_embd)
-        self.h = FlaxGPTJBlockCollection(self.gpt_config)
-        
-        self.output_net = [
-            nn.Dense(1024),
-            nn.LayerNorm(),
-            nn.relu,
-            #nn.Dropout(self.dropout_prob),
-            nn.Dense(self.num_classes)
-        ]
-    
-    def __call__(self, x, attention_mask=None, train=True, position_ids=None):
-        x = self.input_dropout(x, deterministic=not train)
-        i = self.input_layer(x)
-        i = self.input_pos_encoder(i)
-         # hidden_states, all_hidden_states, all_attentions, all_cross_attentions
-        hidden_states, _, _ = self.h(i, attention_mask = attention_mask, position_ids=position_ids)
-        o = hidden_states
-        for l in self.output_net:
-            o = l(o) if not isinstance(l, nn.Dropout) else l(x, deterministic=not train)
-        return o
+
+from models import GPTJ
+
 
 
 
@@ -107,6 +72,7 @@ class TrainerModule:
         self.create_functions()
         # Initialize model
         self.init_model(exmp_batch)
+        
 
     
     def init_model(self, exmp_batch):
@@ -132,8 +98,40 @@ class TrainerModule:
         
         # Initialize training state
         self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=params, tx=optimizer)
-
     
+    def raw_apply(self, encoded_model, encoded_ops):
+        post_encoded_program = TorchParameterProgramDataset.encode_program(encoded_ops, src_dataset.op_encoder, src_dataset.var_encoder)
+        x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.dataset.prog_len, x=np.array(encoded_model), y=post_encoded_program)
+        pos_ids = np.arange(1, x.shape[0]+1)
+        x,y, loss_mask, attention_mask, pos_ids = TorchParameterProgramDataset.collate_fn_w_posid( PROG_LEN = self.dataset.prog_len, data=[[x, y, loss_mask, attention_mask, pos_ids]])
+        logits, fig = self.apply(x, attention_mask=attention_mask, pos_id=pos_ids, labels=y)
+        return logits, fig
+
+
+    def apply(self, inp_data, attention_mask, pos_id, labels=None, seed=0):
+        rng = jax.random.PRNGKey(seed)
+        rng, dropout_apply_rng = random.split(rng)
+        logits = self.model.apply({'params': self.state.params}, inp_data, attention_mask=attention_mask, train=False, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
+        
+        def logit_classes_jnp(logits):
+            classes = []
+            logits = jnp.array(logits)
+            
+            ptr = 0
+            for i, seg_size in enumerate(self.seg_sizes):
+                classes.append(logits[:, :, ptr:ptr + seg_size].argmax(axis=2))
+                ptr += seg_size
+            classes = jnp.stack(classes, axis=2)
+            return classes
+        classes = logit_classes_jnp(logits)
+
+        time_steps = min(labels.shape[1], classes.shape[1])
+        
+        if labels is not None:
+            heat_img = plot_orginal_heatmaps(labels[:, :time_steps, :], classes[:, :time_steps, :], self.dataset, return_fig=True)
+            return logits, heat_img
+        else:
+            return logits, None
 
     
     def get_accuracy_function(self):
@@ -183,7 +181,6 @@ class TrainerModule:
             return loss, (acc, rng)
         return calculate_loss
     
-    jnp.newaxis
 
     def create_functions(self):
         # Create jitted train and eval functions
@@ -208,8 +205,6 @@ class TrainerModule:
             _, (acc, rng) = calculate_loss(state.params, rng, batch, train=False)
             return acc, rng
         self.eval_step = jax.jit(eval_step)
-
-
 
 
         def verbose_step(state, batch, step):
@@ -387,7 +382,7 @@ src_dataset = TorchParameterProgramDataset(PROG_LEN)
 
 from data.dataloader_streams import StreamReader
 
-from threading import Lock
+
 class WrappedDataset(StreamReader):
     def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int) -> None:
         super().__init__(dir)
@@ -472,19 +467,19 @@ config_gptj = GPTJConfig(
 model = GPTJ(num_classes=sum(src_dataset.segment_sizes), gpt_config=config_gptj, input_dropout_prob=0.05) # if you forget input dense must match gpt hidden
 
 #%%
-trainer = TrainerModule(model, f'PARAM_GPTJ_v1 LR {LEARNING_RATE} bs: {batch_size} nembed: {config_gptj.n_embd} n_layer: {config_gptj.n_layer} n_head: {config_gptj.n_head}',
+trainer = TrainerModule(model, f'PARAM_GPTJ_v1 temp 2 LR {LEARNING_RATE} bs: {batch_size} nembed: {config_gptj.n_embd} n_layer: {config_gptj.n_layer} n_head: {config_gptj.n_head}',
                         #'no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
-                        lr=LEARNING_RATE)
+                        lr=LEARNING_RATE, PROG_LEN=PROG_LEN)
 
 
 #%%
 
 #trainer.train_model(train_dataloader, test_dataloader, num_epochs=max_epochs)
 
-#trainer.load_model(log_dir='PARAM_v3_1_GPT2')
+trainer.load_model(log_dir=f'PARAM_GPTJ_v1 LR {LEARNING_RATE} bs: {batch_size} nembed: {config_gptj.n_embd} n_layer: {config_gptj.n_layer} n_head: {config_gptj.n_head}')
 
 #%%
 
@@ -504,100 +499,59 @@ for epoch_idx in range(1, max_epochs+1):
 import sys
 sys.path.append('tracr/')
 import tracr.compiler.lib as lib
-program = lib.make_frac_prevs((rasp.tokens == "x"))#lib.make_frac_prevs((rasp.tokens == "x"))#lib.make_hist()#lib.make_length()
-
+from data.dataset import encode_rasp_program
 from tracr.rasp import rasp
-from data.dataset import Operation, compile_program_into_craft_model, gen_vocab, encode_ops, encode_craft_model
-from collections import defaultdict
 
-from data.rasp_operators import UNI_LAMBDAS, SEQUENCE_LAMBDAS
-
-program.children
+# program = lib.make_length()#lib.make_hist()#lib.make_frac_prevs((rasp.tokens == "x"))#lib.make_frac_prevs((rasp.tokens == "x"))#lib.make_hist()#lib.make_length()
 
 
-def traverse_prog(prog, lambdas = []):
-    """lambdas: provide the names of lambdas in order of program depth, from:
-         LAM_LT LAM_LE LAM_GT LAM_GE LAM_NE LAM_EQ LAM_IV LAM_ADD LAM_MUL LAM_SUB LAM_AND LAM_OR"""
-    def check_lam_name(lam_name):
-        possible_names = set(x[-1] for x in UNI_LAMBDAS) | set(x[-1] for x in  SEQUENCE_LAMBDAS)
-        if lam_name in possible_names:
-            return lam_name
-        else:
-            raise(f"Lambda name {lam_name} was not in the list of possible names: {possible_names}")
-    lambdas = [check_lam_name(lam) for lam in reversed(lambdas)]
+# encoded_model, encoded_ops = encode_rasp_program(program, PROG_LEN, [])
 
-    object_names = dict()
-    type_assingments = defaultdict(lambda: 0)
-    def get_name(obj):
-        if isinstance(obj, rasp.TokensType):
-            return "tokens"
-        elif isinstance(obj, rasp.IndicesType):
-            return "indices"
-        elif id(obj) not in object_names:
-            t = type(obj)
-            type_assingments[t] += 1
-            object_names[id(obj)] = f"{t.__name__} {type_assingments[t]}"
-        return object_names[id(obj)]
+
+
+example_program_dataset = [
+    # Program generating lambda,      lambda names
+    (lambda: lib.make_length(), [], "length"),
+    (lambda: lib.make_hist(), [], "histogram"), 
+    (lambda: lib.make_frac_prevs((rasp.tokens == "x")), ['LAM_EQ'], "frac_prev"),
     
-    def rasp_expr_to_op(expr: rasp.RASPExpr):
-        if isinstance(expr, rasp.Select):
-            sop1 = get_name(expr.keys)
-            sop2 = get_name(expr.queries)
-            pred = expr.predicate
-            return Operation(type(expr), [sop1, sop2, pred], get_name(expr))
-        elif isinstance(expr,  rasp.SelectorWidth):
-            sel = get_name(expr.selector)
-            return Operation(type(expr), [sel], get_name(expr))
-        elif isinstance(expr, rasp.Aggregate):
-            sel = get_name(expr.selector)
-            sop = get_name(expr.sop)
-            return Operation(type(expr), [sel, sop], get_name(expr))
-        elif isinstance(expr, rasp.Map):
-            sop = get_name(expr.inner)
-            lam = expr.f
-            if lambdas:
-                lam_name = lambdas.pop(0)
-            else:
-                print("Please input the name of the lambda for:")
-                print(expr)
-                print(sop)
-                print(lam)
-                lam_name = check_lam_name(input())
-            return Operation(type(expr), [sop, lam], get_name(expr), lambda_name=lam_name)
-        elif isinstance(expr, rasp.SequenceMap):
-            sop1 = get_name(expr.fst)
-            sop2 = get_name(expr.snd)
-            lam = expr.f
-            return Operation(type(expr), [sop1, sop2, lam], get_name(expr))
-        else:
-            print(f"No translation exists for operator: {expr}")
+    # Requires Linear Sequence Map
+    # (lambda: lib.make_shuffle_dyck(pairs=["()", "{}"]), ['LAM_LT'], "2_shuffle_dyck"),
+    # (lambda: lib.make_shuffle_dyck(pairs=["()", "{}", "[]"]), ['LAM_LT'], "3_shuffle_dyck"),
+    
+    # Expects numeric inputs
+    # (lambda: lib.make_sort(
+    #         rasp.tokens, rasp.tokens, max_seq_len=4, min_key=1), ['LAM_MUL'], 'sort_4'),
+    # (lambda: lib.make_sort(
+    #         rasp.tokens, rasp.tokens, max_seq_len=8, min_key=1), ['LAM_MUL'], 'sort_8'),
 
-    actual_ops = [rasp_expr_to_op(prog)]
+    (lambda: lib.make_sort_unique(rasp.tokens, rasp.tokens), [], 'sort_unique'),
+    
+    # ???
+    # (lambda: lib.make_sort_freq(max_seq_len=3), ['LAM_MUL', 'LAM_MUL'], 'sort_freq 3'),
+    # (lambda: lib.make_sort_freq(max_seq_len=7), ['LAM_MUL', 'LAM_MUL'], 'sort_freq 7'),
 
+    # Requires Linear Sequence Map
+    # (lambda: lib.make_pair_balance(
+    #         sop=rasp.tokens, open_token="(", close_token=")"), [], 'pair_balance'),
+    (lambda: rasp.Map(lambda x: x == "t4", rasp.tokens), ['LAM_GT'], 'map_eq_t4'),
+    #(lambda: rasp.Map(lambda x: x > 2, rasp.tokens), ['LAM_GT'], 'map_gt_2'),
+    (lambda: rasp.Map(lambda x: x > 1, rasp.Map(lambda x: x == "t1", rasp.tokens)), ['LAM_EQ', 'LAM_GT'], 'map_map')        
+]
 
-    current_node = prog
-    univisted = prog.children
-    while univisted:
-        current_node = univisted.pop(0)
-        if isinstance(current_node, rasp.TokensType) or isinstance(current_node, rasp.IndicesType):
-            continue # terminal input node
-        else:
-            actual_ops.append(rasp_expr_to_op(current_node))
-            univisted += current_node.children
-    return actual_ops
-
-actual_ops = traverse_prog(program)
-
-max_seq_len = 30
-vocab = gen_vocab(max_seq_len, prefix='t')
-craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
-
-encoded_ops = encode_ops(actual_ops)
-encoded_model = encode_craft_model(craft_model)
+for program_lam, lam_names, name in example_program_dataset:
+    print(name)
+    program = program_lam()
+    encoded_model, encoded_ops = encode_rasp_program(program, PROG_LEN, lam_names)
+    logits, fig = trainer.raw_apply(encoded_model, encoded_ops)
+    img = figure_to_array(fig)
+    trainer.logger.add_image("examples/"+name, img, global_step=0, dataformats='HWC')
 
 
 
-x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(max_seq_len, x=encoded_model, y=encoded_ops)
-pos_ids = np.arange(1, x.shape[0]+1)
+
+
+#%%
+
 
 # %%
