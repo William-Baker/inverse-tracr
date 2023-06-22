@@ -1,4 +1,3 @@
- 
 #%%
 import os
 import jax
@@ -31,7 +30,7 @@ from utils.jax_helpers import JaxMemUsage
 JaxMemUsage.launch(interval=0.01)
 from dill import dump, load
 from jaxlib.xla_extension import XlaRuntimeError
-
+from data.dataset import example_program_dataset, encode_rasp_program
 
 from models import GPTJ
 
@@ -45,7 +44,7 @@ CHECKPOINT_PATH = ".logs/"
 
 class TrainerModule:
 
-    def __init__(self, model,  model_name, exmp_batch, max_iters, dataset, lr=1e-3, warmup=100, seed=42):
+    def __init__(self, model, model_name, exmp_batch, max_iters, dataset, lr=1e-3, warmup=100, seed=42):
         """
         Inputs:
             model_name - Name of the model. Used for saving and checkpointing
@@ -63,14 +62,10 @@ class TrainerModule:
         self.seed = seed
         self.seg_sizes=src_dataset.segment_sizes
         self.dataset = dataset
-        # Create empty model. Note: no parameters yet
         self.model = model
-        # Prepare logging
         self.log_dir = os.path.join(CHECKPOINT_PATH, self.model_name)
         self.logger = SummaryWriter(log_dir=self.log_dir)
-        # Create jitted training and eval functions
         self.create_functions()
-        # Initialize model
         self.init_model(exmp_batch)
         
 
@@ -182,6 +177,8 @@ class TrainerModule:
         return calculate_loss
     
 
+
+
     def create_functions(self):
         # Create jitted train and eval functions
         calculate_loss = self.get_loss_function()
@@ -202,8 +199,8 @@ class TrainerModule:
 
         # Evaluation function
         def eval_step(state, rng, batch):
-            _, (acc, rng) = calculate_loss(state.params, rng, batch, train=False)
-            return acc, rng
+            loss, (acc, rng) = calculate_loss(state.params, rng, batch, train=False)
+            return loss, acc, rng
         self.eval_step = jax.jit(eval_step)
 
 
@@ -213,10 +210,9 @@ class TrainerModule:
             #rng, dropout_apply_rng = random.split(rng)
 
             # logits = (batch_size, time_steps, features)
-            # with jax.profiler.trace("jax-trace", create_perfetto_link=True):
             logits = self.model.apply({'params': state.params}, inp_data, attention_mask=attention_mask, position_ids=pos_id, train=False)#, rngs={'dropout': dropout_apply_rng})
             
-            #time_steps = inp_data.shape[1]
+           
             time_steps = labels.shape[1]
             ptr = 0
             loss = []
@@ -231,12 +227,11 @@ class TrainerModule:
             acc = self.accuracy_fn(logits, labels, loss_mask)
 
             def logit_classes_jnp(logits):
-                classes = [] #jnp.zeros((logits.shape[0], 5))
+                classes = []
                 logits = jnp.array(logits)
                 
                 ptr = 0
                 for i, seg_size in enumerate(self.seg_sizes):
-                    #classes[:, i] = logits[:, ptr:ptr + seg_size].argmax(axis=1)
                     classes.append(logits[:, :, ptr:ptr + seg_size].argmax(axis=2))
                     ptr += seg_size
                 classes = jnp.stack(classes, axis=2)
@@ -260,67 +255,92 @@ class TrainerModule:
 
 
     # TODO optimise away item() to be minimised
-    def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=3):
+    def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=3, validation_loader=None, VALIDATION_INTERVAL = None):
         # Train model for one epoch, and log avg loss and accuracy
-        dataloader_len = len(train_loader)
-        LOGGING_INTERVAL = dataloader_len // LOGS_PER_EPOCH
+        DATALOADER_LENGTH = len(train_loader)
+        LOGGING_INTERVAL = DATALOADER_LENGTH // LOGS_PER_EPOCH
+        VALIDATION_INTERVAL = DATALOADER_LENGTH if VALIDATION_INTERVAL is None else VALIDATION_INTERVAL
 
         with tqdm(total=len(train_loader), unit='batch') as tepoch:
             tepoch.set_description(f"Epoch {epoch}")
 
             # ======================================= Training =======================================
-            accs, losses = [], []
-            # with jax.profiler.trace("jax-trace", create_perfetto_link=True):
+            acc_sum, loss_sum, count = 0.0, 0.0, 0
             for idx, batch in enumerate(train_loader):
                 try:
-                    #print(batch[0].shape[1])
                     # -------------------------- Train ---------------------------------------------
                     self.state, self.rng, loss, accuracy = self.train_step(self.state, self.rng, batch)
                     
 
                     # ----------- metrics -------------
-                    losses.append(loss)
-                    accs.append(accuracy)
+                    loss, accuracy = loss.item(), accuracy.item()
+                    loss_sum += loss
+                    acc_sum += accuracy
 
                     
                     # ----------- TF metrics ----------
-                    self.logger.add_scalar('train_hf/loss', loss.item(), global_step=idx + (epoch - 1) * dataloader_len)
-                    self.logger.add_scalar('train_hf/accuracy', accuracy.item(), global_step=idx + (epoch - 1) * dataloader_len)
+                    global_step = idx + (epoch - 1) * DATALOADER_LENGTH
+                    self.logger.add_scalar('train_hf/loss', loss, global_step=global_step)
+                    self.logger.add_scalar('train_hf/accuracy', accuracy, global_step=global_step)
                     
                     
                     # ------------ Low freq metrics --------------
                     if (idx + 1) % LOGGING_INTERVAL == 0:
-                        self.verbose_step(state=self.state, batch=batch, step=idx + epoch * dataloader_len)
+                        self.verbose_step(state=self.state, batch=batch, step=global_step)
+                    
 
-                    
-                    
+                    # ------------ Evaluation Step ---------------
+                    if validation_loader is not None and (global_step + 1) % LOGGING_INTERVAL == 0:
+                        eval_acc, eval_loss = self.eval_model(validation_loader)
+                        trainer.logger.add_scalar('val/accuracy', eval_acc, global_step=global_step)
+                        trainer.logger.add_scalar('val/loss', eval_loss, global_step=global_step)
+                        if eval_acc >= best_acc:
+                            best_acc = eval_acc
+                            trainer.save_model(step=epoch_idx)
+                        self.eval_programs()
+                        
+
                     # ----------- TQDM ----------------
-                    tepoch.set_postfix({'Batch': idx, 'Train Loss': loss.item(), 'Acc': accuracy.item(), 'MaxMem': JaxMemUsage.max_usage_str, 'Mem': JaxMemUsage.usage_str})
+                    tepoch.set_postfix({'Batch': idx, 'Train Loss': loss, 'Acc': accuracy, 'MaxMem': JaxMemUsage.max_usage_str, 'Mem': JaxMemUsage.usage_str})
                     tepoch.update(1)
+                    
+                    count += 1
+
                 except XlaRuntimeError as E:
                     print(E)
                     print(batch[0].shape)
                     jax.lib.xla_bridge.get_backend().defragment()
                     if isinstance(E, KeyboardInterrupt):
                         raise(E)
-            # jax.profiler.save_device_memory_profile("memory.prof")
-
-            avg_loss = np.stack(jax.device_get(losses)).mean()
-            avg_acc = np.stack(jax.device_get(accs)).mean()
-            self.logger.add_scalar('train/loss', avg_loss, global_step=epoch)
-            self.logger.add_scalar('train/accuracy', avg_acc, global_step=epoch)
+            
+            self.logger.add_scalar('train/loss', loss_sum / count, global_step=epoch)
+            self.logger.add_scalar('train/accuracy', acc_sum / count, global_step=epoch)
+            trainer.logger.flush()
 
     def eval_model(self, data_loader):
         # Test model on all data points of a data loader and return avg accuracy
-        correct_class, count = 0, 0
+        acc_sum, loss_sum, count = 0.0, 0.0, 0
         for batch in data_loader:
-            acc, self.rng = self.eval_step(self.state, self.rng, batch)
-            correct_class += acc * batch[0].shape[0]
-            count += batch[0].shape[0]
-        eval_acc = (correct_class / count).item()
-        return eval_acc
+            loss, acc, self.rng = self.eval_step(self.state, self.rng, batch)
+
+            bs = batch[0].shape[0]
+            loss, acc = loss.item(), acc.item()
+            acc_sum += acc * bs
+            loss_sum += loss * bs
+            count += bs
+        eval_acc = acc_sum / count
+        eval_loss = loss_sum / count
+        return eval_acc, eval_loss
     
-    #@profile
+    def eval_programs(self):
+        for program_lam, lam_names, name in example_program_dataset:
+            program = program_lam()
+            encoded_model, encoded_ops = encode_rasp_program(program, args.PROG_LEN, lam_names)
+            logits, fig = self.raw_apply(encoded_model, encoded_ops)
+            img = figure_to_array(fig)
+            self.logger.add_image("examples/"+name, img, global_step=0, dataformats='HWC')
+    
+    
     def train_model(self, train_loader, val_loader, num_epochs=500):
         # Train model for defined number of epochs
         best_acc = 0.0
@@ -335,50 +355,47 @@ class TrainerModule:
                 self.logger.flush()
                 
 
+
+
+
     def save_model(self, step=0):
         # Save current model at certain training iteration
         checkpoints.save_checkpoint(ckpt_dir=self.log_dir, target=self.state.params, step=step)
-        # trained_params = jax.example_libraries.optimizers.unpack_optimizer_state(self.state.opt_state)
-        # pickle.dump(trained_params, open(os.path.join(self.log_dir, "best_ckpt.pkl"), "wb"))
         dump(self.state.opt_state, open(os.path.join(self.log_dir, "optimiser_state.pkl"), "wb"))
         
 
-    def load_model(self, pretrained=False, log_dir=None):
-        # Load model. We use different checkpoint for the pretrained model
+    def load_model(self, log_dir=None):
         log_dir = self.log_dir if log_dir is None else log_dir
-        if not pretrained:
-            params = checkpoints.restore_checkpoint(ckpt_dir=log_dir, target=self.state.params)
-        else:
-            params = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(CHECKPOINT_PATH, f'{self.model_name}.ckpt'), target=self.state.params)
-
-        opt_state = load( open(os.path.join(CHECKPOINT_PATH, log_dir, "optimiser_state.pkl"), "rb" ) )
-        # self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=params, tx=self.state.tx, opt_state=opt_state)
-        train_state.TrainState(
-            step=0,
-            apply_fn=self.model.apply,
-            params=params,
-            tx=self.state.tx,
-            opt_state=opt_state)
         
-        # best_params = pickle.load(open(os.path.join(self.log_dir, "best_ckpt.pkl"), "rb"))
-        # self.state.opt_state = jax.example_libraries.optimizers.pack_optimizer_state(best_params)
-        #self.state.opt_state = load( open(os.path.join(CHECKPOINT_PATH, log_dir, "optimiser_state.pkl"), "rb" ) )
+        if not os.path.isdir(os.path.join(CHECKPOINT_PATH, log_dir)): raise FileNotFoundError("Could not find the model directory")
 
+        params = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(CHECKPOINT_PATH, log_dir), target=self.state.params)
+        opt_state = load( open(os.path.join(CHECKPOINT_PATH, log_dir, "optimiser_state.pkl"), "rb" ) )
+        
+        self.state = train_state.TrainState(
+                            step=0,
+                            apply_fn=self.model.apply,
+                            params=params,
+                            tx=self.state.tx,
+                            opt_state=opt_state)
 
-    def checkpoint_exists(self):
-        # Check whether a pretrained model exist for this Transformer
-        return os.path.isfile(os.path.join(CHECKPOINT_PATH, f'{self.model_name}.ckpt'))
 
 
 
 #%%
 
+from argparse import Namespace
 
-batch_size=128
-PROG_LEN = 15
-max_epochs = 200
+args = Namespace(
+    batch_size=128,
+    PROG_LEN = 15,
+    max_epochs = 200,
+    LEARNING_RATE=1e-4,
+    input_dropout_prob = 0.05,
+    max_timesteps = 40,
+)
 
-src_dataset = TorchParameterProgramDataset(PROG_LEN)
+src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
 
 from data.dataloader_streams import StreamReader
 
@@ -403,19 +420,18 @@ class WrappedDataset(StreamReader):
         return x,y,loss_mask,attention_mask, pos_ids
 
 
-dataset = WrappedDataset('.data/iTracr_dataset_train/', PROG_LEN, 40)
-test_dataset = WrappedDataset('.data/iTracr_dataset_test/', PROG_LEN, 40)
+dataset = WrappedDataset('.data/iTracr_dataset_train/', args.PROG_LEN, args.max_timesteps)
+test_dataset = WrappedDataset('.data/iTracr_dataset_test/', args.PROG_LEN, args.max_timesteps)
 
 
 
-collate_fn = partial(TorchParameterProgramDataset.collate_fn_w_posid, PROG_LEN)
-
-#%%
+collate_fn = partial(TorchParameterProgramDataset.collate_fn_w_posid, args.PROG_LEN)
 
 
-train_dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=2, shuffle=True)#, pin_memory=True)
-test_dataloader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=2, shuffle=True)#, pin_memory=True)
-num_train_iters = len(train_dataloader) * max_epochs
+
+train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=2, shuffle=True)#, pin_memory=True)
+test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=2, shuffle=True)#, pin_memory=True)
+num_train_iters = len(train_dataloader) * args.max_epochs
 
 
 def testing_loaders():
@@ -435,12 +451,12 @@ testing_loaders()
 #%%
 
 
-LEARNING_RATE=1e-4#1e-4
+
 test_it = iter(test_dataloader)
 
 
 
-config_gptj = GPTJConfig(
+model_config = GPTJConfig(
         vocab_size=None,
         n_positions=1024,
         n_embd=1024,
@@ -461,97 +477,36 @@ config_gptj = GPTJConfig(
 )
     
 
+#
 
-# 
 
-model = GPTJ(num_classes=sum(src_dataset.segment_sizes), gpt_config=config_gptj, input_dropout_prob=0.05) # if you forget input dense must match gpt hidden
+model = GPTJ(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob) # if you forget input dense must match gpt hidden
 
 #%%
-trainer = TrainerModule(model, f'PARAM_GPTJ_v1 temp 2 LR {LEARNING_RATE} bs: {batch_size} nembed: {config_gptj.n_embd} n_layer: {config_gptj.n_layer} n_head: {config_gptj.n_head}',
+trainer = TrainerModule(model, f'PARAM_GPTJ_v1 temp 3 LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         #'no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
-                        lr=LEARNING_RATE, PROG_LEN=PROG_LEN)
-
+                        lr=args.LEARNING_RATE)
+_ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n{model_config}")
 
 #%%
 
-#trainer.train_model(train_dataloader, test_dataloader, num_epochs=max_epochs)
 
-trainer.load_model(log_dir=f'PARAM_GPTJ_v1 LR {LEARNING_RATE} bs: {batch_size} nembed: {config_gptj.n_embd} n_layer: {config_gptj.n_layer} n_head: {config_gptj.n_head}')
+trainer.load_model(log_dir="PARAM_GPTJ_v1 LR 0.0001 bs: 128 nembed: 1024 n_layer: 28 n_head: 16")
 
 #%%
 
 best_acc = 0.0
-for epoch_idx in range(1, max_epochs+1):
+for epoch_idx in range(1, args.max_epochs+1):
     trainer.train_epoch(train_dataloader, epoch=epoch_idx)
-    if epoch_idx % 5 == 0:
-        eval_acc = trainer.eval_model(test_dataloader)
-        trainer.logger.add_scalar('val/accuracy', eval_acc, global_step=epoch_idx)
-        if eval_acc >= best_acc:
-            best_acc = eval_acc
-            trainer.save_model(step=epoch_idx)
-        trainer.logger.flush()
-
-#%%
-
-import sys
-sys.path.append('tracr/')
-import tracr.compiler.lib as lib
-from data.dataset import encode_rasp_program
-from tracr.rasp import rasp
-
-# program = lib.make_length()#lib.make_hist()#lib.make_frac_prevs((rasp.tokens == "x"))#lib.make_frac_prevs((rasp.tokens == "x"))#lib.make_hist()#lib.make_length()
-
-
-# encoded_model, encoded_ops = encode_rasp_program(program, PROG_LEN, [])
-
-
-
-example_program_dataset = [
-    # Program generating lambda,      lambda names
-    (lambda: lib.make_length(), [], "length"),
-    (lambda: lib.make_hist(), [], "histogram"), 
-    (lambda: lib.make_frac_prevs((rasp.tokens == "x")), ['LAM_EQ'], "frac_prev"),
-    
-    # Requires Linear Sequence Map
-    # (lambda: lib.make_shuffle_dyck(pairs=["()", "{}"]), ['LAM_LT'], "2_shuffle_dyck"),
-    # (lambda: lib.make_shuffle_dyck(pairs=["()", "{}", "[]"]), ['LAM_LT'], "3_shuffle_dyck"),
-    
-    # Expects numeric inputs
-    # (lambda: lib.make_sort(
-    #         rasp.tokens, rasp.tokens, max_seq_len=4, min_key=1), ['LAM_MUL'], 'sort_4'),
-    # (lambda: lib.make_sort(
-    #         rasp.tokens, rasp.tokens, max_seq_len=8, min_key=1), ['LAM_MUL'], 'sort_8'),
-
-    (lambda: lib.make_sort_unique(rasp.tokens, rasp.tokens), [], 'sort_unique'),
-    
-    # ???
-    # (lambda: lib.make_sort_freq(max_seq_len=3), ['LAM_MUL', 'LAM_MUL'], 'sort_freq 3'),
-    # (lambda: lib.make_sort_freq(max_seq_len=7), ['LAM_MUL', 'LAM_MUL'], 'sort_freq 7'),
-
-    # Requires Linear Sequence Map
-    # (lambda: lib.make_pair_balance(
-    #         sop=rasp.tokens, open_token="(", close_token=")"), [], 'pair_balance'),
-    (lambda: rasp.Map(lambda x: x == "t4", rasp.tokens), ['LAM_GT'], 'map_eq_t4'),
-    #(lambda: rasp.Map(lambda x: x > 2, rasp.tokens), ['LAM_GT'], 'map_gt_2'),
-    (lambda: rasp.Map(lambda x: x > 1, rasp.Map(lambda x: x == "t1", rasp.tokens)), ['LAM_EQ', 'LAM_GT'], 'map_map')        
-]
-
-for program_lam, lam_names, name in example_program_dataset:
-    print(name)
-    program = program_lam()
-    encoded_model, encoded_ops = encode_rasp_program(program, PROG_LEN, lam_names)
-    logits, fig = trainer.raw_apply(encoded_model, encoded_ops)
-    img = figure_to_array(fig)
-    trainer.logger.add_image("examples/"+name, img, global_step=0, dataformats='HWC')
-
-
-
 
 
 #%%
 
 
-# %%
+
+
+# LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+

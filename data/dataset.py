@@ -22,6 +22,8 @@ from data.sigterm import guard_timeout, TimeoutException
 import inspect
 from collections import defaultdict
 from enum import Enum
+import tracr.compiler.lib as lib
+from tracr.rasp import rasp
 class Cat(Enum):
     numeric = 1
     categoric = 2
@@ -731,6 +733,37 @@ def encode_rasp_program(program, PROG_LEN, lambdas=[]):
     encoded_ops = encode_ops(actual_ops)
     encoded_model = encode_craft_model(craft_model)
     return encoded_model, encoded_ops
+
+
+example_program_dataset = [
+    # Program generating lambda,      lambda names
+    (lambda: lib.make_length(), [], "length"),
+    (lambda: lib.make_hist(), [], "histogram"), 
+    (lambda: lib.make_frac_prevs((rasp.tokens == "x")), ['LAM_EQ'], "frac_prev"),
+    
+    # Requires Linear Sequence Map
+    # (lambda: lib.make_shuffle_dyck(pairs=["()", "{}"]), ['LAM_LT'], "2_shuffle_dyck"),
+    # (lambda: lib.make_shuffle_dyck(pairs=["()", "{}", "[]"]), ['LAM_LT'], "3_shuffle_dyck"),
+    
+    # Expects numeric inputs
+    # (lambda: lib.make_sort(
+    #         rasp.tokens, rasp.tokens, max_seq_len=4, min_key=1), ['LAM_MUL'], 'sort_4'),
+    # (lambda: lib.make_sort(
+    #         rasp.tokens, rasp.tokens, max_seq_len=8, min_key=1), ['LAM_MUL'], 'sort_8'),
+
+    (lambda: lib.make_sort_unique(rasp.tokens, rasp.tokens), [], 'sort_unique'),
+    
+    # ???
+    # (lambda: lib.make_sort_freq(max_seq_len=3), ['LAM_MUL', 'LAM_MUL'], 'sort_freq 3'),
+    # (lambda: lib.make_sort_freq(max_seq_len=7), ['LAM_MUL', 'LAM_MUL'], 'sort_freq 7'),
+
+    # Requires Linear Sequence Map
+    # (lambda: lib.make_pair_balance(
+    #         sop=rasp.tokens, open_token="(", close_token=")"), [], 'pair_balance'),
+    (lambda: rasp.Map(lambda x: x == "t4", rasp.tokens), ['LAM_GT'], 'map_eq_t4'),
+    #(lambda: rasp.Map(lambda x: x > 2, rasp.tokens), ['LAM_GT'], 'map_gt_2'),
+    (lambda: rasp.Map(lambda x: x > 1, rasp.Map(lambda x: x == "t1", rasp.tokens)), ['LAM_EQ', 'LAM_GT'], 'map_map')        
+]
 
 #%%
 
