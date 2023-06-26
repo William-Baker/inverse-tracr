@@ -134,7 +134,7 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
         loss_mask = np.concatenate((loss_mask,padding[:, 0]), axis=0)
 
         enc_x, y = encode_sample(x, y, max_prog_len=max_prog_len)
-        attention_mask = np.ones(enc_x.shape)
+        attention_mask = np.ones(enc_x.shape[0])
 
         return enc_x,y,loss_mask, attention_mask
     
@@ -156,12 +156,10 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
 
         translated = str()
         for t in range(pred.shape[0]):
-            # if pred[t, :].sum().item() == 0:
-            #     translated += "<PAD>\n"
+            # if pred[t].sum().item() == 0: # skip padding
             #     continue
             op = self.op_decoder[pred[t, 0].item()]
             translated += op
-            # if op not in [START_TOKEN, END_TOKEN]:
             for i in range(1,5):
                 translated += " " + self.var_decoder[pred[t, i].item()]
             translated += "\n"

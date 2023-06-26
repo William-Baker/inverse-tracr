@@ -29,7 +29,7 @@ from data.parameter_program_dataloader import TorchParameterProgramDataset
 from data.plot_true_v_pred import plot_orginal_heatmaps
 #from transformers import FlaxGPT2Model, 
 from transformers import GPT2Config
-from models import GPT_Decoder
+from models import GPT2
 from utils.jax_helpers import JaxMemUsage
 JaxMemUsage.launch(interval=0.001)
 from dill import dump, load
@@ -437,9 +437,11 @@ config_GPT2_medium = GPT2Config(vocab_size=next(test_it)[0].shape[2], n_position
 
 # 
 
-model = GPT_Decoder(num_classes=sum(src_dataset.segment_sizes), gpt_config=config_GPT2_medium, input_dropout_prob=0.05) # if you forget input dense must match gpt hidden
+model = GPT2(num_classes=sum(src_dataset.segment_sizes), gpt_config=config_GPT2_medium, input_dropout_prob=0.05) # if you forget input dense must match gpt hidden
 
 #%%
+
+
 trainer = TrainerModule(model, f'PARAM_v5_AttenMask_1_GPT2_36 LR {LEARNING_RATE} bs: {batch_size} nembed: {config_GPT2_medium.n_embd} n_layer: {config_GPT2_medium.n_layer} n_head: {config_GPT2_medium.n_head}',
                         #'no mean shuffled inputs pose in hid',#f'11 big lr: {LEARNING_RATE} bs: {batch_size} epcs: {max_epochs}', 
                         next(test_it), 
@@ -447,6 +449,8 @@ trainer = TrainerModule(model, f'PARAM_v5_AttenMask_1_GPT2_36 LR {LEARNING_RATE}
                         dataset=src_dataset, 
                         lr=LEARNING_RATE)
 
+
+# %%
 
 #%%
 

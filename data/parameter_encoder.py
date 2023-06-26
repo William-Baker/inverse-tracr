@@ -15,7 +15,7 @@ import numpy as np
 # Architecture concatenated onehot encoded layer types e.g. Head, MLP, head = [100110<PAD>]
 #  (padded upto the program length x2)
 
-TIMESTEP_ENCODER = dict(zip(['PAD', 'w_qk', 'w_ov', 'fst', 'snd'], range(5)))
+TIMESTEP_ENCODER = dict(zip(['PAD', 'w_qk', 'w_ov', 'fst', 'snd', 'PROGRAM_START', 'PROGRAM_END'], range(7)))
 PARAMETER_BLOCK_SZ = 512
 ARCHITECTURE_ENCODER = {'PAD': 0, 'HEAD': 1, 'MLP': 2}
 

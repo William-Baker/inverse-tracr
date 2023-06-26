@@ -230,7 +230,7 @@ class Decoder(nn.Module):
             o = l(o) if not isinstance(l, nn.Dropout) else l(x, deterministic=not train)
         return o
 
-class GPT_Decoder(nn.Module):
+class GPT2(nn.Module):
     num_classes: int
     gpt_config: GPT2Config
     input_dropout_prob: float = 0.0
@@ -250,7 +250,7 @@ class GPT_Decoder(nn.Module):
             nn.Dense(self.num_classes)
         ]
     
-    def __call__(self, x, attention_mask=None, train=True):
+    def __call__(self, x, attention_mask=None, position_ids=None, train=True):
         x = self.input_dropout(x, deterministic=not train)
         i = self.input_layer(x)
         i = self.input_pos_encoder(i)
@@ -292,6 +292,43 @@ class GPTJ(nn.Module):
         i = self.input_pos_encoder(i)
          # hidden_states, all_hidden_states, all_attentions, all_cross_attentions
         hidden_states, _, _ = self.h(i, attention_mask = attention_mask, position_ids=position_ids)
+        o = hidden_states
+        for l in self.output_net:
+            o = l(o) if not isinstance(l, nn.Dropout) else l(x, deterministic=not train)
+        return o
+
+
+
+
+
+#from transformers.models.gpt_neox import GPTNeoXLayer
+from transformers.models.gpt_neo.modeling_flax_gpt_neo import FlaxGPTNeoBlockCollection
+class GPTNeo(nn.Module):
+    num_classes: int
+    gpt_config: GPTJConfig
+    input_dropout_prob: float = 0.0
+    dtype: jnp.dtype = jnp.float32
+    
+    def setup(self):
+        self.input_dropout = nn.Dropout(self.input_dropout_prob)
+        self.input_layer = nn.Dense(self.gpt_config.n_embd)
+        self.input_pos_encoder = PositionalEncoding(self.gpt_config.n_embd)
+        self.h = FlaxGPTNeoBlockCollection(self.gpt_config)
+        
+        self.output_net = [
+            nn.Dense(1024),
+            nn.LayerNorm(),
+            nn.relu,
+            #nn.Dropout(self.dropout_prob),
+            nn.Dense(self.num_classes)
+        ]
+    
+    def __call__(self, x, attention_mask=None, train=True, position_ids=None):
+        x = self.input_dropout(x, deterministic=not train)
+        i = self.input_layer(x)
+        i = self.input_pos_encoder(i)
+         # hidden_states, all_hidden_states, all_attentions, all_cross_attentions
+        hidden_states, _, _ = self.h(i, attention_mask = attention_mask)
         o = hidden_states
         for l in self.output_net:
             o = l(o) if not isinstance(l, nn.Dropout) else l(x, deterministic=not train)

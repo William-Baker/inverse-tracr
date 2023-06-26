@@ -4,7 +4,7 @@ import jax
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
-#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 # from jax import config
 # config.update("jax_disable_jit", True)
 
@@ -30,7 +30,13 @@ from dill import dump, load
 from jaxlib.xla_extension import XlaRuntimeError
 from data.dataset import example_program_dataset, encode_rasp_program
 
-from models import GPT2, GPT2Config
+from models import GPTNeo
+
+
+
+
+
+#%%
 
 
 
@@ -253,12 +259,12 @@ class TrainerModule:
 
 
     # TODO optimise away item() to be minimised
-    def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=3, validation_loader=None, VALS_PER_EPOCH = 1):
+    def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=3, validation_loader=None, VALIDATION_INTERVAL = None):
         # Train model for one epoch, and log avg loss and accuracy
         DATALOADER_LENGTH = len(train_loader)
         LOGGING_INTERVAL = DATALOADER_LENGTH // LOGS_PER_EPOCH
-        VALIDATION_INTERVAL = DATALOADER_LENGTH // VALS_PER_EPOCH
-        best_eval_loss = np.inf
+        VALIDATION_INTERVAL = DATALOADER_LENGTH if VALIDATION_INTERVAL is None else VALIDATION_INTERVAL
+        best_acc = 0.0
         with tqdm(total=len(train_loader), unit='batch') as tepoch:
             tepoch.set_description(f"Epoch {epoch}")
 
@@ -288,12 +294,12 @@ class TrainerModule:
                     
 
                     # ------------ Evaluation Step ---------------
-                    if validation_loader is not None and (idx + 1) % VALIDATION_INTERVAL == 0:
+                    if validation_loader is not None and (global_step + 1) % LOGGING_INTERVAL == 0:
                         eval_acc, eval_loss = self.eval_model(validation_loader)
                         trainer.logger.add_scalar('val/accuracy', eval_acc, global_step=global_step)
                         trainer.logger.add_scalar('val/loss', eval_loss, global_step=global_step)
-                        if eval_loss < best_eval_loss:
-                            best_eval_loss = eval_loss
+                        if eval_acc >= best_acc:
+                            best_acc = eval_acc
                             trainer.save_model(step=global_step)
                         self.eval_programs(step=global_step)
                         
@@ -339,7 +345,19 @@ class TrainerModule:
             self.logger.add_image("examples/"+name, img, global_step=step, dataformats='HWC')
     
     
-
+    def train_model(self, train_loader, val_loader, num_epochs=500):
+        # Train model for defined number of epochs
+        best_acc = 0.0
+        for epoch_idx in range(1, num_epochs+1):
+            self.train_epoch(train_loader, epoch=epoch_idx)
+            if epoch_idx % 5 == 0:
+                eval_acc = self.eval_model(val_loader)
+                self.logger.add_scalar('val/accuracy', eval_acc, global_step=epoch_idx)
+                if eval_acc >= best_acc:
+                    best_acc = eval_acc
+                    self.save_model(step=epoch_idx)
+                self.logger.flush()
+                
 
 
 
@@ -465,8 +483,7 @@ def make_collate_fn(PROG_LEN):
             return np.array(inputs), np.array(targets).astype(int), np.array(loss_masks), np.array(attention_masks), pos_ids
     return collate_fn
 
-#dataset = WrappedDataset('.data/iTracr_dataset_train/', args.PROG_LEN, args.max_timesteps)
-dataset = WrappedDataset('.data/iTracr_dataset/', args.PROG_LEN, args.max_timesteps)
+dataset = WrappedDataset('.data/iTracr_dataset_train/', args.PROG_LEN, args.max_timesteps)
 test_dataset = WrappedDataset('.data/iTracr_dataset_test/', args.PROG_LEN, args.max_timesteps)
 
 
@@ -507,7 +524,7 @@ def decode_timesteps(x, batch=0):
     for timestep in range(this_batch.shape[0]):
         index = np.array(this_batch[timestep, : TIMESTEP_TOKEN_SIZE]).argmax()
         print(list(ONEHOT_TIMESTEP_ENCODER.keys())[index])
-decode_timesteps(sample[0], batch=1)
+decode_timesteps(sample[0], batch=0)
 print(src_dataset.decode_pred(sample[1], 0))
 
 #%%
@@ -515,27 +532,31 @@ print(src_dataset.decode_pred(sample[1], 0))
 x,y, loss_mask, attention_mask = next(iter(dataset))
 
 
-# import json
-# with open('utils/gpt2_configs/gpt2_large.json') as f: # GPT2 Large - 774M
-#   config_json = json.load(f)
-# model_config = GPT2Config(**config_json)
+from transformers import GPTJConfig
+
+# import yaml
+
+# with open(r'utils/gptneo_configs/pythia_125m.json') as file:
+#     documents = yaml.full_load(file)
 
 
-# GPT2 Medium - 335M
-model_config = GPT2Config(vocab_size=next(test_it)[0].shape[2], n_positions=1024, n_embd=1024, n_layer=24, n_head=16, 
-                                n_inner=None, activation_function='gelu_new', resid_pdrop=0.1, layer_norm_epsilon=1e-05,
-                                initializer_range=0.02, summary_type='cls_index', summary_use_proj = True, 
-                                summary_activation = None, summary_proj_to_labels = True, summary_first_dropout = 0.1, 
-                                scale_attn_weights = True, use_cache = True, bos_token_id = next(test_it)[0].shape[2], eos_token_id = next(test_it)[0].shape[2], 
-                                scale_attn_by_inverse_layer_idx = False, reorder_and_upcast_attn = False )
+import json
+
+with open('utils/gptneo_configs/pythia_1.3B.json') as f:
+  config_json = json.load(f)
 
 
+model_config = GPTJConfig(**config_json)
+
+model_config.n_embd  = model_config.hidden_size
+model_config.n_head  = model_config.num_heads
+model_config.n_layer = model_config.num_layers
 
 
-model = GPT2(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
+model = GPTNeo(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
 #%%
-trainer = TrainerModule(model, f'PARAM_GPT2_MEDIUM v2 cont LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
+trainer = TrainerModule(model, f'PARAM_GPTNeo_1.3B LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
@@ -545,20 +566,17 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 #%%
 
 # trainer.eval_programs()
-#trainer.load_model(log_dir="PARAM_GPT2_MEDIUM_v2 LR 0.0001 bs: 128 nembed: 1024 n_layer: 24 n_head: 16")
+#trainer.load_model(log_dir="PARAM_GPT2_MEDIUM")
 
 #%%
 
 
 for epoch_idx in range(1, args.max_epochs+1):
-    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=10 )
+    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALIDATION_INTERVAL=300 )
 
 
 #%%
 
 
-#%%
-if os.path.isfile('test/b'):
-    raise Exception()
-os.rename('test/a', 'test/b', )
-# %%
+
+# trainer.verbose_step(trainer.state, sample, 0)

@@ -27,7 +27,7 @@ class JaxMemUsage:
     
 
     def inner():
-        unit_dict = {'B': 1, 'KB': 1000, 'MB': 1000000, 'GB': 1000000000, 'TB': 1000000000000}
+        unit_dict = {'B': 1, 'kB': 1000, 'MB': 1000000, 'GB': 1000000000, 'TB': 1000000000000}
         while True:
             dir_prefix='/dev/shm'
             # JaxMemUsage.jax.profiler.save_device_memory_profile(f'{dir_prefix}/memory.prof.new')
@@ -43,9 +43,9 @@ class JaxMemUsage:
             if output != '':
                 output = output.split('device: Total')[1]
                 JaxMemUsage.usage_str = output.split('\n')[0].split('\n')[0]
-                if JaxMemUsage.usage_str.endswith('KB'):
+                if JaxMemUsage.usage_str.endswith('kB'):
                     output = JaxMemUsage.usage_str[:-2]
-                    JaxMemUsage.usage_unit = 'KB'
+                    JaxMemUsage.usage_unit = 'kB'
                 elif JaxMemUsage.usage_str.endswith('MB'):
                     output = JaxMemUsage.usage_str[:-2]
                     JaxMemUsage.usage_unit = 'MB'
@@ -77,3 +77,4 @@ class JaxMemUsage:
         JaxMemUsage.time.sleep(JaxMemUsage.interval * 5)
         thread = JaxMemUsage.threading.Thread(target=JaxMemUsage.inner, daemon=True)
         thread.start()
+

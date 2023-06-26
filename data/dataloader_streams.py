@@ -28,13 +28,13 @@ class StreamWriter:
         it = iter(dataloader)
         for idx in tqdm(range(self.startidx, self.samples_to_write + self.startidx), desc=f'Writing samples:'):
             x, y = next(it)#self.dataset.__getitem__(idx)
-            np.savez(self.dir + str(idx).zfill(7), x=x, y=y)
+            np.savez(self.dir + str(idx).zfill(8), x=x, y=y)
     
     def __write_serial__(self):
         it = iter(self.dataset)
         for idx in tqdm(range(self.startidx, self.samples_to_write + self.startidx), desc=f'Writing samples:'):
             x, y = next(it)#self.dataset.__getitem__(idx)
-            np.savez(self.dir + str(idx).zfill(7), x=x, y=y)
+            np.savez(self.dir + str(idx).zfill(8), x=x, y=y)
 
 
     def write_samples(self, num_threads=1):
@@ -77,7 +77,7 @@ if __name__ == "__main__":
         # sw = StreamWriter(pth, dataset)
         # sw.write_samples(num_threads=1)
         N = 20
-        samples = 200000
+        samples = 1000000
         offset  = 900000
         for i in range(N):
             #os.chdir('../')
