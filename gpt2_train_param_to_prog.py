@@ -23,6 +23,9 @@
 # ImportError: libcupti.so.11.7: cannot open shared object file: No such file or directory
 # export PATH=$PATH:/home/wb326/miniconda3/envs/venv/lib
 # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/wb326/miniconda3/envs/venv/lib
+
+
+
 import os
 import jax
 
@@ -37,6 +40,8 @@ import jax
 
 # from jax_smi import initialise_tracking
 # initialise_tracking()
+
+# pip install nvidia-cublas-cu11      nvidia-cublas-cu12      nvidia-cuda-cupti-cu11  nvidia-cuda-cupti-cu12  nvidia-cuda-nvcc-cu12   nvidia-cuda-nvrtc-cu11  nvidia-cuda-runtime-cu11nvidia-cuda-runtime-cu12nvidia-cudnn-cu11       nvidia-cudnn-cu12       nvidia-cufft-cu11       nvidia-cufft-cu12       nvidia-curand-cu11      nvidia-cusolver-cu11    nvidia-cusolver-cu12    nvidia-cusparse-cu11    nvidia-cusparse-cu12    nvidia-nccl-cu11        nvidia-nvjitlink-cu12   nvidia-nvtx-cu11        
 
 from jax import random
 import jax.numpy as jnp
