@@ -395,7 +395,11 @@ args = Namespace(
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
 
 from data.dataloader_streams import StreamReader, ZipStreamReader
-
+# from zipfile import ZipFile
+# from io import BytesIO
+# zip = ZipFile(file='.data/iTracrDatasetTrain.zip', mode='r')
+# files = zip.namelist()
+# print(len(files))
 
 class WrappedDataset(ZipStreamReader):
     def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int) -> None:
