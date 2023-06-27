@@ -54,19 +54,33 @@ class StreamReader:
         loaded = np.load(self.dir + self.files[idx], allow_pickle=True)
         return loaded['x'].squeeze(), loaded['y'].squeeze()
 
-from data.parallelzipfile import ParallelZipFile as ZipFile
+#from data.parallelzipfile import ParallelZipFile as ZipFile
+from zipfile import ZipFile
 from io import BytesIO
+# class ZipStreamReader:
+#     def __init__(self, dir:str) -> None:
+#         self.zip = ZipFile(file=dir, mode='r')
+#         self.files = sorted(self.zip.namelist()[1:])
+#     def __len__(self):
+#         return len(self.files)
+#     def __getitem__(self, idx):
+#         x = self.zip.read(self.files[idx])
+#         loaded = np.load(BytesIO(x), allow_pickle=True)
+#         return loaded['x'].squeeze(), loaded['y'].squeeze()
+
+from threading import Lock
 class ZipStreamReader:
+    mutex = Lock()
     def __init__(self, dir:str) -> None:
         self.zip = ZipFile(file=dir, mode='r')
         self.files = sorted(self.zip.namelist()[1:])
     def __len__(self):
         return len(self.files)
     def __getitem__(self, idx):
-        x = self.zip.read(self.files[idx])
-        loaded = np.load(BytesIO(x), allow_pickle=True)
+        with ZipStreamReader.mutex:
+            x = BytesIO(self.zip.read(self.files[idx]))
+            loaded = np.load(x, allow_pickle=True)
         return loaded['x'].squeeze(), loaded['y'].squeeze()
-
 
 
 #%%
