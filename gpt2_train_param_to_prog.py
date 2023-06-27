@@ -1,9 +1,15 @@
 #%%
+# srun -t 02:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 -gres=4 --partition=pascal -A MLMI-WB326-SL2-GPU --pty bash
+# jupyter lab --no-browser --ip=* --port=8081
+
+# On local
+# ssh -L 8081:cpu-q-19:8081 wb326@login-cpu.hpc.cam.ac.uk
+
 import os
 import jax
 
-jax.distributed.initialize()
-print(f"connected to {jax.local_device_count()} compute devices")
+# jax.distributed.initialize()
+# print(f"connected to {jax.local_device_count()} compute devices")
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
 #os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
@@ -13,6 +19,8 @@ print(f"connected to {jax.local_device_count()} compute devices")
 
 # from jax_smi import initialise_tracking
 # initialise_tracking()
+
+# pip install nvidia-cublas-cu11      nvidia-cublas-cu12      nvidia-cuda-cupti-cu11  nvidia-cuda-cupti-cu12  nvidia-cuda-nvcc-cu12   nvidia-cuda-nvrtc-cu11  nvidia-cuda-runtime-cu11nvidia-cuda-runtime-cu12nvidia-cudnn-cu11       nvidia-cudnn-cu12       nvidia-cufft-cu11       nvidia-cufft-cu12       nvidia-curand-cu11      nvidia-cusolver-cu11    nvidia-cusolver-cu12    nvidia-cusparse-cu11    nvidia-cusparse-cu12    nvidia-nccl-cu11        nvidia-nvjitlink-cu12   nvidia-nvtx-cu11        
 
 from jax import random
 import jax.numpy as jnp
