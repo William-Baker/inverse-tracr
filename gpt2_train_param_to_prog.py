@@ -1,9 +1,12 @@
 #%%
 import os
 import jax
+
+jax.distributed.initialize()
+print(f"connected to {jax.local_device_count()} compute devices")
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
+#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
 #os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 # from jax import config
 # config.update("jax_disable_jit", True)
