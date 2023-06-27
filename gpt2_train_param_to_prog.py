@@ -34,7 +34,7 @@ import jax
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
 #os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
-#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 # from jax import config
 # config.update("jax_disable_jit", True)
 
@@ -405,7 +405,7 @@ class TrainerModule:
 from argparse import Namespace
 
 args = Namespace(
-    batch_size=256,
+    batch_size=128,
     PROG_LEN = 15,
     max_epochs = 200,
     LEARNING_RATE=1e-4,
@@ -416,6 +416,13 @@ args = Namespace(
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
 
 from data.dataloader_streams import StreamReader, ZipStreamReader
+
+from data.parallelzipfile import ParallelZipFile as ZipFile
+from io import BytesIO
+zip = ZipFile(file='.data/iTracrDatasetTrain.zip', mode='r')
+files = zip.namelist()
+print(len(files))
+
 
 
 class WrappedDataset(ZipStreamReader):
@@ -499,9 +506,9 @@ def make_collate_fn(PROG_LEN):
 
 #dataset = WrappedDataset('.data/iTracr_dataset_train/', args.PROG_LEN, args.max_timesteps)
 dataset = WrappedDataset('.data/iTracrDatasetTrain.zip', args.PROG_LEN, args.max_timesteps)
-test_dataset = WrappedDataset('.data/iTracrDatasetTrain.zip', args.PROG_LEN, args.max_timesteps)
+test_dataset = WrappedDataset('.data/iTracrDatasetTest.zip', args.PROG_LEN, args.max_timesteps)
 
-
+print(f"Dataset contains: {len(dataset)} samples" )
 
 collate_fn = make_collate_fn(args.PROG_LEN)
 
@@ -521,7 +528,7 @@ def testing_loaders():
     it = iter(train_dataloader)
     x,y,_,_, _ = next(it)
 
-    print(src_dataset.decode_pred(y, 0))
+    # print(src_dataset.decode_pred(y, 0))
 
 
 testing_loaders()
@@ -530,24 +537,24 @@ testing_loaders()
 #%%
 
 test_it = iter(test_dataloader)
-sample = next(test_it)
+# sample = next(test_it)
 
-from data.parameter_encoder import ONEHOT_TIMESTEP_ENCODER
-def decode_timesteps(x, batch=0):
-    TIMESTEP_TOKEN_SIZE = list(ONEHOT_TIMESTEP_ENCODER.values())[0].shape[0]
-    this_batch = x[batch, :, :]
-    for timestep in range(this_batch.shape[0]):
-        index = np.array(this_batch[timestep, : TIMESTEP_TOKEN_SIZE]).argmax()
-        print(list(ONEHOT_TIMESTEP_ENCODER.keys())[index])
-decode_timesteps(sample[0], batch=1)
-print(src_dataset.decode_pred(sample[1], 0))
+# from data.parameter_encoder import ONEHOT_TIMESTEP_ENCODER
+# def decode_timesteps(x, batch=0):
+#     TIMESTEP_TOKEN_SIZE = list(ONEHOT_TIMESTEP_ENCODER.values())[0].shape[0]
+#     this_batch = x[batch, :, :]
+#     for timestep in range(this_batch.shape[0]):
+#         index = np.array(this_batch[timestep, : TIMESTEP_TOKEN_SIZE]).argmax()
+#         print(list(ONEHOT_TIMESTEP_ENCODER.keys())[index])
+# decode_timesteps(sample[0], batch=1)
+# print(src_dataset.decode_pred(sample[1], 0))
 
 #%%
 
 x,y, loss_mask, attention_mask = next(iter(dataset))
 
 
-# import json
+import json
 with open('utils/gpt2_configs/gpt2_large.json') as f: # GPT2 Large - 774M
   config_json = json.load(f)
 model_config = GPT2Config(**config_json)
