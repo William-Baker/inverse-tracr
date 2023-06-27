@@ -383,10 +383,10 @@ args = Namespace(
 
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
 
-from data.dataloader_streams import StreamReader
+from data.dataloader_streams import StreamReader, ZipStreamReader
 
 
-class WrappedDataset(StreamReader):
+class WrappedDataset(ZipStreamReader):
     def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int) -> None:
         super().__init__(dir)
         self.max_prog_len = max_prog_len
@@ -466,8 +466,8 @@ def make_collate_fn(PROG_LEN):
     return collate_fn
 
 #dataset = WrappedDataset('.data/iTracr_dataset_train/', args.PROG_LEN, args.max_timesteps)
-dataset = WrappedDataset('.data/iTracr_dataset/', args.PROG_LEN, args.max_timesteps)
-test_dataset = WrappedDataset('.data/iTracr_dataset_test/', args.PROG_LEN, args.max_timesteps)
+dataset = WrappedDataset('.data/iTracrDatasetTrain.zip', args.PROG_LEN, args.max_timesteps)
+test_dataset = WrappedDataset('.data/iTracrDatasetTrain.zip', args.PROG_LEN, args.max_timesteps)
 
 
 
@@ -475,8 +475,8 @@ collate_fn = make_collate_fn(args.PROG_LEN)
 
 
 
-train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=2, shuffle=True)#, pin_memory=True)
-test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=2, shuffle=True)#, pin_memory=True)
+train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=1, prefetch_factor=2, shuffle=True)#, pin_memory=True)
+test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=1, prefetch_factor=2, shuffle=True)#, pin_memory=True)
 num_train_iters = len(train_dataloader) * args.max_epochs
 
 #%%
@@ -535,7 +535,7 @@ model_config = GPT2Config(vocab_size=next(test_it)[0].shape[2], n_positions=1024
 model = GPT2(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
 #%%
-trainer = TrainerModule(model, f'PARAM_GPT2_MEDIUM v2 cont LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
+trainer = TrainerModule(model, f'PARAM_GPT2_MEDIUM v2 test LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
@@ -562,3 +562,29 @@ if os.path.isfile('test/b'):
     raise Exception()
 os.rename('test/a', 'test/b', )
 # %%
+
+import tarfile
+
+
+#%%
+
+with tarfile.open('iTracrDataset.tar.gz') as tfile:
+    for jsonfile in tfile.getmembers():
+        print(jsonfile)
+        #f=tfile.extractfile(jsonfile)
+
+
+#%%
+
+import zipfile
+zip_obj = zipfile.ZipFile(file='.data/iTracrDatasetTrain.zip', mode='r')
+filenames = zip_obj.namelist()
+#%%
+#x = zip_obj.extract(member=filenames[1])
+
+
+x = zip_obj.read(filenames[1])
+
+import numpy as np
+from io import BytesIO
+y = np.load(BytesIO(x), allow_pickle=True)
