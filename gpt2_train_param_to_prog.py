@@ -1,9 +1,33 @@
 #%%
+# srun -t 05:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
+# conda activate venv
+# source venv/bin/activate
+# jupyter lab --no-browser --ip=* --port=8081
+
+# module load cuda/11.8 cudnn/8.9_cuda-11.8
+# module load cuda/12.1 cudnn/8.9_cuda-12.1
+
+# ??
+# module load rhel8/default-gpu
+# module load rhel8/default-amp    
+
+# srun --jobid $JOBID --pty bash
+# squeue -u wb326
+# showq -u wb326
+# qstat -u wb326
+# scancel <jobid>
+
+# On local
+# ssh -L 8081:gpu-e-14:8081 wb326@login-cpu.hpc.cam.ac.uk
+
+# ImportError: libcupti.so.11.7: cannot open shared object file: No such file or directory
+# export PATH=$PATH:/home/wb326/miniconda3/envs/venv/lib
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/wb326/miniconda3/envs/venv/lib
 import os
 import jax
 
-jax.distributed.initialize()
-print(f"connected to {jax.local_device_count()} compute devices")
+# jax.distributed.initialize()
+# print(f"connected to {jax.local_device_count()} compute devices")
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
 #os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
@@ -376,7 +400,7 @@ class TrainerModule:
 from argparse import Namespace
 
 args = Namespace(
-    batch_size=128,
+    batch_size=256,
     PROG_LEN = 15,
     max_epochs = 200,
     LEARNING_RATE=1e-4,
@@ -519,18 +543,18 @@ x,y, loss_mask, attention_mask = next(iter(dataset))
 
 
 # import json
-# with open('utils/gpt2_configs/gpt2_large.json') as f: # GPT2 Large - 774M
-#   config_json = json.load(f)
-# model_config = GPT2Config(**config_json)
+with open('utils/gpt2_configs/gpt2_large.json') as f: # GPT2 Large - 774M
+  config_json = json.load(f)
+model_config = GPT2Config(**config_json)
 
 
 # GPT2 Medium - 335M
-model_config = GPT2Config(vocab_size=next(test_it)[0].shape[2], n_positions=1024, n_embd=1024, n_layer=24, n_head=16, 
-                                n_inner=None, activation_function='gelu_new', resid_pdrop=0.1, layer_norm_epsilon=1e-05,
-                                initializer_range=0.02, summary_type='cls_index', summary_use_proj = True, 
-                                summary_activation = None, summary_proj_to_labels = True, summary_first_dropout = 0.1, 
-                                scale_attn_weights = True, use_cache = True, bos_token_id = next(test_it)[0].shape[2], eos_token_id = next(test_it)[0].shape[2], 
-                                scale_attn_by_inverse_layer_idx = False, reorder_and_upcast_attn = False )
+# model_config = GPT2Config(vocab_size=next(test_it)[0].shape[2], n_positions=1024, n_embd=1024, n_layer=24, n_head=16, 
+#                                 n_inner=None, activation_function='gelu_new', resid_pdrop=0.1, layer_norm_epsilon=1e-05,
+#                                 initializer_range=0.02, summary_type='cls_index', summary_use_proj = True, 
+#                                 summary_activation = None, summary_proj_to_labels = True, summary_first_dropout = 0.1, 
+#                                 scale_attn_weights = True, use_cache = True, bos_token_id = next(test_it)[0].shape[2], eos_token_id = next(test_it)[0].shape[2], 
+#                                 scale_attn_by_inverse_layer_idx = False, reorder_and_upcast_attn = False )
 
 
 
@@ -538,7 +562,7 @@ model_config = GPT2Config(vocab_size=next(test_it)[0].shape[2], n_positions=1024
 model = GPT2(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
 #%%
-trainer = TrainerModule(model, f'PARAM_GPT2_MEDIUM v2 test LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
+trainer = TrainerModule(model, f'PARAM_GPT2_LARGE LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
@@ -560,34 +584,3 @@ for epoch_idx in range(1, args.max_epochs+1):
 #%%
 
 
-#%%
-if os.path.isfile('test/b'):
-    raise Exception()
-os.rename('test/a', 'test/b', )
-# %%
-
-import tarfile
-
-
-#%%
-
-with tarfile.open('iTracrDataset.tar.gz') as tfile:
-    for jsonfile in tfile.getmembers():
-        print(jsonfile)
-        #f=tfile.extractfile(jsonfile)
-
-
-#%%
-
-import zipfile
-zip_obj = zipfile.ZipFile(file='.data/iTracrDatasetTrain.zip', mode='r')
-filenames = zip_obj.namelist()
-#%%
-#x = zip_obj.extract(member=filenames[1])
-
-
-x = zip_obj.read(filenames[1])
-
-import numpy as np
-from io import BytesIO
-y = np.load(BytesIO(x), allow_pickle=True)
