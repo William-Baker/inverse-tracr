@@ -490,9 +490,24 @@ collate_fn = make_collate_fn(args.PROG_LEN)
 
 
 
-train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=1, prefetch_factor=2, shuffle=True)#, pin_memory=True)
-test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=1, prefetch_factor=2, shuffle=True)#, pin_memory=True)
+train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=16, prefetch_factor=2, shuffle=True)#, pin_memory=True)
+test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=2, shuffle=True)#, pin_memory=True)
 num_train_iters = len(train_dataloader) * args.max_epochs
+
+#%%
+it = iter(train_dataloader)
+with jax.profiler.trace("jax-trace", create_perfetto_link=True):
+    for x in tqdm(range(400)):
+        next(it)
+
+
+#%%
+
+c = SparseConverter('.data/iTracr_dataset_train/', '.data/iTracr_dataset_train_compressed/')
+pc = DataLoader(c, batch_size=1, collate_fn=lambda x: None, num_workers=16)
+for x in tqdm(pc):
+    pass
+
 
 #%%
 
