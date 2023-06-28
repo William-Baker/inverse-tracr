@@ -80,43 +80,43 @@ class SparseConverter:
             
     
 
-#from data.parallelzipfile import ParallelZipFile as ZipFile
-from zipfile import ZipFile
+from data.parallelzipfilebetter import ParallelZipFile as ZipFile
+#from zipfile import ZipFile
 from io import BytesIO
-# class ZipStreamReader:
-#     def __init__(self, dir:str) -> None:
-#         self.zip = ZipFile(file=dir, mode='r')
-#         self.files = sorted(self.zip.namelist()[1:])
-#     def __len__(self):
-#         return len(self.files)
-#     def __getitem__(self, idx):
-#         x = self.zip.read(self.files[idx])
-#         loaded = np.load(BytesIO(x), allow_pickle=True)
-#         return loaded['x'].squeeze(), loaded['y'].squeeze()
-
-import fcntl
-class Locker:
-    def __enter__ (self):
-        self.fp = open(".data/zip_lock.lck", 'w')
-        fcntl.flock(self.fp.fileno(), fcntl.LOCK_EX)
-
-    def __exit__ (self, _type, value, tb):
-        fcntl.flock(self.fp.fileno(), fcntl.LOCK_UN)
-        self.fp.close()
-
-from threading import Lock
 class ZipStreamReader:
-    mutex = Lock()
     def __init__(self, dir:str) -> None:
         self.zip = ZipFile(file=dir, mode='r')
         self.files = sorted(self.zip.namelist()[1:])
     def __len__(self):
         return len(self.files)
     def __getitem__(self, idx):
-        with Locker():
-            x = BytesIO(self.zip.read(self.files[idx]))
-            loaded = np.load(x, allow_pickle=True)
+        x = self.zip.read(self.files[idx])
+        loaded = np.load(BytesIO(x), allow_pickle=True)
         return loaded['x'].squeeze(), loaded['y'].squeeze()
+
+# import fcntl
+# class Locker:
+#     def __enter__ (self):
+#         self.fp = open(".data/zip_lock.lck", 'w')
+#         fcntl.flock(self.fp.fileno(), fcntl.LOCK_EX)
+
+#     def __exit__ (self, _type, value, tb):
+#         fcntl.flock(self.fp.fileno(), fcntl.LOCK_UN)
+#         self.fp.close()
+
+# from threading import Lock
+# class ZipStreamReader:
+#     mutex = Lock()
+#     def __init__(self, dir:str) -> None:
+#         self.zip = ZipFile(file=dir, mode='r')
+#         self.files = sorted(self.zip.namelist()[1:])
+#     def __len__(self):
+#         return len(self.files)
+#     def __getitem__(self, idx):
+#         with Locker():
+#             x = BytesIO(self.zip.read(self.files[idx]))
+#             loaded = np.load(x, allow_pickle=True)
+#         return loaded['x'].squeeze(), loaded['y'].squeeze()
 
 
 #%%

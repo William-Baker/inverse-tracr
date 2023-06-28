@@ -393,13 +393,7 @@ args = Namespace(
 )
 
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
-
-from data.dataloader_streams import StreamReader, ZipStreamReader
-# from zipfile import ZipFile
-# from io import BytesIO
-# zip = ZipFile(file='.data/iTracrDatasetTrain.zip', mode='r')
-# files = zip.namelist()
-# print(len(files))
+from data.dataloader_streams import ZipStreamReader
 
 class WrappedDataset(ZipStreamReader):
     def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int) -> None:
@@ -481,8 +475,8 @@ def make_collate_fn(PROG_LEN):
     return collate_fn
 
 #dataset = WrappedDataset('.data/iTracr_dataset_train/', args.PROG_LEN, args.max_timesteps)
-dataset = WrappedDataset('.data/iTracrDatasetTrain.zip', args.PROG_LEN, args.max_timesteps)
-test_dataset = WrappedDataset('.data/iTracrDatasetTrain.zip', args.PROG_LEN, args.max_timesteps)
+dataset = WrappedDataset('.data/iTracrTrain.zip', args.PROG_LEN, args.max_timesteps)
+test_dataset = WrappedDataset('.data/iTracrTest.zip', args.PROG_LEN, args.max_timesteps)
 
 
 
@@ -495,59 +489,8 @@ test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_f
 num_train_iters = len(train_dataloader) * args.max_epochs
 
 #%%
-it = iter(train_dataloader)
-with jax.profiler.trace("jax-trace", create_perfetto_link=True):
-    for x in tqdm(range(400)):
-        next(it)
 
 
-#%%
-
-c = SparseConverter('.data/iTracr_dataset_train/', '.data/iTracr_dataset_train_compressed/')
-pc = DataLoader(c, batch_size=1, collate_fn=lambda x: None, num_workers=16)
-for x in tqdm(pc):
-    pass
-
-
-#%%
-
-from data.parallelzipfilebetter import ParallelZipFile as ZipFile
-zip = ZipFile(file='.data/iTracrDatasetTrain.zip', mode='r')
-files = zip.namelist()[1:]
-# x = self.zip.read(self.files[idx])
-
-#%%
-
-class ZipStreamReader:
-    def __init__(self, dir:str) -> None:
-        self.zip = ZipFile(file=dir, mode='r')
-        self.files = sorted(self.zip.namelist()[1:])
-    def __len__(self):
-        return len(self.files)
-    def __getitem__(self, idx):
-        x = self.zip.read(self.files[idx])
-        loaded = np.load(BytesIO(x), allow_pickle=True)
-        return loaded['x'].squeeze(), loaded['y'].squeeze()
-zip = ZipStreamReader('.data/iTracrDatasetTrain.zip')
-
-for i in tqdm(zip):
-    pass
-
-#%%
-
-from zipfile import ZipFile, _EndRecData, _ECD_SIGNATURE, _ECD_ENTRIES_TOTAL, _ECD_OFFSET, _ECD_COMMENT_SIZE 
-zip = ZipFile(file='.data/iTracrDatasetTrain.zip', mode='r')
-
-endrec = _EndRecData(zip.fp)
-signature, num_files, directory_offset, comment_length = endrec[_ECD_SIGNATURE], endrec[_ECD_ENTRIES_TOTAL], endrec[_ECD_OFFSET], endrec[_ECD_COMMENT_SIZE ]
-
-
-
-#%%
-
-
-
-#%%
 
 def testing_loaders():
     it = iter(test_dataloader)
