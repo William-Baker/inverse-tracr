@@ -62,17 +62,20 @@ class SparseConverter:
         self.dir = dir
         self.out_dir = out_dir
         self.files = sorted(listdir(dir))
+        makedirs(self.out_dir, exist_ok=True)
     def __len__(self):
         return len(self.files)
     def __getitem__(self, idx):
-        loaded = np.load(self.dir + self.files[idx], allow_pickle=True)
-        x,y = loaded['x'].squeeze(), loaded['y'].squeeze()
-        # x,y = scipy.sparse.csc_matrix(x), scipy.sparse.csc_matrix(y)
-        # scipy.sparse.save_npz(self.dir + self.files[idx], x=x, y=y)
-        # return idx
-        with open(self.out_dir + str(idx).zfill(8) + '.pickle', 'wb') as handle:
-            pickle.dump((x,y), handle)#, protocol=pickle.HIGHEST_PROTOCOL)
-        
+        try:
+            loaded = np.load(self.dir + self.files[idx], allow_pickle=True)
+            x,y = loaded['x'].squeeze(), loaded['y'].squeeze()
+            # x,y = scipy.sparse.csc_matrix(x), scipy.sparse.csc_matrix(y)
+            # scipy.sparse.save_npz(self.dir + self.files[idx], x=x, y=y)
+            # return idx
+            with open(self.out_dir + str(idx).zfill(8) + '.pickle', 'wb') as handle:
+                pickle.dump((x,y), handle)#, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as E:
+            pass
 
             
     

@@ -511,6 +511,44 @@ for x in tqdm(pc):
 
 #%%
 
+from data.parallelzipfilebetter import ParallelZipFile as ZipFile
+zip = ZipFile(file='.data/iTracrDatasetTrain.zip', mode='r')
+files = zip.namelist()[1:]
+# x = self.zip.read(self.files[idx])
+
+#%%
+
+class ZipStreamReader:
+    def __init__(self, dir:str) -> None:
+        self.zip = ZipFile(file=dir, mode='r')
+        self.files = sorted(self.zip.namelist()[1:])
+    def __len__(self):
+        return len(self.files)
+    def __getitem__(self, idx):
+        x = self.zip.read(self.files[idx])
+        loaded = np.load(BytesIO(x), allow_pickle=True)
+        return loaded['x'].squeeze(), loaded['y'].squeeze()
+zip = ZipStreamReader('.data/iTracrDatasetTrain.zip')
+
+for i in tqdm(zip):
+    pass
+
+#%%
+
+from zipfile import ZipFile, _EndRecData, _ECD_SIGNATURE, _ECD_ENTRIES_TOTAL, _ECD_OFFSET, _ECD_COMMENT_SIZE 
+zip = ZipFile(file='.data/iTracrDatasetTrain.zip', mode='r')
+
+endrec = _EndRecData(zip.fp)
+signature, num_files, directory_offset, comment_length = endrec[_ECD_SIGNATURE], endrec[_ECD_ENTRIES_TOTAL], endrec[_ECD_OFFSET], endrec[_ECD_COMMENT_SIZE ]
+
+
+
+#%%
+
+
+
+#%%
+
 def testing_loaders():
     it = iter(test_dataloader)
     x,y,_,_, _ = next(it)

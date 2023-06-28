@@ -173,3 +173,4 @@ jax-trace/
 utils/pythia/
 *.tar.gz
 *.zip
+.data
