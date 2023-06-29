@@ -414,13 +414,7 @@ args = Namespace(
 )
 
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
-
-from data.dataloader_streams import StreamReader, ZipStreamReader
-# from zipfile import ZipFile
-# from io import BytesIO
-# zip = ZipFile(file='.data/iTracrDatasetTrain.zip', mode='r')
-# files = zip.namelist()
-# print(len(files))
+from data.dataloader_streams import ZipStreamReader
 
 class WrappedDataset(ZipStreamReader):
     def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int) -> None:
@@ -502,8 +496,9 @@ def make_collate_fn(PROG_LEN):
     return collate_fn
 
 #dataset = WrappedDataset('.data/iTracr_dataset_train/', args.PROG_LEN, args.max_timesteps)
-dataset = WrappedDataset('.data/iTracrDatasetTrain.zip', args.PROG_LEN, args.max_timesteps)
-test_dataset = WrappedDataset('.data/iTracrDatasetTest.zip', args.PROG_LEN, args.max_timesteps)
+dataset = WrappedDataset('.data/iTracrTrain.zip', args.PROG_LEN, args.max_timesteps)
+test_dataset = WrappedDataset('.data/iTracrTest.zip', args.PROG_LEN, args.max_timesteps)
+
 
 print(f"Dataset contains: {len(dataset)} samples" )
 
@@ -511,11 +506,13 @@ collate_fn = make_collate_fn(args.PROG_LEN)
 
 
 
-train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=1, prefetch_factor=2, shuffle=True)#, pin_memory=True)
-test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=1, prefetch_factor=2, shuffle=True)#, pin_memory=True)
+train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=16, prefetch_factor=2, shuffle=True)#, pin_memory=True)
+test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=2, shuffle=True)#, pin_memory=True)
 num_train_iters = len(train_dataloader) * args.max_epochs
 
 #%%
+
+
 
 def testing_loaders():
     it = iter(test_dataloader)

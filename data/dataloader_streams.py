@@ -54,33 +54,69 @@ class StreamReader:
         loaded = np.load(self.dir + self.files[idx], allow_pickle=True)
         return loaded['x'].squeeze(), loaded['y'].squeeze()
 
-#from data.parallelzipfile import ParallelZipFile as ZipFile
-from zipfile import ZipFile
-from io import BytesIO
-# class ZipStreamReader:
-#     def __init__(self, dir:str) -> None:
-#         self.zip = ZipFile(file=dir, mode='r')
-#         self.files = sorted(self.zip.namelist()[1:])
-#     def __len__(self):
-#         return len(self.files)
-#     def __getitem__(self, idx):
-#         x = self.zip.read(self.files[idx])
-#         loaded = np.load(BytesIO(x), allow_pickle=True)
-#         return loaded['x'].squeeze(), loaded['y'].squeeze()
+import scipy
+import pickle
 
-from threading import Lock
+class SparseConverter:
+    def __init__(self, dir:str, out_dir:str) -> None:
+        self.dir = dir
+        self.out_dir = out_dir
+        self.files = sorted(listdir(dir))
+        makedirs(self.out_dir, exist_ok=True)
+    def __len__(self):
+        return len(self.files)
+    def __getitem__(self, idx):
+        try:
+            loaded = np.load(self.dir + self.files[idx], allow_pickle=True)
+            x,y = loaded['x'].squeeze(), loaded['y'].squeeze()
+            # x,y = scipy.sparse.csc_matrix(x), scipy.sparse.csc_matrix(y)
+            # scipy.sparse.save_npz(self.dir + self.files[idx], x=x, y=y)
+            # return idx
+            with open(self.out_dir + str(idx).zfill(8) + '.pickle', 'wb') as handle:
+                pickle.dump((x,y), handle)#, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as E:
+            pass
+
+            
+    
+
+from data.parallelzipfilebetter import ParallelZipFile as ZipFile
+#from zipfile import ZipFile
+from io import BytesIO
 class ZipStreamReader:
-    mutex = Lock()
     def __init__(self, dir:str) -> None:
         self.zip = ZipFile(file=dir, mode='r')
         self.files = sorted(self.zip.namelist()[1:])
     def __len__(self):
         return len(self.files)
     def __getitem__(self, idx):
-        with ZipStreamReader.mutex:
-            x = BytesIO(self.zip.read(self.files[idx]))
-            loaded = np.load(x, allow_pickle=True)
+        x = self.zip.read(self.files[idx])
+        loaded = np.load(BytesIO(x), allow_pickle=True)
         return loaded['x'].squeeze(), loaded['y'].squeeze()
+
+# import fcntl
+# class Locker:
+#     def __enter__ (self):
+#         self.fp = open(".data/zip_lock.lck", 'w')
+#         fcntl.flock(self.fp.fileno(), fcntl.LOCK_EX)
+
+#     def __exit__ (self, _type, value, tb):
+#         fcntl.flock(self.fp.fileno(), fcntl.LOCK_UN)
+#         self.fp.close()
+
+# from threading import Lock
+# class ZipStreamReader:
+#     mutex = Lock()
+#     def __init__(self, dir:str) -> None:
+#         self.zip = ZipFile(file=dir, mode='r')
+#         self.files = sorted(self.zip.namelist()[1:])
+#     def __len__(self):
+#         return len(self.files)
+#     def __getitem__(self, idx):
+#         with Locker():
+#             x = BytesIO(self.zip.read(self.files[idx]))
+#             loaded = np.load(x, allow_pickle=True)
+#         return loaded['x'].squeeze(), loaded['y'].squeeze()
 
 
 #%%
