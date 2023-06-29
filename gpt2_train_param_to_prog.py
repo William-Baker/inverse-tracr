@@ -149,8 +149,6 @@ class TrainerModule:
             classes = jnp.stack(classes, axis=2)
             return classes
         classes = logit_classes_jnp(logits)
-
-        time_steps = min(labels.shape[1], classes.shape[1])
         
         if labels is not None:
             max_prog_len = self.dataset.prog_len
@@ -371,8 +369,6 @@ class TrainerModule:
             img = figure_to_array(fig)
             self.logger.add_image("examples/"+name, img, global_step=step, dataformats='HWC')
     
-    
-
 
 
 
@@ -507,13 +503,12 @@ collate_fn = make_collate_fn(args.PROG_LEN)
 
 
 
-train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=16, prefetch_factor=2, shuffle=True)#, pin_memory=True)
+train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=2, shuffle=True)#, pin_memory=True)
 test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=2, shuffle=True)#, pin_memory=True)
 num_train_iters = len(train_dataloader) * args.max_epochs
 
+
 #%%
-
-
 
 def testing_loaders():
     it = iter(test_dataloader)
@@ -531,18 +526,22 @@ testing_loaders()
 
 #%%
 
-test_it = iter(test_dataloader)
-# sample = next(test_it)
 
-# from data.parameter_encoder import ONEHOT_TIMESTEP_ENCODER
-# def decode_timesteps(x, batch=0):
-#     TIMESTEP_TOKEN_SIZE = list(ONEHOT_TIMESTEP_ENCODER.values())[0].shape[0]
-#     this_batch = x[batch, :, :]
-#     for timestep in range(this_batch.shape[0]):
-#         index = np.array(this_batch[timestep, : TIMESTEP_TOKEN_SIZE]).argmax()
-#         print(list(ONEHOT_TIMESTEP_ENCODER.keys())[index])
-# decode_timesteps(sample[0], batch=1)
-# print(src_dataset.decode_pred(sample[1], 0))
+
+from data.parameter_encoder import ONEHOT_TIMESTEP_ENCODER
+def decode_timesteps(x, batch=0):
+    TIMESTEP_TOKEN_SIZE = list(ONEHOT_TIMESTEP_ENCODER.values())[0].shape[0]
+    this_batch = x[batch, :, :]
+    for timestep in range(this_batch.shape[0]):
+        index = np.array(this_batch[timestep, : TIMESTEP_TOKEN_SIZE]).argmax()
+        print(list(ONEHOT_TIMESTEP_ENCODER.keys())[index])
+
+test_it = iter(test_dataloader)
+def decode_test_sample():
+    sample = next(test_it)
+    decode_timesteps(sample[0], batch=1)
+    print(src_dataset.decode_pred(sample[1], 0))
+decode_test_sample()
 
 #%%
 
@@ -589,5 +588,4 @@ for epoch_idx in range(1, args.max_epochs+1):
 
 
 #%%
-
 
