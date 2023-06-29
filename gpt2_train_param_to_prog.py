@@ -1,5 +1,6 @@
 #%%
 # srun -t 05:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
+# srun -t 00:10:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=pascal -A MLMI-WB326-SL2-GPU --pty bash
 # conda activate venv
 # source venv/bin/activate
 # jupyter lab --no-browser --ip=* --port=8081
@@ -282,7 +283,7 @@ class TrainerModule:
         self.accuracy_fn = self.get_accuracy_function()
 
 
-    # TODO optimise away item() to be minimised
+
     def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=3, validation_loader=None, VALS_PER_EPOCH = 1):
         # Train model for one epoch, and log avg loss and accuracy
         DATALOADER_LENGTH = len(train_loader)
