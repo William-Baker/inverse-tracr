@@ -12,7 +12,7 @@ import jax
 # print(f"connected to {jax.local_device_count()} compute devices")
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
-#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
 #os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 # from jax import config
 # config.update("jax_disable_jit", True)
@@ -127,8 +127,6 @@ class TrainerModule:
             classes = jnp.stack(classes, axis=2)
             return classes
         classes = logit_classes_jnp(logits)
-
-        time_steps = min(labels.shape[1], classes.shape[1])
         
         if labels is not None:
             max_prog_len = self.dataset.prog_len
@@ -349,8 +347,6 @@ class TrainerModule:
             img = figure_to_array(fig)
             self.logger.add_image("examples/"+name, img, global_step=step, dataformats='HWC')
     
-    
-
 
 
 
@@ -484,13 +480,12 @@ collate_fn = make_collate_fn(args.PROG_LEN)
 
 
 
-train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=16, prefetch_factor=2, shuffle=True)#, pin_memory=True)
+train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=2, shuffle=True)#, pin_memory=True)
 test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=2, shuffle=True)#, pin_memory=True)
 num_train_iters = len(train_dataloader) * args.max_epochs
 
+
 #%%
-
-
 
 def testing_loaders():
     it = iter(test_dataloader)
@@ -508,8 +503,7 @@ testing_loaders()
 
 #%%
 
-test_it = iter(test_dataloader)
-sample = next(test_it)
+
 
 from data.parameter_encoder import ONEHOT_TIMESTEP_ENCODER
 def decode_timesteps(x, batch=0):
@@ -518,8 +512,13 @@ def decode_timesteps(x, batch=0):
     for timestep in range(this_batch.shape[0]):
         index = np.array(this_batch[timestep, : TIMESTEP_TOKEN_SIZE]).argmax()
         print(list(ONEHOT_TIMESTEP_ENCODER.keys())[index])
-decode_timesteps(sample[0], batch=1)
-print(src_dataset.decode_pred(sample[1], 0))
+
+test_it = iter(test_dataloader)
+def decode_test_sample():
+    sample = next(test_it)
+    decode_timesteps(sample[0], batch=1)
+    print(src_dataset.decode_pred(sample[1], 0))
+decode_test_sample()
 
 #%%
 
@@ -567,35 +566,3 @@ for epoch_idx in range(1, args.max_epochs+1):
 
 #%%
 
-
-#%%
-if os.path.isfile('test/b'):
-    raise Exception()
-os.rename('test/a', 'test/b', )
-# %%
-
-import tarfile
-
-
-#%%
-
-with tarfile.open('iTracrDataset.tar.gz') as tfile:
-    for jsonfile in tfile.getmembers():
-        print(jsonfile)
-        #f=tfile.extractfile(jsonfile)
-
-
-#%%
-
-import zipfile
-zip_obj = zipfile.ZipFile(file='.data/iTracrDatasetTrain.zip', mode='r')
-filenames = zip_obj.namelist()
-#%%
-#x = zip_obj.extract(member=filenames[1])
-
-
-x = zip_obj.read(filenames[1])
-
-import numpy as np
-from io import BytesIO
-y = np.load(BytesIO(x), allow_pickle=True)
