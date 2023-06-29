@@ -533,13 +533,13 @@ def decode_timesteps(x, batch=0):
     this_batch = x[batch, :, :]
     for timestep in range(this_batch.shape[0]):
         index = np.array(this_batch[timestep, : TIMESTEP_TOKEN_SIZE]).argmax()
-        print(list(ONEHOT_TIMESTEP_ENCODER.keys())[index])
+        #print(list(ONEHOT_TIMESTEP_ENCODER.keys())[index])
 
 test_it = iter(test_dataloader)
 def decode_test_sample():
     sample = next(test_it)
     decode_timesteps(sample[0], batch=1)
-    print(src_dataset.decode_pred(sample[1], 0))
+    #print(src_dataset.decode_pred(sample[1], 0))
 decode_test_sample()
 
 #%%
