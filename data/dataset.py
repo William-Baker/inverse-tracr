@@ -783,7 +783,7 @@ example_program_dataset = [
     #         sop=rasp.tokens, open_token="(", close_token=")"), [], 'pair_balance'),
     (lambda: rasp.Map(lambda x: x == "t4", rasp.tokens), ['LAM_GT'], 'map_eq_t4', False),
     (lambda: rasp.Map(lambda x: x > 2, rasp.tokens), ['LAM_GT'], 'map_gt_2', True),
-    (lambda: rasp.Map(lambda x: x > 1, rasp.Map(lambda x: (2*x + 1) < 4, rasp.tokens)), ['LAM_EQ', 'LAM_GT'], 'map_map_num', False),        
+    (lambda: rasp.Map(lambda x: x > 1, rasp.Map(lambda x: (2*x + 1) < 4, rasp.tokens)), ['LAM_EQ', 'LAM_GT'], 'map_map_num', True),        
     (lambda: rasp.Map(lambda x: x > 1, rasp.Map(lambda x: x == "t1", rasp.tokens)), ['LAM_EQ', 'LAM_GT'], 'map_map_char', False),        
 ]
 
