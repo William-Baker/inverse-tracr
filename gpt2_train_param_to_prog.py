@@ -211,9 +211,6 @@ class TrainerModule:
             return loss, (acc, rng)
         return calculate_loss
     
-
-
-
     def create_functions(self):
         # Create jitted train and eval functions
         calculate_loss = self.get_loss_function()
@@ -381,9 +378,9 @@ class TrainerModule:
         return eval_acc, eval_loss
     
     def eval_programs(self, step=0):
-        for program_lam, lam_names, name in example_program_dataset:
+        for program_lam, lam_names, name, numeric_vars in example_program_dataset:
             program = program_lam()
-            encoded_model, encoded_ops = encode_rasp_program(program, args.PROG_LEN, lam_names)
+            encoded_model, encoded_ops = encode_rasp_program(program, args.PROG_LEN, lam_names, numeric_vars=numeric_vars)
             logits, fig = self.raw_apply(encoded_model, encoded_ops)
             img = figure_to_array(fig)
             self.logger.add_image("examples/"+name, img, global_step=step, dataformats='HWC')
@@ -395,10 +392,9 @@ class TrainerModule:
     def save_model(self, step=0):
         # Save current model at certain training iteration
         checkpoints.save_checkpoint(ckpt_dir=self.log_dir, target=self.state.params, step=step)
-        dump(self.state.opt_state, open(os.path.join(self.log_dir, "optimiser_state.pkl"), "wb"))
-        
+        dump(self.state.opt_state, open(os.path.join(self.log_dir, "optimiser_state.pkl"), "wb"))    
 
-    def load_model(self, log_dir=None):
+    def load_model(self, log_dir=None, load_state=True):
         log_dir = self.log_dir if log_dir is None else log_dir
         
         if not os.path.isdir(os.path.join(CHECKPOINT_PATH, log_dir)): raise FileNotFoundError("Could not find the model directory")
@@ -406,13 +402,15 @@ class TrainerModule:
         params = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(CHECKPOINT_PATH, log_dir), target=self.state.params)
         opt_state = load( open(os.path.join(CHECKPOINT_PATH, log_dir, "optimiser_state.pkl"), "rb" ) )
         
-        self.state = train_state.TrainState(
-                            step=0,
-                            apply_fn=self.model.apply,
-                            params=params,
-                            tx=self.state.tx,
-                            opt_state=opt_state)
-
+        if load_state:
+            self.state = train_state.TrainState(
+                                step=0,
+                                apply_fn=self.model.apply,
+                                params=params,
+                                tx=self.state.tx,
+                                opt_state=opt_state)
+        else:
+            self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=params, tx=self.state.tx)
 
 
 

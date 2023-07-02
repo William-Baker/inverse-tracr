@@ -31,7 +31,7 @@ class Cat(Enum):
 
 
 class Scope:
-    def __init__(self, vocabulary: Sequence[Union[str, int, bool]], max_seq_length) -> None:    
+    def __init__(self, vocabulary: Sequence[Union[str, int, bool]], numeric_range) -> None:    
         self.scope = dict()
         self.names = set()
         self.types = set()
@@ -47,7 +47,7 @@ class Scope:
         self.__add__(SOp, "tokens", token_type, weight=1)
         self.__add__(SOp, "indices", Cat.numeric, weight=1)
         self.sampling_weights = self.sampling_weights[2:]
-        self.max_seq_length = max_seq_length
+        self.numeric_range = numeric_range
         self.vocabulary = vocabulary
 
     def add(self, t: type, cat: Cat, weight: Optional[int] = None) -> None:
@@ -95,7 +95,7 @@ class Scope:
     
     def gen_const(self, target_cat: Cat):
         if target_cat == Cat.numeric:
-            return randint(0, self.max_seq_length)
+            return randint(*self.numeric_range)
         elif target_cat == Cat.categoric:
             return choice(self.vocabulary)
         else:
@@ -258,8 +258,8 @@ def sample_function(scope: Scope, ops, df=RASP_OPS):
         raise NotImplementedError()
 
 
-def generate_ops(max_ops: int, vocab: Sequence, max_seq_len: int):
-    scope = Scope(vocab, max_seq_len)
+def generate_ops(max_ops: int, vocab: Sequence, numeric_range: tuple):
+    scope = Scope(vocab, numeric_range)
     ops = []
 
     for i in range(0, max_ops-1):
@@ -309,7 +309,7 @@ def compile_program(ops):
 
     return program, actual_ops
 
-def compile_program_into_craft_model(program, vocab, max_seq_len):
+def compile_program_into_craft_model(program, vocab, max_seq_len: int):
 
     COMPILER_BOS = "compiler_bos"
     COMPILER_PAD = "compiler_pad"
@@ -350,36 +350,39 @@ def compile_program_into_craft_model(program, vocab, max_seq_len):
     return craft_model
 
 
-def gen_vocab(vocab_size: int, prefix='t'):
-    return [prefix+str(x) for x in range(vocab_size)]
+def gen_vocab(vocab_size: int, prefix='t', numeric=False):
+    if not numeric:
+        return [prefix+str(x) for x in range(vocab_size)]
+    else:
+        return list(range(vocab_size))
 
 
-def build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH):
+def build_program_of_length(n_ops, vocab, numeric_range: tuple, TARGET_PROGRAM_LENGTH):
     program_length = 0
     while program_length < TARGET_PROGRAM_LENGTH:
-        ops = generate_ops(n_ops, vocab, max_seq_len)
+        ops = generate_ops(n_ops, vocab, numeric_range)
         program, actual_ops = compile_program(ops)
         program_length = len(actual_ops)
     return program, actual_ops
 
-def program_generator(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
+def choose_vocab_and_ops(ops_range: tuple, vocab_size_range: tuple, numeric_inputs_possible: bool):
     n_ops = randint(*ops_range)
     vocab_size = randint(*vocab_size_range)
-    max_seq_len = randint(*max_sequence_lenghts_range)
-    TARGET_PROGRAM_LENGTH = max(ops_range) // 2
-    vocab = gen_vocab(max(ops_range), prefix='t')
-    program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
+    TARGET_PROGRAM_LENGTH = n_ops // 2
+    numeric_inputs = choice([True, False]) if numeric_inputs_possible else False
+    vocab = gen_vocab(vocab_size, prefix='t', numeric=numeric_inputs)
+    return n_ops, vocab, TARGET_PROGRAM_LENGTH
+
+def program_generator(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool):
+    n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
+    program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
     return actual_ops
 
 
-def program_craft_generator(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
-    n_ops = randint(*ops_range)
-    vocab_size = randint(*vocab_size_range)
-    max_seq_len = randint(*max_sequence_lenghts_range)
-    TARGET_PROGRAM_LENGTH = max(ops_range) // 2
-    vocab = gen_vocab(max(ops_range), prefix='t')
-    program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
-    craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
+def program_craft_generator(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool):
+    n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
+    program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
+    craft_model = compile_program_into_craft_model(program, vocab, max(numeric_range))
     return craft_model, actual_ops
 
 
@@ -472,35 +475,29 @@ multiprocessing.context.reduction._ForkingPickler = dill.Pickler
 from collections import deque
 from statistics import mean
 
-def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple, timeout_multiplier=1.0):
+def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool, timeout_multiplier=1.0):
     max_prog_complexity = max(ops_range)
     CRAFT_TIMEOUT = 0.2 + 0.00001 * max_prog_complexity ** 4 # 10 op programs take 0.2 seconds, 15 op programs take 0.5, 30 op programs take 4 seconds
     CRAFT_TIMEOUT *= timeout_multiplier
-    n_ops = randint(*ops_range)
-    vocab_size = randint(*vocab_size_range)
-    max_seq_len = randint(*max_sequence_lenghts_range)
-    TARGET_PROGRAM_LENGTH = max(ops_range) // 2
-
-    vocab = gen_vocab(max(ops_range), prefix='t')
+    
+    n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
 
     # Self optimising timeout to adapt to local compute performance
     # if the average of the tally of successes to failures is less thatn the target, 
     # the time will increase to be successful more often
     termination_tally = deque([0, 0, 0, 0, 0, 0, 1, 1, 1, 1],maxlen=30)
     IDEAL_FAILURE_RATIO = 0.4
-
-    
         
 
     def time_sensitive(return_dict):
         try:
-            program, actual_ops = build_program_of_length(n_ops, vocab, max_seq_len, TARGET_PROGRAM_LENGTH)
+            program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
         except Exception as E:
             if isinstance(E, np.core._exceptions._ArrayMemoryError):
                 print("mem alloc err")
             else:
                 raise E
-        craft_model = compile_program_into_craft_model(program, vocab, max_seq_len)
+        craft_model = compile_program_into_craft_model(program, vocab, max(numeric_range))
         encoded_ops = encode_ops(actual_ops)
         encoded_model = encode_craft_model(craft_model)
         return_dict['craft_model'] = encoded_model
@@ -561,8 +558,8 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, m
 
 #     return encoded_model, encoded_ops
 
-def program_craft_generator_unbounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple):
-    craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
+def program_craft_generator_unbounded(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool):
+    craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, numeric_range, numeric_inputs_possible=numeric_inputs)
     encoded_ops = encode_ops(actual_ops)
     encoded_model = encode_craft_model(craft_model)
 
@@ -574,7 +571,7 @@ def program_craft_generator_unbounded(ops_range: tuple, vocab_size_range: tuple,
 # ========================= User Friendly Generators ============================================
 
 
-def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6), func=program_craft_generator_unbounded, timeout_multiplier=None):
+def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), numeric_range=(6,6), func=program_craft_generator_unbounded, timeout_multiplier=None, numeric_inputs_possible=False):
     """
     Compile a generator of transformer weights and programs
     params:
@@ -606,13 +603,13 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenght
         lambda x,y,z: func(x,y,z, timeout_multiplier=timeout_multiplier)
     def gen():
         while True:
-            encoded_model, encoded_ops = func(ops_range, vocab_size_range, max_sequence_lenghts_range)
+            encoded_model, encoded_ops = func(ops_range, vocab_size_range, numeric_range, numeric_inputs_possible=numeric_inputs_possible)
             yield encoded_model, encoded_ops
     
     return gen, OP_VOCAB, VAR_VOCAB
 
 
-def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_lenghts_range=(6,6)):
+def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), numeric_range=(6,6), numeric_inputs_possible: bool = False):
     """
     Compile a generator of programs ONLY
     params:
@@ -642,7 +639,7 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), max_sequence_leng
                     
     def gen():
         while True:
-            actual_ops = program_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
+            actual_ops = program_generator(ops_range, vocab_size_range, numeric_range, numeric_inputs_possible=numeric_inputs_possible)
             encoded_ops = encode_ops(actual_ops)
             yield encoded_ops
     
@@ -707,7 +704,18 @@ def traverse_prog(prog, lambdas = []):
             sop1 = get_name(expr.fst)
             sop2 = get_name(expr.snd)
             lam = expr.f
-            return Operation(type(expr), [sop1, sop2, lam], get_name(expr))
+            if lambdas:
+                lam_name = lambdas.pop(0)
+            else:
+                print("Please input the name of the lambda for:")
+                print(expr)
+                print(sop1)
+                print(sop2)
+                print(lam)
+                
+                print(inspect.getsourcelines(lam))
+                lam_name = check_lam_name(input())
+            return Operation(type(expr), [sop1, sop2, lam], get_name(expr), lambda_name=lam_name)
         else:
             print(f"No translation exists for operator: {expr}")
 
@@ -715,19 +723,32 @@ def traverse_prog(prog, lambdas = []):
 
 
     current_node = prog
-    univisted = prog.children
-    while univisted:
-        current_node = univisted.pop(0)
+    unvisited = list(zip(prog.children, [id(x) for x in prog.children]))
+
+    def reduce_univisted(unvisited):
+        repeats = set()
+        out = []
+        for x, id in unvisited:
+            if id not in repeats:
+                repeats.add(id)
+                out.append((x, id))
+        return out
+    unvisited = reduce_univisted(unvisited)
+
+
+    while unvisited:
+        current_node = unvisited.pop(0)[0]
         if isinstance(current_node, rasp.TokensType) or isinstance(current_node, rasp.IndicesType):
             continue # terminal input node
         else:
             actual_ops.append(rasp_expr_to_op(current_node))
-            univisted += current_node.children
+            unvisited += list(zip(current_node.children, [id(x) for x in current_node.children]))
+            unvisited = reduce_univisted(unvisited)
     return actual_ops
 
-def encode_rasp_program(program, PROG_LEN, lambdas=[]):
+def encode_rasp_program(program, PROG_LEN, lambdas=[], numeric_vars: bool = False):
     actual_ops = traverse_prog(program, lambdas)
-    vocab = gen_vocab(PROG_LEN, prefix='t')
+    vocab = gen_vocab(PROG_LEN, prefix='t', numeric=numeric_vars)
     craft_model = compile_program_into_craft_model(program, vocab, PROG_LEN)
 
     encoded_ops = encode_ops(actual_ops)
@@ -736,33 +757,34 @@ def encode_rasp_program(program, PROG_LEN, lambdas=[]):
 
 
 example_program_dataset = [
-    # Program generating lambda,      lambda names
-    (lambda: lib.make_length(), [], "length"),
-    (lambda: lib.make_hist(), [], "histogram"), 
-    (lambda: lib.make_frac_prevs((rasp.tokens == "x")), ['LAM_EQ'], "frac_prev"),
+    # Program generating lambda,      lambda names, numeric_inputs?
+    (lambda: lib.make_length(), [], "length", False),
+    (lambda: lib.make_hist(), [], "histogram", False), 
+    (lambda: lib.make_frac_prevs((rasp.tokens == "x")), ['LAM_EQ'], "frac_prev", False),
     
     # Requires Linear Sequence Map
     # (lambda: lib.make_shuffle_dyck(pairs=["()", "{}"]), ['LAM_LT'], "2_shuffle_dyck"),
     # (lambda: lib.make_shuffle_dyck(pairs=["()", "{}", "[]"]), ['LAM_LT'], "3_shuffle_dyck"),
     
     # Expects numeric inputs
-    # (lambda: lib.make_sort(
-    #         rasp.tokens, rasp.tokens, max_seq_len=4, min_key=1), ['LAM_MUL'], 'sort_4'),
-    # (lambda: lib.make_sort(
-    #         rasp.tokens, rasp.tokens, max_seq_len=8, min_key=1), ['LAM_MUL'], 'sort_8'),
+    (lambda: lib.make_sort(
+            rasp.tokens, rasp.tokens, max_seq_len=4, min_key=1), ['LAM_MUL'], 'sort_4', True),
+    (lambda: lib.make_sort(
+            rasp.tokens, rasp.tokens, max_seq_len=8, min_key=1), ['LAM_MUL'], 'sort_8', True),
 
-    (lambda: lib.make_sort_unique(rasp.tokens, rasp.tokens), [], 'sort_unique'),
+    (lambda: lib.make_sort_unique(rasp.tokens, rasp.tokens), [], 'sort_unique', False),
     
     # ???
-    # (lambda: lib.make_sort_freq(max_seq_len=3), ['LAM_MUL', 'LAM_MUL'], 'sort_freq 3'),
-    # (lambda: lib.make_sort_freq(max_seq_len=7), ['LAM_MUL', 'LAM_MUL'], 'sort_freq 7'),
+    (lambda: lib.make_sort_freq(max_seq_len=3), ['LAM_MUL', 'LAM_MUL'], 'sort_freq 3', True),
+    (lambda: lib.make_sort_freq(max_seq_len=7), ['LAM_MUL', 'LAM_MUL'], 'sort_freq 7', True),
 
     # Requires Linear Sequence Map
     # (lambda: lib.make_pair_balance(
     #         sop=rasp.tokens, open_token="(", close_token=")"), [], 'pair_balance'),
-    (lambda: rasp.Map(lambda x: x == "t4", rasp.tokens), ['LAM_GT'], 'map_eq_t4'),
-    #(lambda: rasp.Map(lambda x: x > 2, rasp.tokens), ['LAM_GT'], 'map_gt_2'),
-    (lambda: rasp.Map(lambda x: x > 1, rasp.Map(lambda x: x == "t1", rasp.tokens)), ['LAM_EQ', 'LAM_GT'], 'map_map')        
+    (lambda: rasp.Map(lambda x: x == "t4", rasp.tokens), ['LAM_GT'], 'map_eq_t4', False),
+    (lambda: rasp.Map(lambda x: x > 2, rasp.tokens), ['LAM_GT'], 'map_gt_2', True),
+    (lambda: rasp.Map(lambda x: x > 1, rasp.Map(lambda x: (2*x + 1) < 4, rasp.tokens)), ['LAM_EQ', 'LAM_GT'], 'map_map_num', True),        
+    (lambda: rasp.Map(lambda x: x > 1, rasp.Map(lambda x: x == "t1", rasp.tokens)), ['LAM_EQ', 'LAM_GT'], 'map_map_char', False),        
 ]
 
 #%%
