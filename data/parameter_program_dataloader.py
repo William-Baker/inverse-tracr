@@ -15,13 +15,15 @@ END_TOKEN = 'PROGRAM_END'
 from data.dataset import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
 
 class TorchParameterProgramDataset(torch.utils.data.Dataset):
-    def __init__(self, prog_len: int, no_samples = 10000, generator_backend=Union['bounded', 'unbounded'], bounded_timeout_multiplier=1):
+    def __init__(self, prog_len: int, no_samples = 10000, generator_backend=Union['bounded', 'unbounded'], bounded_timeout_multiplier=1, vocab_size_range=(6,6), numeric_range=(6,6), numeric_inputs_possible: bool = False):
+        self.vocab_size_range, self.numeric_range, self.numeric_inputs_possible = vocab_size_range, numeric_range, numeric_inputs_possible
         self.no_samples = no_samples
         func = program_craft_generator_unbounded
         if generator_backend == 'bounded':
             func = program_craft_generator_bounded
         self.prog_len = prog_len
-        self.gen, OP_VOCAB, VAR_VOCAB = craft_dataset((prog_len,prog_len), func=func, timeout_multiplier=bounded_timeout_multiplier)
+        self.gen, OP_VOCAB, VAR_VOCAB = craft_dataset((prog_len,prog_len), func=func, timeout_multiplier=bounded_timeout_multiplier.as_integer_ratio,
+                                            vocab_size_range=self.vocab_size_range, numeric_range=self.numeric_range, numeric_inputs_possible=self.numeric_inputs_possible)
         self.it = iter(self.gen())
         
         OP_VOCAB_SIZE, VAR_VOCAB_SIZE = len(OP_VOCAB), len(VAR_VOCAB)

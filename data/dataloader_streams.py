@@ -140,10 +140,13 @@ if __name__ == "__main__":
         # sw.write_samples(num_threads=1)
         N = 20
         samples = 1000000
-        offset  = 900000
+        offset  = 0
+        vocab_range = (1, 10)
+        numeric_range = (1, 10)
+        numeric_inputs_possible = True
         for i in range(N):
             #os.chdir('../')
-            cmd = f"python generate_parameter_partial_dataset.py -off {offset} -s {samples} -pn {N} -idn {i}"
+            cmd = f"python generate_parameter_partial_dataset.py -off {offset} -s {samples} -pn {N} -idn {i} -vmin {vocab_range[0]} -vmax {vocab_range[1]} -nmin {numeric_range[0]} -nmax {numeric_range[1]} -num {numeric_inputs_possible}"
             #os.system(f"python data/generate_parameter_partial_dataset.py -s {samples} -pn {N} -idn {i}")
             #pid = subprocess.Popen([sys.executable, cmd])
             #p = subprocess.Popen(["start", "cmd", "/k", cmd], shell = True)#os.system("start /wait cmd /c {command}")
@@ -153,16 +156,6 @@ if __name__ == "__main__":
             # print(cmd)
 
             
-
-    # reader = StreamReader(pth)
-
-    # x,y = reader.__getitem__(1)
-
-
-    # dataloader = TorchDataLoader(reader, batch_size=1, num_workers=8, prefetch_factor=2)
-    # it = iter(dataloader)
-
-    # for i in range(5000):
-    #     x,y = next(it)
+        #zip -r iTracr_dataset_v2_train.zip iTracr_dataset/
     
 #%%
