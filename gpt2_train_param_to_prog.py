@@ -1,12 +1,15 @@
 #%%
 # srun -t 05:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
-# srun -t 00:10:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=pascal -A MLMI-WB326-SL2-GPU --pty bash
+# srun -t 00:10:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:2 --partition=pascal -A MLMI-WB326-SL2-GPU --pty bash
 # conda activate venv
 # source venv/bin/activate
 # jupyter lab --no-browser --ip=* --port=8081
 
 # module load cuda/11.8 cudnn/8.9_cuda-11.8
 # module load cuda/12.1 cudnn/8.9_cuda-12.1
+
+# watch -n 0.1 nvidia-smi
+# jax-smi -i 0.1
 
 # ??
 # module load rhel8/default-gpu
@@ -30,12 +33,15 @@
 import os
 import jax
 
+# print(jax.local_devices())
+
 # jax.distributed.initialize()
 # print(f"connected to {jax.local_device_count()} compute devices")
+# input()
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
-#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
-os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
+#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 # from jax import config
 # config.update("jax_disable_jit", True)
 
@@ -297,6 +303,19 @@ class TrainerModule:
             acc_sum, loss_sum, count = 0.0, 0.0, 0
             for idx, batch in enumerate(train_loader):
                 try:
+                    # if idx == 1:
+                    #     jax.profiler.start_trace("jax-profile")
+                    # elif idx == 49:
+                    #     jax.profiler.stop_trace()
+                    # if idx == 50:
+                    #     jax.profiler.start_trace("jax-profile")
+                    # elif idx == 100:
+                    #     jax.profiler.stop_trace()
+                    # if idx == 101:
+                    #     jax.profiler.start_trace("jax-profile")
+                    # elif idx == 150:
+                    #     jax.profiler.stop_trace()
+                        
                     # -------------------------- Train ---------------------------------------------
                     self.state, self.rng, loss, accuracy = self.train_step(self.state, self.rng, batch)
                     
@@ -404,7 +423,7 @@ from argparse import Namespace
 args = Namespace(
     batch_size=128,
     PROG_LEN = 15,
-    max_epochs = 200,
+    max_epochs = 20,
     LEARNING_RATE=1e-4,
     input_dropout_prob = 0.05,
     max_timesteps = 40,
@@ -502,9 +521,9 @@ print(f"Dataset contains: {len(dataset)} samples" )
 collate_fn = make_collate_fn(args.PROG_LEN)
 
 
-
-train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=2, shuffle=True)#, pin_memory=True)
-test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=2, shuffle=True)#, pin_memory=True)
+# note num_workers * prefetch_factor should be greater than the batch size
+train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=18, shuffle=True)#, pin_memory=True)
+test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=18, shuffle=True)#, pin_memory=True)
 num_train_iters = len(train_dataloader) * args.max_epochs
 
 
@@ -578,7 +597,7 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 #%%
 
 # trainer.eval_programs()
-#trainer.load_model(log_dir="PARAM_GPT2_MEDIUM_v2 LR 0.0001 bs: 128 nembed: 1024 n_layer: 24 n_head: 16")
+trainer.load_model(log_dir="PARAM_GPT2_LARGE LR 0.0001 bs: 128 nembed: 1280 n_layer: 36 n_head: 20 copy")
 
 #%%
 

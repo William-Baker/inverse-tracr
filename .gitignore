@@ -174,3 +174,4 @@ utils/pythia/
 *.tar.gz
 *.zip
 .data
+jax-profile/
