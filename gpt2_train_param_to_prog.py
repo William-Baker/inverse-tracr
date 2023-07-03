@@ -568,18 +568,10 @@ x,y, loss_mask, attention_mask = next(iter(dataset))
 
 
 import json
-with open('utils/gpt2_configs/gpt2_medium.json') as f: # GPT2 Large - 774M
+with open(f'utils/gpt2_configs/gpt2_{args.model.lower()}.json') as f: # GPT2 Large - 774M
   config_json = json.load(f)
 model_config = GPT2Config(**config_json)
 
-
-# GPT2 Medium - 335M
-# model_config = GPT2Config(vocab_size=next(test_it)[0].shape[2], n_positions=1024, n_embd=1024, n_layer=24, n_head=16, 
-#                                 n_inner=None, activation_function='gelu_new', resid_pdrop=0.1, layer_norm_epsilon=1e-05,
-#                                 initializer_range=0.02, summary_type='cls_index', summary_use_proj = True, 
-#                                 summary_activation = None, summary_proj_to_labels = True, summary_first_dropout = 0.1, 
-#                                 scale_attn_weights = True, use_cache = True, bos_token_id = next(test_it)[0].shape[2], eos_token_id = next(test_it)[0].shape[2], 
-#                                 scale_attn_by_inverse_layer_idx = False, reorder_and_upcast_attn = False )
 
 
 
