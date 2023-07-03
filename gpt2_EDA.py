@@ -1,5 +1,5 @@
 #%%
-# srun -t 20:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
+# srun -t 05:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
 # srun -t 00:10:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:2 --partition=pascal -A MLMI-WB326-SL2-GPU --pty bash
 # conda activate venv
 # source venv/bin/activate
@@ -139,7 +139,7 @@ class TrainerModule:
         return logits, fig
 
 
-    def apply(self, inp_data, attention_mask, pos_id, labels=None, seed=0):
+    def apply(self, inp_data, attention_mask, pos_id, labels=None, loss_mask=None, seed=0):
         rng = jax.random.PRNGKey(seed)
         rng, dropout_apply_rng = random.split(rng)
         logits = self.model.apply({'params': self.state.params}, inp_data, attention_mask=attention_mask, train=False, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
@@ -159,7 +159,11 @@ class TrainerModule:
         if labels is not None:
             max_prog_len = self.dataset.prog_len
             heat_img = plot_orginal_heatmaps(labels[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, return_fig=True)
-            return logits, heat_img
+            if loss_mask is None:
+                return logits, heat_img
+            else:
+                acc = self.accuracy_fn(logits, labels, loss_mask)
+                return logits, heat_img, acc
         else:
             return logits, None
 
@@ -342,7 +346,7 @@ class TrainerModule:
                         if eval_loss < best_eval_loss:
                             best_eval_loss = eval_loss
                             trainer.save_model(step=global_step)
-                        
+                        self.eval_programs(step=global_step)
                         
 
                     # ----------- TQDM ----------------
@@ -358,7 +362,6 @@ class TrainerModule:
                     if isinstance(E, KeyboardInterrupt):
                         raise(E)
             
-            self.eval_programs(step=epoch)
             self.logger.add_scalar('train/loss', loss_sum / count, global_step=epoch)
             self.logger.add_scalar('train/accuracy', acc_sum / count, global_step=epoch)
             trainer.logger.flush()
@@ -419,22 +422,11 @@ class TrainerModule:
 
 from argparse import Namespace
 
-# GPT Large Train config
-# args = Namespace(
-#     batch_size=128,
-#     PROG_LEN = 15,
-#     max_epochs = 20,
-#     LEARNING_RATE=1e-4,
-#     input_dropout_prob = 0.05,
-#     max_timesteps = 40,
-# )
-
-# GPT Large Cont fine tune Train config
 args = Namespace(
-    batch_size=256,
+    batch_size=128,
     PROG_LEN = 15,
     max_epochs = 20,
-    LEARNING_RATE=1e-6,
+    LEARNING_RATE=1e-4,
     input_dropout_prob = 0.05,
     max_timesteps = 40,
     model = 'MEDIUM', # 'LARGE'
@@ -522,9 +514,9 @@ def make_collate_fn(PROG_LEN):
             return np.array(inputs), np.array(targets).astype(int), np.array(loss_masks), np.array(attention_masks), pos_ids
     return collate_fn
 
-
-dataset = WrappedDataset('.data/iTracr_dataset_v2_train.zip', args.PROG_LEN, args.max_timesteps)
-test_dataset = WrappedDataset('.data/iTracr_dataset_v2_test.zip', args.PROG_LEN, args.max_timesteps)
+#dataset = WrappedDataset('.data/iTracr_dataset_train/', args.PROG_LEN, args.max_timesteps)
+dataset = WrappedDataset('.data/iTracrTrain.zip', args.PROG_LEN, args.max_timesteps)
+test_dataset = WrappedDataset('.data/iTracrTest.zip', args.PROG_LEN, args.max_timesteps)
 
 
 print(f"Dataset contains: {len(dataset)} samples" )
@@ -533,12 +525,12 @@ collate_fn = make_collate_fn(args.PROG_LEN)
 
 
 # note num_workers * prefetch_factor should be greater than the batch size
-train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=36, shuffle=True)#, pin_memory=True)
-test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=36, shuffle=True)#, pin_memory=True)
+train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=18, shuffle=True)#, pin_memory=True)
+test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=18, shuffle=True)#, pin_memory=True)
 num_train_iters = len(train_dataloader) * args.max_epochs
 
 
-#%%
+
 
 def testing_loaders():
     it = iter(test_dataloader)
@@ -554,7 +546,7 @@ def testing_loaders():
 testing_loaders()
 
 
-#%%
+
 
 
 
@@ -562,9 +554,14 @@ from data.parameter_encoder import ONEHOT_TIMESTEP_ENCODER
 def decode_timesteps(x, batch=0):
     TIMESTEP_TOKEN_SIZE = list(ONEHOT_TIMESTEP_ENCODER.values())[0].shape[0]
     this_batch = x[batch, :, :]
+    s = []
+    terminals = []
     for timestep in range(this_batch.shape[0]):
         index = np.array(this_batch[timestep, : TIMESTEP_TOKEN_SIZE]).argmax()
         #print(list(ONEHOT_TIMESTEP_ENCODER.keys())[index])
+        s += [list(ONEHOT_TIMESTEP_ENCODER.keys())[index]]
+        terminals += [bool(np.array(this_batch[timestep, TIMESTEP_TOKEN_SIZE]).item())]
+    return s, terminals
 
 test_it = iter(test_dataloader)
 def decode_test_sample():
@@ -573,7 +570,7 @@ def decode_test_sample():
     #print(src_dataset.decode_pred(sample[1], 0))
 decode_test_sample()
 
-#%%
+
 
 x,y, loss_mask, attention_mask = next(iter(dataset))
 
@@ -587,11 +584,9 @@ model_config = GPT2Config(**config_json)
 
 
 
-#%%
-
 model = GPT2(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
-#%%
+
 trainer = TrainerModule(model, f'PARAM_GPT2_{args.model}_v2 test LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
@@ -599,16 +594,47 @@ trainer = TrainerModule(model, f'PARAM_GPT2_{args.model}_v2 test LR {args.LEARNI
                         lr=args.LEARNING_RATE)
 _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n{model_config}")
 
-#%%
+
 
 # trainer.eval_programs()
 trainer.load_model(log_dir=f"PARAM_GPT2_{args.model}_v2 LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}")
 
+
 #%%
 
+test_it = iter(test_dataloader)
+test_sample = next(test_it)
 
-for epoch_idx in range(1, args.max_epochs+1):
-    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=2 )
+for i in range(args.batch_size):
+    x,y,loss_mask, attention_mask, pos_ids = test_sample
+
+    #print('-'*15 + 'inputs' + '-' *15)
+    layers, terminals = decode_timesteps(x, i)
+    from collections import Counter
+    freqs = Counter(layers)
+    freqs.pop('PAD')
+    freqs.pop('PROGRAM_START')
+    freqs.pop('PROGRAM_END')
+    # print(dict(freqs))
+    # print(list(zip(layers, terminals)))
+
+
+
+    #print('-'*15 + 'targ' + '-' *15)
+    #print(src_dataset.decode_pred(y, i))
+
+
+    logits, fig, acc = trainer.apply(x[i:i+1,:,:], attention_mask=attention_mask[i:i+1,:], pos_id=pos_ids[i:i+1,:], labels=y[i:i+1,:,:], loss_mask=loss_mask)#[i:i+1])
+
+    #print('-'*15 + 'pred' + '-' *15)
+    #print(src_dataset.decode_pred(logits, i))
+
+
+    fig.show()
+
+    print(f"{acc*100:.0f}%")
+
+
 
 
 #%%
