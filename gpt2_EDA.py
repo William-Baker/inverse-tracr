@@ -631,6 +631,7 @@ for i in range(args.batch_size):
 
 
     fig.show()
+    fig.to_html('test{i}.html')
 
     print(f"{acc*100:.0f}%")
 
