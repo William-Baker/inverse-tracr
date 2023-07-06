@@ -130,7 +130,7 @@ COMPILER_PAD = "compiler_pad"
 
 
 
-prog_name = "map_test_c"
+prog_name = "sort"
 program, vocab, input_seq = get_program(prog_name, 6)
 vocab = set(list(input_seq))
 formatted_input = [COMPILER_BOS] + list(input_seq)
