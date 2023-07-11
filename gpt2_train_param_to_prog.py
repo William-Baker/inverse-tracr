@@ -42,6 +42,7 @@ import jax
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
 #os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
+#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 # from jax import config
 # config.update("jax_disable_jit", True)
 

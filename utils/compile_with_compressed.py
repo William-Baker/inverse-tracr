@@ -206,17 +206,9 @@ def assemble_craft_model(
         compiled_model = get_compressed_compiled_model()
         return compiled_model(emb, use_dropout=False)
 
-    compressed_params = compressed_forward.init(
-        jax.random.PRNGKey(0), jnp.array([[1, 2, 3]]))
-    compressed_params = {k: dict(v) for k, v in compressed_params.items()}
-
-    for key in compressed_params:
-        if "transformer" in key:
-            for par in compressed_params[key]:
-                if par != 'w_emb':
-                    compressed_params[key][par] = np.zeros_like(
-                        compressed_params[key][par])
-
+    w_emb = compressed_forward.init(
+        jax.random.PRNGKey(0), jnp.array([[1, 2, 3]]))['compressed_transformer']['w_emb']
+    
     # Assemble attention and MLP weights.
     def project(space): return vectorspace_fns.project(
         residual_space, space).matrix
@@ -278,22 +270,29 @@ def assemble_craft_model(
                 params[f"{module_name}/value"]["w"][:, :] = value
                 params[f"{module_name}/linear"]["w"][:, :] = linear
 
-    # copy relevant parameters to compressed model
-    for component_name, component_param_dict in params.items():
-        compressed_equivalent = component_name.replace(
-            'transformer', 'compressed_transformer')
-        assert compressed_equivalent in compressed_params
-        for sub_name, sub_params in component_param_dict.items():
-            compressed_params[compressed_equivalent][sub_name] = np.copy(
-                sub_params)  # create a copy for the compressed model
 
-    if compression is None:
-        # make the compression weights identity for testing
-        compressed_params['compressed_transformer']['w_emb'] = np.eye(
-            *compressed_params['compressed_transformer']['w_emb'].shape)
+    
 
     params = jax.tree_util.tree_map(jnp.array, params)
-    compressed_params = jax.tree_util.tree_map(jnp.array, compressed_params)
+    compressed_params = jax.tree_util.tree_map(jnp.array, params)
+
+    new_compressed_params = dict()
+    for key, val in compressed_params.items():
+        if 'transformer/' in key:
+            new_compressed_params[key.replace('transformer/','compressed_transformer/')] = val
+        else:
+            new_compressed_params[key] = val
+    compressed_params = new_compressed_params
+
+    compressed_params['compressed_transformer'] = dict()
+    if compression is None:
+        # make the compression weights identity for testing
+        compressed_params['compressed_transformer']['w_emb'] = jnp.eye(
+            *w_emb.shape)
+    else:
+        compressed_params['compressed_transformer']['w_emb'] = jnp.array(w_emb)
+
+    
 
     assembled_transformer = compressed_model.AssembledTransformerModel(
         forward=forward.apply,
