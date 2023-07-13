@@ -87,7 +87,7 @@ def get_program(program_name, max_seq_len):
     return program, vocab, input_seq
 
 
-# %%
+# %% =================== init program and compile transformer programs ===========================
 
 
 prog_name = "sort_unique"#"length"
@@ -105,107 +105,148 @@ assembled_model, compressed_assembled_model = compile_with_compressed(
     program, vocab, max_seq_len, compression=1.0)
 
 
-# # print(f"Runnning {prog_name} with input {input_seq}")
-# # pred = assembled_model.apply(formatted_input)
-# # prog_out = pred.decoded
-# # print(f"Program outputs: {prog_out}")
 
-
-# # print(f"Runnning {prog_name} with input {input_seq}")
-# # compressed_pred = compressed_assembled_model.apply(formatted_input)
-# # prog_out = compressed_pred.decoded
-# # print(f"Program outputs: {prog_out}")
-
-# print(jax.tree_map(lambda x: jnp.sum(x).item(), assembled_model.params))
-# print(jax.tree_map(lambda x: jnp.sum(x).item(), compressed_assembled_model.params))
-
-# # #%%
-
-
-
-# # %%
-
+# # normal
 # encoded_tokens = assembled_model.encode_input(formatted_input)
 # output = assembled_model.forward(assembled_model.params, encoded_tokens)
 # decoded = assembled_model.decode_output(output)
-# decoded
+# print(decoded)
 
-
-# #%%
-
+# # compressed
 # output = compressed_assembled_model.forward(compressed_assembled_model.params, encoded_tokens)
 # decoded = compressed_assembled_model.decode_output(output)
-# decoded
+# print(decoded)
 
 
-#%%
+#%% ======================== Dataloader ======================================
 
-class TeacherDataset:
-    def __init__(self, vocab, teacher, max_seq_len) -> None:
+import torch
+torch.cuda.is_available = lambda : False
+from torch.utils.data import DataLoader
+
+class VocabDataset:
+    def __init__(self, vocab, max_seq_len, encoder_fn) -> None:
         self.vocab = vocab
         self.inputs = list(product(*[vocab]*max_seq_len))
-        self.teacher = teacher
-        self.teacher_call = jax.jit(teacher.forward)
+        self.encoder_fn = encoder_fn
     def __len__(self):
         return len(self.inputs)
     def __getitem__(self, idx):
         formatted_input = [COMPILER_BOS] + list(self.inputs[idx])
-        encoded_tokens = self.teacher.encode_input(formatted_input)
-        output = self.teacher_call(self.teacher.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
-        target_outs = jnp.stack(output.transformer_output.layer_outputs)
-        decoded = self.teacher.decode_output(output)
-        logits = output.transformer_output.output
-        return formatted_input, np.array(encoded_tokens), np.array(target_outs), decoded, np.array(logits)
-
-dataset = TeacherDataset(vocab, assembled_model, max_seq_len)
-it = iter(dataset)
-#%%
-
-formatted_input, encoded_tokens, outs, decoded, logits = next(it)
-pred = assembled_model.apply(formatted_input).decoded
-assert (pred == decoded)
-print(formatted_input, decoded, pred)
-# %%
-import torch
-torch.cuda.is_available = lambda : False
-from torch.utils.data import DataLoader
-def make_collate_fn():
-    from torch.nn.utils.rnn import pad_sequence
-
+        encoded_tokens =  self.encoder_fn(formatted_input)
+        return formatted_input, np.array(encoded_tokens)
     def collate_fn(data):
             formatted_input = [d[0] for d in data]
             encoded_tokens = [np.array(d[1]) for d in data]
-            target_outs = [np.array(d[2]) for d in data]
-            decoded = [d[3] for d in data]
-            logits = [d[4] for d in data]
-            # inputs = pad_sequence(inputs, batch_first=True)
-            # attention_masks = pad_sequence(attention_masks, batch_first=True)
-            
-
             encoded_tokens = np.stack(encoded_tokens, axis=0).squeeze()
-            target_outs = np.stack(target_outs, axis=0).squeeze() # bs, seq length, no_hidden_outputs, residual size
-            logits = np.stack(logits)
+            return formatted_input, np.array(encoded_tokens)
             
 
-            return formatted_input, np.array(encoded_tokens), np.array(target_outs), decoded, np.array(logits)
-    return collate_fn
 
-train_dataloader = DataLoader(dataset, batch_size=64, collate_fn=make_collate_fn())#, num_workers=8, prefetch_factor=18, shuffle=True)
+vocab_dataloader = DataLoader(VocabDataset(vocab, max_seq_len, assembled_model.encode_input), batch_size=64, collate_fn=VocabDataset.collate_fn, shuffle=True)
+
+class TeacherDataset:
+    def __init__(self, vocab_dataloader, teacher) -> None:
+        self.vocab_dataloader = vocab_dataloader
+        self.iter = iter(vocab_dataloader)
+        self.teacher = teacher
+        self.teacher_call = jax.jit(teacher.forward, device=jax.devices("cpu")[0]) #teacher.forward # jax.jit(teacher.forward)
+        self.params = jax.device_put(self.teacher.params, device=jax.devices("cpu")[0])
+    def __len__(self):
+        return len(self.vocab_dataloader)
+    def __getitem__(self, idx):
+        with jax.default_device(jax.devices("cpu")[0]):
+            formatted_input, encoded_tokens =  next(self.iter, (None, None))
+            if formatted_input is None:
+                self.iter = iter(vocab_dataloader)
+                formatted_input, encoded_tokens =  next(self.iter, (None, None))
+            output = self.teacher_call(self.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
+            target_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
+            decoded = self.teacher.decode_output(output)
+            logits = output.transformer_output.output
+        return np.array(formatted_input), np.array(encoded_tokens), np.array(target_outs), decoded, np.array(logits)
+
+dataset = TeacherDataset(vocab_dataloader, assembled_model)
+it = iter(dataset)
 
 
-#%%
-
-it = iter(train_dataloader)
 formatted_input, encoded_tokens, outs, decoded, logits = next(it)
+# pred = assembled_model.apply(list(formatted_input[0])).decoded
+# assert (pred == decoded)
+# print(formatted_input, decoded, pred)
+
+
+def collate_fn(data):
+        assert len(data) == 1
+        return data[0][0], data[0][1],data[0][2],data[0][3],data[0][4]
+
+train_dataloader = DataLoader(dataset, batch_size=1, num_workers=8, collate_fn=collate_fn, prefetch_factor=4)#, num_workers=8, prefetch_factor=18, shuffle=True)
+
+# it = iter(train_dataloader)
+# formatted_input, encoded_tokens, outs, decoded, logits = next(it)
 
 
 
-#%%
+#%% ==================== Schedulers ==========================================
 
-LR = 1e-2
+LR = 1e-3
+EPOCHS = 100
 
 
 
+# cosine anealing + warmup scheduler
+def create_learning_rate_fn(warmup_epochs, num_epochs, base_learning_rate, steps_per_epoch):
+  """Creates learning rate schedule."""
+  warmup_fn = optax.linear_schedule(
+      init_value=0., end_value=base_learning_rate,
+      transition_steps=warmup_epochs * steps_per_epoch)
+  cosine_epochs = max(num_epochs - warmup_epochs, 1)
+  cosine_fn = optax.cosine_decay_schedule(
+      init_value=base_learning_rate,
+      decay_steps=cosine_epochs * steps_per_epoch)
+  schedule_fn = optax.join_schedules(
+      schedules=[warmup_fn, cosine_fn],
+      boundaries=[warmup_epochs * steps_per_epoch])
+  return schedule_fn
+
+
+
+class CustomSchedule:
+    def __init__(self, LR) -> None:
+        self.history = []
+        self.LR = LR
+        self.initial_LR = LR
+    def log(self, loss):
+        self.history.append(loss)
+        if len(self.history) >= 20:
+            history = self.history
+            # less than 2% change in 2 epochs per epoch
+            if (abs(history[-1] - history[-2]) + abs(history[-1] - history[-3])) / history[-1] < 0.04 or \
+                abs(history[-1] - history[-3]) / history[-1] < 0.04 and history[-1] > history[-2]:
+                self.LR = self.LR / 2
+                print(f"updated LR: {self.LR}")
+                self.history = []
+
+cs = CustomSchedule(LR)
+def sched(count):
+    return cs.LR
+
+optimizer = optax.chain(
+    #optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
+    optax.adamw(LR, weight_decay=0.0001)
+    #optax.sgd(learning_rate=LR)
+    #optax.sgd(make_schedule(LR))
+    
+    # cosine anealing scheduler
+    #optax.adamw(create_learning_rate_fn(1, EPOCHS, LR, len(train_dataloader)))
+    
+    # custom scheduler - halves every 20
+    #  ensure you uncomment the line in the train loop to use
+    #optax.adamw(sched, weight_decay=0.0001)
+)
+
+
+#%% ================= setup frozen grads ==========================================
 # helpers for zero grads on all parameters other than compressed_transformer/w_emb
 from flax.core.frozen_dict import FrozenDict
 
@@ -233,66 +274,10 @@ def zero_grads():
     return optax.GradientTransformation(init_fn, update_fn)
 
 
-def create_learning_rate_fn(warmup_epochs, num_epochs, base_learning_rate, steps_per_epoch):
-  """Creates learning rate schedule."""
-  warmup_fn = optax.linear_schedule(
-      init_value=0., end_value=base_learning_rate,
-      transition_steps=warmup_epochs * steps_per_epoch)
-  cosine_epochs = max(num_epochs - warmup_epochs, 1)
-  cosine_fn = optax.cosine_decay_schedule(
-      init_value=base_learning_rate,
-      decay_steps=cosine_epochs * steps_per_epoch)
-  schedule_fn = optax.join_schedules(
-      schedules=[warmup_fn, cosine_fn],
-      boundaries=[warmup_epochs * steps_per_epoch])
-  return schedule_fn
-
-# def schedule(count):
-#     count = jnp.minimum(count, decay_steps)
-#     cosine_decay = 0.5 * (1 + jnp.cos(jnp.pi * count / decay_steps))
-#     decayed = (1 - alpha) * cosine_decay ** exponent + alpha
-#     return init_value * decayed
-
-def make_schedule(initial_lr):
-    def schedule(count):
-        return initial_lr + (initial_lr * count * 1e-4)**2
-    return schedule
-
-class CustomSchedule:
-    def __init__(self, LR) -> None:
-        self.history = []
-        self.LR = LR
-        self.initial_LR = LR
-    def log(self, loss):
-        self.history.append(loss)
-        if len(self.history) >= 8:
-            history = self.history
-            # less than 2% change in 2 epochs per epoch
-            if (abs(history[-1] - history[-2]) + abs(history[-1] - history[-3])) / history[-1] < 0.04 or \
-                abs(history[-1] - history[-3]) / history[-1] < 0.04 and history[-1] > history[-2]:
-                self.LR = self.LR / 2
-                print(f"updated LR: {self.LR}")
-                self.history = []
-
-cs = CustomSchedule(LR)
-def sched(count):
-    return cs.LR
-
-optimizer = optax.chain(
-    #optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
-    #optax.adam(learning_rate=LR) #lr_schedule)
-    #optax.sgd(learning_rate=LR) #lr_schedule)
-    #optax.sgd(make_schedule(LR))
-    # optax.adamw(create_learning_rate_fn(1, 20, LR, len(train_dataloader)))
-    #optax.adamw(LR, weight_decay=0.0001)
-    optax.adamw(sched, weight_decay=0.0001)
-    # optax.adamw(learning_rate=config.lr, weight_decay=config.weight_decay)
-)
-
 optimizer = optax.multi_transform({'adam': optimizer, 'zero': zero_grads()},
                            create_mask(compressed_assembled_model.params, lambda s: s != 'compressed_transformer'))
 
-
+#%% ============== init train state ===============================
 
 from flax.core.frozen_dict import unfreeze
 # Initialize training state
@@ -304,8 +289,19 @@ def calculate_loss(params, batch):
     encoded_tokens, targets, logits = batch
     output = state.apply_fn(params, encoded_tokens)
     compressed_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
-    loss = jnp.mean(jnp.abs(targets - compressed_outs)) #** 2)
+
+    # L2 Loss
+    #loss = jnp.mean((targets - compressed_outs)** 2) 
+
+    # L1 Loss
+    loss = jnp.mean(jnp.abs(targets - compressed_outs))
+
+    # Softmax Loss
+    #loss = optax.softmax_cross_entropy(compressed_outs, targets).mean()
+
+    # Additional logit error term
     #loss += optax.softmax_cross_entropy(output.transformer_output.output, logits).mean()#* 100.0
+    
     return loss
 
 def train_step(state, batch):
@@ -314,26 +310,27 @@ def train_step(state, batch):
     state = state.apply_gradients(grads=grads)
     return state, loss
 
-#train_step = jax.jit(train_step)
+train_step = jax.jit(train_step)
 
 
 
-#%%
+#%% ======================== init embedding to be noisy identiy - skip to use random init ========================
 
 state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
 state.params['compressed_transformer']['w_emb'] += jax.random.normal(jax.random.PRNGKey(0), state.params['compressed_transformer']['w_emb'].shape) / 10
 plt.imshow(np.array(state.params['compressed_transformer']['w_emb']))
 plt.show()
-#%%
+
+#%% ======================= Train loop =====================================
 
 from torch.utils.tensorboard import SummaryWriter
-log_dir = os.path.join('.clogs', f'adamW linear LR{LR} noisy identiy')
+log_dir = os.path.join('.clogs', f'adamW L1 LR{LR} noisy identiy fast')
 #log_dir = os.path.join('.clogs', f'LR{LR} init')
 logger = SummaryWriter(log_dir=log_dir)
 
         
 
-for epoch in range(300):
+for epoch in range(EPOCHS):
     with tqdm(total=len(train_dataloader), unit='batch') as tepoch:
         total_loss = 0.0
         for idx, batch in enumerate(train_dataloader):
@@ -363,8 +360,15 @@ for epoch in range(300):
         avg_loss = total_loss / len(train_dataloader)
         tepoch.set_postfix({'Batch': idx, 'Avg Loss': avg_loss})
         logger.add_scalar('loss', loss.item(), global_step=epoch)
-        cs.log(avg_loss)
+        
+        # enable if using custom scheduler
+        # cs.log(avg_loss)
+        
         logger.add_scalar('LR', cs.LR, global_step=epoch)
+        if epoch-1 % 10 == 0:
+            plt.imshow(np.array(state.params['compressed_transformer']['w_emb']))
+            plt.show()
+
 plt.imshow(np.array(state.params['compressed_transformer']['w_emb']))
 plt.show()
 
@@ -373,7 +377,7 @@ plt.imshow(np.array(state.params['compressed_transformer']['w_emb']))
 
 #%%
 
-state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
+
 
 #%%
 it = iter(dataset)
@@ -390,19 +394,7 @@ print(f"targ: {targ_decoded}, pred: {decoded}")
 
 # %%
 
+# Set the embedding to the identity to disable it
+state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
 
 # %%
-
-plot_residuals_and_input(
-    model=assembled_model,
-    inputs=formatted_input,
-    figsize=(10, 9)
-)
-
-# %%
-# @title Plot layer outputs
-plot_layer_outputs(
-    model=assembled_model,
-    inputs=formatted_input,
-    figsize=(8, 9)
-)
