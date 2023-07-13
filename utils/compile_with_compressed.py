@@ -61,15 +61,15 @@ def compile_with_compressed(
 
     craft_model = craft_graph_to_model.craft_graph_to_model(graph, sources)
 
-    craft_model_to_transformer.craft_model_to_transformer(
-        craft_model=craft_model,
-        graph=graph,
-        sink=sink,
-        max_seq_len=max_seq_len,
-        causal=causal,
-        compiler_bos=compiler_bos,
-        compiler_pad=compiler_pad,
-    )
+    # craft_model_to_transformer.craft_model_to_transformer(
+    #     craft_model=craft_model,
+    #     graph=graph,
+    #     sink=sink,
+    #     max_seq_len=max_seq_len,
+    #     causal=causal,
+    #     compiler_bos=compiler_bos,
+    #     compiler_pad=compiler_pad,
+    # )
 
     """Turn a craft model into a transformer model."""
 

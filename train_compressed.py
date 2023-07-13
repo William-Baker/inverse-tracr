@@ -90,7 +90,7 @@ def get_program(program_name, max_seq_len):
 # %%
 
 
-prog_name = "sort"#"length"
+prog_name = "sort_unique"#"length"
 program, vocab, input_seq = get_program(prog_name, 6)
 vocab = set(list(input_seq))
 # formatted_input = [COMPILER_BOS] + list(input_seq)
@@ -151,7 +151,7 @@ class TeacherDataset:
     def __getitem__(self, idx):
         formatted_input = [COMPILER_BOS] + list(self.inputs[idx])
         encoded_tokens = self.teacher.encode_input(formatted_input)
-        output = self.teacher_call(self.teacher.params, encoded_tokens)
+        output = self.teacher_call(self.teacher.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
         target_outs = jnp.stack(output.transformer_output.layer_outputs)
         decoded = self.teacher.decode_output(output)
         logits = output.transformer_output.output
@@ -183,7 +183,7 @@ def make_collate_fn():
             
 
             encoded_tokens = np.stack(encoded_tokens, axis=0).squeeze()
-            target_outs = np.stack(target_outs)#.squeeze()
+            target_outs = np.stack(target_outs, axis=0).squeeze() # bs, seq length, no_hidden_outputs, residual size
             logits = np.stack(logits)
             
 
@@ -205,36 +205,116 @@ formatted_input, encoded_tokens, outs, decoded, logits = next(it)
 LR = 1e-2
 
 
+
+# helpers for zero grads on all parameters other than compressed_transformer/w_emb
+from flax.core.frozen_dict import FrozenDict
+
+def create_mask(params, label_fn):
+    def _map(params, mask, label_fn):
+        for k in params:
+            if label_fn(k):
+                mask[k] = 'zero'
+            else:
+                if isinstance(params[k], FrozenDict):
+                    mask[k] = {}
+                    _map(params[k], mask[k], label_fn)
+                else:
+                    mask[k] = 'adam'
+    mask = {}
+    _map(params, mask, label_fn)
+    return mask
+
+def zero_grads():
+    # from https://github.com/deepmind/optax/issues/159#issuecomment-896459491
+    def init_fn(_): 
+        return ()
+    def update_fn(updates, state, params=None):
+        return jax.tree_map(jnp.zeros_like, updates), ()
+    return optax.GradientTransformation(init_fn, update_fn)
+
+
+def create_learning_rate_fn(warmup_epochs, num_epochs, base_learning_rate, steps_per_epoch):
+  """Creates learning rate schedule."""
+  warmup_fn = optax.linear_schedule(
+      init_value=0., end_value=base_learning_rate,
+      transition_steps=warmup_epochs * steps_per_epoch)
+  cosine_epochs = max(num_epochs - warmup_epochs, 1)
+  cosine_fn = optax.cosine_decay_schedule(
+      init_value=base_learning_rate,
+      decay_steps=cosine_epochs * steps_per_epoch)
+  schedule_fn = optax.join_schedules(
+      schedules=[warmup_fn, cosine_fn],
+      boundaries=[warmup_epochs * steps_per_epoch])
+  return schedule_fn
+
+# def schedule(count):
+#     count = jnp.minimum(count, decay_steps)
+#     cosine_decay = 0.5 * (1 + jnp.cos(jnp.pi * count / decay_steps))
+#     decayed = (1 - alpha) * cosine_decay ** exponent + alpha
+#     return init_value * decayed
+
+def make_schedule(initial_lr):
+    def schedule(count):
+        return initial_lr + (initial_lr * count * 1e-4)**2
+    return schedule
+
+class CustomSchedule:
+    def __init__(self, LR) -> None:
+        self.history = []
+        self.LR = LR
+        self.initial_LR = LR
+    def log(self, loss):
+        self.history.append(loss)
+        if len(self.history) >= 8:
+            history = self.history
+            # less than 2% change in 2 epochs per epoch
+            if (abs(history[-1] - history[-2]) + abs(history[-1] - history[-3])) / history[-1] < 0.04 or \
+                abs(history[-1] - history[-3]) / history[-1] < 0.04 and history[-1] > history[-2]:
+                self.LR = self.LR / 2
+                print(f"updated LR: {self.LR}")
+                self.history = []
+
+cs = CustomSchedule(LR)
+def sched(count):
+    return cs.LR
+
 optimizer = optax.chain(
-    optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
+    #optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
     #optax.adam(learning_rate=LR) #lr_schedule)
-    optax.sgd(learning_rate=LR) #lr_schedule)
+    #optax.sgd(learning_rate=LR) #lr_schedule)
+    #optax.sgd(make_schedule(LR))
+    # optax.adamw(create_learning_rate_fn(1, 20, LR, len(train_dataloader)))
+    #optax.adamw(LR, weight_decay=0.0001)
+    optax.adamw(sched, weight_decay=0.0001)
     # optax.adamw(learning_rate=config.lr, weight_decay=config.weight_decay)
 )
 
+optimizer = optax.multi_transform({'adam': optimizer, 'zero': zero_grads()},
+                           create_mask(compressed_assembled_model.params, lambda s: s != 'compressed_transformer'))
+
+
+
+from flax.core.frozen_dict import unfreeze
 # Initialize training state
 state = train_state.TrainState.create(
-    apply_fn=jax.jit(compressed_assembled_model.forward), params=compressed_assembled_model.params, tx=optimizer)
+    apply_fn=jax.jit(compressed_assembled_model.forward), params=unfreeze(compressed_assembled_model.params), tx=optimizer)
 
 
 def calculate_loss(params, batch):
     encoded_tokens, targets, logits = batch
     output = state.apply_fn(params, encoded_tokens)
-    compressed_outs = jnp.stack(output.transformer_output.layer_outputs)
-    loss = jnp.mean((targets - compressed_outs) ** 2)
+    compressed_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
+    loss = jnp.mean(jnp.abs(targets - compressed_outs)) #** 2)
     #loss += optax.softmax_cross_entropy(output.transformer_output.output, logits).mean()#* 100.0
     return loss
 
 def train_step(state, batch):
     loss_fn = lambda params: calculate_loss(params, batch)
     loss, grads = jax.value_and_grad(loss_fn)(state.params)
-    w_emb = grads['compressed_transformer']['w_emb']
-    grads = jax.tree_map(lambda x: jnp.zeros(x.shape), grads)
-    grads['compressed_transformer']['w_emb'] = w_emb
     state = state.apply_gradients(grads=grads)
     return state, loss
 
-train_step = jax.jit(train_step)
+#train_step = jax.jit(train_step)
 
 
 
@@ -245,6 +325,14 @@ state.params['compressed_transformer']['w_emb'] += jax.random.normal(jax.random.
 plt.imshow(np.array(state.params['compressed_transformer']['w_emb']))
 plt.show()
 #%%
+
+from torch.utils.tensorboard import SummaryWriter
+log_dir = os.path.join('.clogs', f'adamW linear LR{LR} noisy identiy')
+#log_dir = os.path.join('.clogs', f'LR{LR} init')
+logger = SummaryWriter(log_dir=log_dir)
+
+        
+
 for epoch in range(300):
     with tqdm(total=len(train_dataloader), unit='batch') as tepoch:
         total_loss = 0.0
@@ -256,6 +344,7 @@ for epoch in range(300):
 
             state, loss = train_step(state, (encoded_tokens, target_outs, logits))
 
+            # verify that we're only training the embedding matrix
             changes = dict()
             for key, val in state.params.items():
                 for comp, weight in val.items():
@@ -270,10 +359,14 @@ for epoch in range(300):
         
             tepoch.update(1)
             total_loss += loss
-        plt.imshow(np.array(state.params['compressed_transformer']['w_emb']))
-        plt.show()
+        
         avg_loss = total_loss / len(train_dataloader)
         tepoch.set_postfix({'Batch': idx, 'Avg Loss': avg_loss})
+        logger.add_scalar('loss', loss.item(), global_step=epoch)
+        cs.log(avg_loss)
+        logger.add_scalar('LR', cs.LR, global_step=epoch)
+plt.imshow(np.array(state.params['compressed_transformer']['w_emb']))
+plt.show()
 
 #%%
 plt.imshow(np.array(state.params['compressed_transformer']['w_emb']))
