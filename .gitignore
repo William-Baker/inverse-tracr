@@ -175,3 +175,5 @@ utils/pythia/
 *.zip
 .data
 jax-profile/
+.clogs/
+.dlogs/

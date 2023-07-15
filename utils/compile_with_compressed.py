@@ -308,5 +308,9 @@ def assemble_craft_model(
         model_config=model_config,
         residual_labels=residual_labels,
     )
+    assembled_compressed_transformer.residual_space=residual_space
+    assembled_compressed_transformer.tokens_space=tokens_space
+    assembled_compressed_transformer.indices_space=indices_space
+    assembled_compressed_transformer.output_space=output_space
 
     return (assembled_transformer, assembled_compressed_transformer)

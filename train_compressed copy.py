@@ -330,7 +330,7 @@ def calculate_loss(params, batch):
     #loss = jnp.mean((targets - compressed_outs)** 2) 
 
     # L1 Loss
-    #loss = jnp.mean(jnp.abs(targets - compressed_outs))
+    # loss = jnp.mean(jnp.abs(targets - compressed_outs))
 
     # Softmax Loss
     #loss = optax.softmax_cross_entropy(compressed_outs, targets).mean()
@@ -359,23 +359,27 @@ jit_grads = jax.jit(jit_grads)
 
 #%% ======================== init embedding to be noisy identiy - skip to use random init ========================
 
-state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
-state.params['compressed_transformer']['w_emb'] += jax.random.normal(jax.random.PRNGKey(0), state.params['compressed_transformer']['w_emb'].shape) / 10
-show_emb(state.params)
-plt.savefig
+# state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
+# state.params['compressed_transformer']['w_emb'] += jax.random.normal(jax.random.PRNGKey(0), state.params['compressed_transformer']['w_emb'].shape) / 10
+# show_emb(state.params)
+# plt.savefig
 
 #%%
-
-
+rng = jax.random.PRNGKey(0)
+initializer = jax.nn.initializers.glorot_uniform()
 for key, val in state.params.items():
     for comp, weight in val.items():
-        if key + comp != 'compressed_transformerw_emb':
-            state.params[key][comp] += 0.00001
+        if 'compressed_transformer' in key + comp:
+            rng, nrng = jax.random.split(rng, 2)
+            if len(state.params[key][comp].shape) > 1:
+                state.params[key][comp] =initializer(nrng, state.params[key][comp].shape, jnp.float32)
+            else:
+                state.params[key][comp] = jax.random.normal(nrng, state.params[key][comp].shape) / 1000
 
 #%% ======================= Train loop =====================================
 
 from torch.utils.tensorboard import SummaryWriter
-log_dir = os.path.join('.clogs', f'cross fixed')
+log_dir = os.path.join('.dlogs', f'crossentropy glorot 2')
 #log_dir = os.path.join('.clogs', f'LR{LR} init')
 logger = SummaryWriter(log_dir=log_dir)
 
