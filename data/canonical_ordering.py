@@ -226,7 +226,6 @@ def sort_program(prog):
 
 
 
-#%%
 if __name__ == "__main__":
     prog = [
         ['PROGRAM_START', 'NA', 'NA', 'NA', 'NA' ],
@@ -298,9 +297,3 @@ if __name__ == "__main__":
  {'op': 'Map', 'p1': 'LAM_SUB', 'p2': 'v11', 'p3': 'NA', 'r': 'v13'},
  {'op': 'SequenceMap', 'p1': 'LAM_SUB', 'p2': 'v12', 'p3': 'v13', 'r': 'v14'}]
 
-
-
-#%%
-
-
-# %%

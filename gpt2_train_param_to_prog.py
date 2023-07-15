@@ -72,12 +72,29 @@ from data.dataset import example_program_dataset, encode_rasp_program
 
 from models import GPT2, GPT2Config
 
+from argparse import Namespace
 
+# GPT Large Train config
+# args = Namespace(
+#     batch_size=128,
+#     PROG_LEN = 15,
+#     max_epochs = 20,
+#     LEARNING_RATE=1e-4,
+#     input_dropout_prob = 0.05,
+#     max_timesteps = 40,
+# )
 
+# GPT Large Cont fine tune Train config
+args = Namespace(
+    batch_size=256,
+    PROG_LEN = 15,
+    max_epochs = 20,
+    LEARNING_RATE=1e-6,
+    input_dropout_prob = 0.05,
+    max_timesteps = 40,
+    model = 'LARGE', # 'LARGE'
+)
 
-
-#%%
-#import jax.profiler
 CHECKPOINT_PATH = ".logs/"
 
 class TrainerModule:
@@ -420,28 +437,7 @@ class TrainerModule:
 
 
 
-from argparse import Namespace
 
-# GPT Large Train config
-# args = Namespace(
-#     batch_size=128,
-#     PROG_LEN = 15,
-#     max_epochs = 20,
-#     LEARNING_RATE=1e-4,
-#     input_dropout_prob = 0.05,
-#     max_timesteps = 40,
-# )
-
-# GPT Large Cont fine tune Train config
-args = Namespace(
-    batch_size=256,
-    PROG_LEN = 15,
-    max_epochs = 20,
-    LEARNING_RATE=1e-6,
-    input_dropout_prob = 0.05,
-    max_timesteps = 40,
-    model = 'LARGE', # 'LARGE'
-)
 
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
 from data.dataloader_streams import ZipStreamReader

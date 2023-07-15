@@ -1,6 +1,3 @@
-#%%
-
-
 import sys
 sys.path.append('tracr/')
 
@@ -466,7 +463,7 @@ def encode_craft_model(craft_model):
 
 
 
-#%% ====== encoder with timeout ==================
+# ====== encoder with timeout ==================
 import multiprocessing, dill
 dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
 multiprocessing.reduction.ForkingPickler = dill.Pickler
@@ -645,7 +642,7 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), numeric_range=(6,
     
     return gen, OP_VOCAB, VAR_VOCAB
 
-#%%
+
 
 
 
@@ -787,18 +784,3 @@ example_program_dataset = [
     (lambda: rasp.Map(lambda x: x > 1, rasp.Map(lambda x: x == "t1", rasp.tokens)), ['LAM_EQ', 'LAM_GT'], 'map_map_char', False),        
 ]
 
-#%%
-
-
-#gen, OP_VOCAB, VAR_VOCAB = craft_dataset(ops_range=(30,30))
-
-# dataset = gen()
-
-# #%%
-
-
-# model_params, program = next(dataset)
-
-# program
-
-# # %%
