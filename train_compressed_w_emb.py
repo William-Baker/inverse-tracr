@@ -16,7 +16,8 @@ import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 
 
-jax.config.update('jax_default_matmul_precision', 'float32')
+#jax.config.update('jax_default_matmul_precision', 'float32')
+jax.config.update('jax_default_matmul_precision', 'fastest')
 
 
 def get_program(program_name, max_seq_len):
@@ -135,7 +136,7 @@ max_seq_len = len(input_seq)+1
 
 
 assembled_model, compressed_assembled_model = compile_with_compressed(
-    program, vocab, max_seq_len, compression=1.0)
+    program, vocab, max_seq_len, compression=1)
 
 
 
@@ -327,7 +328,7 @@ def calculate_loss(params, batch):
     compressed_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
 
     # L2 Loss
-    #loss = jnp.mean((targets - compressed_outs)** 2) 
+    loss = jnp.mean((targets - compressed_outs)** 2) 
 
     # L1 Loss
     # loss = jnp.mean(jnp.abs(targets - compressed_outs))
@@ -338,7 +339,7 @@ def calculate_loss(params, batch):
     # Additional logit error term
     #loss = optax.softmax_cross_entropy(output.transformer_output.output, logits).mean()#* 100.0
     pred_logits = output.transformer_output.output @ res_to_out.matrix
-    loss = optax.softmax_cross_entropy_with_integer_labels(pred_logits, logits).mean()
+    #loss += optax.softmax_cross_entropy_with_integer_labels(pred_logits, logits).mean()
     
     return loss
 
@@ -359,27 +360,23 @@ jit_grads = jax.jit(jit_grads)
 
 #%% ======================== init embedding to be noisy identiy - skip to use random init ========================
 
-# state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
-# state.params['compressed_transformer']['w_emb'] += jax.random.normal(jax.random.PRNGKey(0), state.params['compressed_transformer']['w_emb'].shape) / 10
+state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
+state.params['compressed_transformer']['w_emb'] += jax.random.normal(jax.random.PRNGKey(0), state.params['compressed_transformer']['w_emb'].shape) / 10
 # show_emb(state.params)
 # plt.savefig
 
 #%%
-rng = jax.random.PRNGKey(0)
-initializer = jax.nn.initializers.glorot_uniform()
-for key, val in state.params.items():
-    for comp, weight in val.items():
-        if 'compressed_transformer' in key + comp:
-            rng, nrng = jax.random.split(rng, 2)
-            if len(state.params[key][comp].shape) > 1:
-                state.params[key][comp] =initializer(nrng, state.params[key][comp].shape, jnp.float32)
-            else:
-                state.params[key][comp] = jax.random.normal(nrng, state.params[key][comp].shape) / 1000
+
+
+# for key, val in state.params.items():
+#     for comp, weight in val.items():
+#         if key + comp != 'compressed_transformerw_emb':
+#             state.params[key][comp] += 0.00001
 
 #%% ======================= Train loop =====================================
 
 from torch.utils.tensorboard import SummaryWriter
-log_dir = os.path.join('.dlogs', f'crossentropy glorot 2')
+log_dir = os.path.join('.clogs', f'L2 float 16')
 #log_dir = os.path.join('.clogs', f'LR{LR} init')
 logger = SummaryWriter(log_dir=log_dir)
 
@@ -403,11 +400,12 @@ for epoch in range(EPOCHS):
                     changes[key + comp] = (state.params[key][comp] - params_before[key][comp]).sum()
                     if key + comp != 'compressed_transformerw_emb':
                         assert changes[key + comp] == 0
-                            
+                          
 
             
             
             tepoch.set_postfix({'Batch': idx, 'Train Loss': loss})
+            logger.add_scalar('hf_loss', loss.item(), global_step=global_idx)
         
             tepoch.update(1)
             total_loss += loss
@@ -436,7 +434,7 @@ for epoch in range(EPOCHS):
         
         avg_loss = total_loss / len(train_dataloader)
         tepoch.set_postfix({'Batch': idx, 'Avg Loss': avg_loss})
-        logger.add_scalar('loss', loss.item(), global_step=epoch)
+        logger.add_scalar('avg loss', avg_loss.item(), global_step=epoch)
         
         # enable if using custom scheduler
         # cs.log(avg_loss)

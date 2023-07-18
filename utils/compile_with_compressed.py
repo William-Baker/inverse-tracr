@@ -34,6 +34,8 @@ def compile_with_compressed(
         compiler_pad=COMPILER_PAD,
         mlp_exactness=100,
         compression: float = None):
+    
+    assert compression >= 1.0
 
     if compiler_bos in vocab:
         raise ValueError("Compiler BOS token must not be present in the vocab. "
@@ -75,7 +77,7 @@ def compile_with_compressed(
 
     # Add the compiler BOS token.
     tokens_value_set = (
-        graph.nodes[rasp.tokens.label][nodes.VALUE_SET].union(
+        set(graph.nodes[rasp.tokens.label][nodes.VALUE_SET]).union(
             {compiler_bos, compiler_pad}))
     tokens_space = bases.VectorSpaceWithBasis.from_values(rasp.tokens.label,
                                                           tokens_value_set)
@@ -312,5 +314,37 @@ def assemble_craft_model(
     assembled_compressed_transformer.tokens_space=tokens_space
     assembled_compressed_transformer.indices_space=indices_space
     assembled_compressed_transformer.output_space=output_space
+
+
+
+    @hk.without_apply_rng
+    @hk.transform
+    def forward_no_emb(emb):
+        compiled_model = get_compiled_model()
+        return compiled_model.no_emb(emb, use_dropout=False)
+    
+    @hk.without_apply_rng
+    @hk.transform
+    def forward_emb(tokens):
+        compiled_model = get_compiled_model()
+        return compiled_model.embed(tokens)
+    
+    @hk.without_apply_rng
+    @hk.transform
+    def comp_forward_no_emb(emb):
+        compiled_model = get_compressed_compiled_model()
+        return compiled_model.no_emb(emb, use_dropout=False)
+    
+    @hk.without_apply_rng
+    @hk.transform
+    def comp_forward_emb(tokens):
+        compiled_model = get_compressed_compiled_model()
+        return compiled_model.embed(tokens)
+    
+    assembled_transformer.forward_no_emb = forward_no_emb
+    assembled_transformer.forward_emb = forward_emb
+
+    assembled_compressed_transformer.forward_no_emb = comp_forward_no_emb
+    assembled_compressed_transformer.forward_emb = comp_forward_emb
 
     return (assembled_transformer, assembled_compressed_transformer)

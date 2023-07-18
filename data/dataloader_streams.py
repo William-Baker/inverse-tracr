@@ -108,29 +108,9 @@ if __name__ == "__main__":
         sw = StreamWriter(pth, dataset)
         sw.write_samples(num_threads=20)
     else:
-        # from parameter_program_dataloader import TorchParameterProgramDataset
-        # dataset = TorchProgramDataset( no_samples = 10000, generator_backend='bounded')
-        # pth = '.data/iTracr_dataset/'
-        # sw = StreamWriter(pth, dataset)
-        # sw.write_samples(num_threads=1)
-        N = 20
-        samples = 1000000
-        offset  = 0
-        vocab_range = (1, 10)
-        numeric_range = (1, 10)
-        numeric_inputs_possible = True
-        for i in range(N):
-            #os.chdir('../')
-            cmd = f"python generate_parameter_partial_dataset.py -off {offset} -s {samples} -pn {N} -idn {i} -vmin {vocab_range[0]} -vmax {vocab_range[1]} -nmin {numeric_range[0]} -nmax {numeric_range[1]} -num {numeric_inputs_possible}"
-            #os.system(f"python data/generate_parameter_partial_dataset.py -s {samples} -pn {N} -idn {i}")
-            #pid = subprocess.Popen([sys.executable, cmd])
-            #p = subprocess.Popen(["start", "cmd", "/k", cmd], shell = True)#os.system("start /wait cmd /c {command}")
-            #os.system(f"cmd /c {cmd}")
-            #subprocess.call(cmd, shell=True)
-            subprocess.Popen(cmd, shell=True)
-            # print(cmd)
+        pass
 
             
-        #zip -r iTracr_dataset_v2_train.zip iTracr_dataset/
+        
     
 #%%

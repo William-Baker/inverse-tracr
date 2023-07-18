@@ -17,6 +17,7 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 
 
 jax.config.update('jax_default_matmul_precision', 'float32')
+#jax.config.update('jax_default_matmul_precision', 'fastest')
 
 
 def get_program(program_name, max_seq_len):
@@ -135,7 +136,7 @@ max_seq_len = len(input_seq)+1
 
 
 assembled_model, compressed_assembled_model = compile_with_compressed(
-    program, vocab, max_seq_len, compression=1.0)
+    program, vocab, max_seq_len, compression=1)
 
 
 
@@ -153,11 +154,17 @@ assembled_model, compressed_assembled_model = compile_with_compressed(
 from tracr.craft import vectorspace_fns
 res_to_out = vectorspace_fns.project(compressed_assembled_model.residual_space, compressed_assembled_model.output_space)
 
+#%%
+
+eg = list(product(*[vocab]*max_seq_len))[0]
+emb = assembled_model.forward_emb.apply(assembled_model.params, jnp.array(eg))
+
 #%% ======================== Dataloader ======================================
 
 import torch
 torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
+
 
 class VocabDataset:
     def __init__(self, vocab, max_seq_len, encoder_fn) -> None:
@@ -168,8 +175,8 @@ class VocabDataset:
         return len(self.inputs)
     def __getitem__(self, idx):
         formatted_input = [COMPILER_BOS] + list(self.inputs[idx])
-        encoded_tokens =  self.encoder_fn(formatted_input)
-        return formatted_input, np.array(encoded_tokens)
+        rnd = np.random.rand(*emb.shape)# * max(vocab)
+        return formatted_input, rnd#np.array(encoded_tokens)
     def collate_fn(data):
             formatted_input = [d[0] for d in data]
             encoded_tokens = [np.array(d[1]) for d in data]
@@ -185,7 +192,7 @@ class TeacherDataset:
         self.vocab_dataloader = vocab_dataloader
         self.iter = iter(vocab_dataloader)
         self.teacher = teacher
-        self.teacher_call = jax.jit(teacher.forward, device=jax.devices("cpu")[0]) #teacher.forward # jax.jit(teacher.forward)
+        self.teacher_call = jax.jit(teacher.forward_no_emb.apply, device=jax.devices("cpu")[0]) #teacher.forward # jax.jit(teacher.forward)
         self.params = jax.device_put(self.teacher.params, device=jax.devices("cpu")[0])
     def __len__(self):
         return len(self.vocab_dataloader)
@@ -318,7 +325,7 @@ optimizer = optax.multi_transform({'adam': optimizer, 'zero': zero_grads()},
 from flax.core.frozen_dict import unfreeze
 # Initialize training state
 state = train_state.TrainState.create(
-    apply_fn=jax.jit(compressed_assembled_model.forward), params=unfreeze(compressed_assembled_model.params), tx=optimizer)
+    apply_fn=jax.jit(compressed_assembled_model.forward_no_emb.apply), params=unfreeze(compressed_assembled_model.params), tx=optimizer)
 
 
 def calculate_loss(params, batch):
@@ -327,10 +334,10 @@ def calculate_loss(params, batch):
     compressed_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
 
     # L2 Loss
-    #loss = jnp.mean((targets - compressed_outs)** 2) 
+    loss = jnp.mean((targets - compressed_outs)** 2) 
 
     # L1 Loss
-    #loss = jnp.mean(jnp.abs(targets - compressed_outs))
+    # loss = jnp.mean(jnp.abs(targets - compressed_outs))
 
     # Softmax Loss
     #loss = optax.softmax_cross_entropy(compressed_outs, targets).mean()
@@ -338,7 +345,7 @@ def calculate_loss(params, batch):
     # Additional logit error term
     #loss = optax.softmax_cross_entropy(output.transformer_output.output, logits).mean()#* 100.0
     pred_logits = output.transformer_output.output @ res_to_out.matrix
-    loss = optax.softmax_cross_entropy_with_integer_labels(pred_logits, logits).mean()
+    #loss += optax.softmax_cross_entropy_with_integer_labels(pred_logits, logits).mean()
     
     return loss
 
@@ -361,21 +368,21 @@ jit_grads = jax.jit(jit_grads)
 
 state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
 state.params['compressed_transformer']['w_emb'] += jax.random.normal(jax.random.PRNGKey(0), state.params['compressed_transformer']['w_emb'].shape) / 10
-show_emb(state.params)
-plt.savefig
+# show_emb(state.params)
+# plt.savefig
 
 #%%
 
 
-for key, val in state.params.items():
-    for comp, weight in val.items():
-        if key + comp != 'compressed_transformerw_emb':
-            state.params[key][comp] += 0.00001
+# for key, val in state.params.items():
+#     for comp, weight in val.items():
+#         if key + comp != 'compressed_transformerw_emb':
+#             state.params[key][comp] += 0.00001
 
 #%% ======================= Train loop =====================================
 
 from torch.utils.tensorboard import SummaryWriter
-log_dir = os.path.join('.clogs', f'cross fixed')
+log_dir = os.path.join('.clogs', f'L2 rand input')
 #log_dir = os.path.join('.clogs', f'LR{LR} init')
 logger = SummaryWriter(log_dir=log_dir)
 
@@ -399,11 +406,12 @@ for epoch in range(EPOCHS):
                     changes[key + comp] = (state.params[key][comp] - params_before[key][comp]).sum()
                     if key + comp != 'compressed_transformerw_emb':
                         assert changes[key + comp] == 0
-                            
+                          
 
             
             
             tepoch.set_postfix({'Batch': idx, 'Train Loss': loss})
+            logger.add_scalar('hf_loss', loss.item(), global_step=global_idx)
         
             tepoch.update(1)
             total_loss += loss
@@ -432,7 +440,7 @@ for epoch in range(EPOCHS):
         
         avg_loss = total_loss / len(train_dataloader)
         tepoch.set_postfix({'Batch': idx, 'Avg Loss': avg_loss})
-        logger.add_scalar('loss', loss.item(), global_step=epoch)
+        logger.add_scalar('avg loss', avg_loss.item(), global_step=epoch)
         
         # enable if using custom scheduler
         # cs.log(avg_loss)
