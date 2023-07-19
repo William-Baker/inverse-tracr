@@ -78,3 +78,32 @@ class JaxMemUsage:
         thread = JaxMemUsage.threading.Thread(target=JaxMemUsage.inner, daemon=True)
         thread.start()
 
+
+from flax.core.frozen_dict import FrozenDict
+import jax, optax
+import jax.numpy as jnp
+
+def create_mask(params, label_fn):
+    def _map(params, mask, label_fn):
+        for k in params:
+            if label_fn(k):
+                mask[k] = 'zero'
+            else:
+                if isinstance(params[k], FrozenDict):
+                    mask[k] = {}
+                    _map(params[k], mask[k], label_fn)
+                else:
+                    mask[k] = 'adam'
+    mask = {}
+    _map(params, mask, label_fn)
+    return mask
+
+def zero_grads():
+    # from https://github.com/deepmind/optax/issues/159#issuecomment-896459491
+    def init_fn(_): 
+        return ()
+    def update_fn(updates, state, params=None):
+        return jax.tree_map(jnp.zeros_like, updates), ()
+    return optax.GradientTransformation(init_fn, update_fn)
+
+

@@ -63,15 +63,6 @@ def compile_with_compressed(
 
     craft_model = craft_graph_to_model.craft_graph_to_model(graph, sources)
 
-    # craft_model_to_transformer.craft_model_to_transformer(
-    #     craft_model=craft_model,
-    #     graph=graph,
-    #     sink=sink,
-    #     max_seq_len=max_seq_len,
-    #     causal=causal,
-    #     compiler_bos=compiler_bos,
-    #     compiler_pad=compiler_pad,
-    # )
 
     """Turn a craft model into a transformer model."""
 
@@ -278,6 +269,7 @@ def assemble_craft_model(
     params = jax.tree_util.tree_map(jnp.array, params)
     compressed_params = jax.tree_util.tree_map(jnp.array, params)
 
+    # rename the parameters for the new model
     new_compressed_params = dict()
     for key, val in compressed_params.items():
         if 'transformer/' in key:
@@ -295,6 +287,8 @@ def assemble_craft_model(
         compressed_params['compressed_transformer']['w_emb'] = jnp.array(w_emb)
 
     
+    project_residual_to_logits = vectorspace_fns.project(residual_space, output_space).matrix
+    
 
     assembled_transformer = compressed_model.AssembledTransformerModel(
         forward=forward.apply,
@@ -302,6 +296,7 @@ def assemble_craft_model(
         params=params,
         model_config=model_config,
         residual_labels=residual_labels,
+        project_residual_to_logits=project_residual_to_logits,
     )
     assembled_compressed_transformer = compressed_model.AssembledTransformerModel(
         forward=compressed_forward.apply,
@@ -309,11 +304,8 @@ def assemble_craft_model(
         params=compressed_params,
         model_config=model_config,
         residual_labels=residual_labels,
+        project_residual_to_logits=project_residual_to_logits,
     )
-    assembled_compressed_transformer.residual_space=residual_space
-    assembled_compressed_transformer.tokens_space=tokens_space
-    assembled_compressed_transformer.indices_space=indices_space
-    assembled_compressed_transformer.output_space=output_space
 
 
 
@@ -341,10 +333,10 @@ def assemble_craft_model(
         compiled_model = get_compressed_compiled_model()
         return compiled_model.embed(tokens)
     
-    assembled_transformer.forward_no_emb = forward_no_emb
-    assembled_transformer.forward_emb = forward_emb
+    assembled_transformer.forward_no_emb = forward_no_emb.apply
+    assembled_transformer.forward_emb = forward_emb.apply
 
-    assembled_compressed_transformer.forward_no_emb = comp_forward_no_emb
-    assembled_compressed_transformer.forward_emb = comp_forward_emb
+    assembled_compressed_transformer.forward_no_emb = comp_forward_no_emb.apply
+    assembled_compressed_transformer.forward_emb = comp_forward_emb.apply
 
     return (assembled_transformer, assembled_compressed_transformer)

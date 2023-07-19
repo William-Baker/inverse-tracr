@@ -22,7 +22,7 @@ CompressedTransformer adds three arguments compared to Transformer:
     the outputs
 """
 
-from tracr.compiler.assemble import AssembledTransformerModelOutput, ModelForward
+from tracr.compiler.assemble import  ModelForward
 from tracr.transformer import encoder
 from tracr.craft import bases
 import jax.numpy as jnp
@@ -30,7 +30,7 @@ from typing import Any, Callable, Optional, List, Tuple
 import collections
 import dataclasses
 from typing import Optional
-
+import chex
 import haiku as hk
 import jax
 import numpy as np
@@ -186,6 +186,7 @@ class CompressedTransformer(hk.Module):
         output = read_from_residual(residual)
         output = layer_norm(output)
 
+
         return model.TransformerOutput(
             layer_outputs=collected["layer_outputs"],
             residuals=collected["residuals"],
@@ -194,6 +195,16 @@ class CompressedTransformer(hk.Module):
             input_embeddings=embeddings,
         )
 
+@chex.dataclass
+class AssembledTransformerModelOutput:
+  decoded: List[Any]  # length T.
+  unembedded: jax.Array  # [B, T]     B = 1 always.
+  layer_outputs: List[jax.Array]  # [B, T, D]
+  residuals: List[jax.Array]  # [B, T, D]
+  attn_logits: List[jax.Array]  # [B, T, T, H]
+  transformer_output: jax.Array  # [B, T, D]
+  input_embeddings: jax.Array
+  logits: jax.Array
 
 @dataclasses.dataclass
 class AssembledTransformerModel:
@@ -203,9 +214,11 @@ class AssembledTransformerModel:
     params: hk.Params
     model_config: model.TransformerConfig
     residual_labels: List[str]
+    project_residual_to_logits: jax.Array
     input_encoder: Optional[encoder.Encoder] = None
     output_encoder: Optional[encoder.Encoder] = None
-
+    
+    
     def encode_input(self, tokens: List[bases.Value]):
         if self.input_encoder:
             tokens = self.input_encoder.encode(tokens)
@@ -223,11 +236,26 @@ class AssembledTransformerModel:
             decoded = [self.input_encoder.bos_token] + decoded[1:]
         return decoded
 
+    def decode_all_outputs(self, output):
+        decodes = []
+        for i in range(output.unembedded_output.shape[0]):
+            decoded = output.unembedded_output[i].tolist()
+            if self.output_encoder:
+                decoded = self.output_encoder.decode(decoded)
+            decodes.append(decoded)
+
+        return decodes
+
+    def residual_to_logits(self, output):
+        return output.transformer_output.output @ self.project_residual_to_logits
+
     def apply(self, tokens: List[bases.Value]) -> AssembledTransformerModelOutput:
         """Returns output from running the model on a set of input tokens."""
         tokens = self.encode_input(tokens)
         output = self.forward(self.params, tokens)
         decoded = self.decode_output(output)
+        logits = self.residual_to_logits(output)
+        
 
         return AssembledTransformerModelOutput(
             decoded=decoded,
@@ -236,4 +264,5 @@ class AssembledTransformerModel:
             residuals=output.transformer_output.residuals,
             attn_logits=output.transformer_output.attn_logits,
             transformer_output=output.transformer_output.output,
-            input_embeddings=output.transformer_output.input_embeddings)
+            input_embeddings=output.transformer_output.input_embeddings,
+            logits=logits)
