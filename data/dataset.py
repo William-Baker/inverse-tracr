@@ -26,6 +26,8 @@ class Cat(Enum):
     categoric = 2
     boolean = 3
 
+class NoTypeInScope(Exception):
+    pass
 
 class Scope:
     def __init__(self, vocabulary: Sequence[Union[str, int, bool]], numeric_range) -> None:    
@@ -36,14 +38,14 @@ class Scope:
         self.names_by_type = defaultdict(lambda: [])
         self.names_by_type_and_cat = defaultdict(lambda: defaultdict(lambda: []))
         self.type_cat = dict()
-        self.sampling_weights = [1,1]
+        self.sampling_weights = []
         if type(vocabulary[0]) == str:
             token_type = Cat.categoric
         else:
             token_type = Cat.numeric
         self.__add__(SOp, "tokens", token_type, weight=1)
         # self.__add__(SOp, "indices", Cat.numeric, weight=1)
-        self.sampling_weights = self.sampling_weights[2:]
+        #self.sampling_weights = self.sampling_weights[-1:]
         self.numeric_range = numeric_range
         self.vocabulary = vocabulary
 
@@ -62,7 +64,7 @@ class Scope:
         if len(self.sampling_weights) > 1:
             new_weight = (self.sampling_weights[-1] * 2 - self.sampling_weights[-2] + 1)
         else:
-            new_weight = self.sampling_weights[-1] + 1
+            new_weight = 1
 
         sample_weight = new_weight if weight is None else weight
         self.sampling_weights.append(sample_weight)
@@ -80,9 +82,13 @@ class Scope:
         return sample[0][0]
 
     def pick_var(self, y: type): 
+        if len(self.names_by_type[y]) == 0:
+            raise NoTypeInScope(f"no varables of type {y} are in scope")
         return Scope.weighted_sample(self.names_by_type[y])
     
     def pick_var_cat(self, y: type, cat: Cat):
+        if len(self.names_by_type_and_cat[y][cat]) == 0:
+            raise NoTypeInScope(f"no varables of type {y} and cat {cat} are in scope")
         return Scope.weighted_sample(self.names_by_type_and_cat[y][cat])
     
     def var_exists(self, desired_type: type):
@@ -263,8 +269,13 @@ def sample_function(scope: Scope, ops, df=RASP_OPS):
 def generate_ops(max_ops: int, vocab: Sequence, numeric_range: tuple):
     scope = Scope(vocab, numeric_range)
     ops = []
-
-    sample_function(scope, ops, RASP_OPS )
+    success = False
+    while not success: # will fail if sample samples numeric type, rejection sample for categoric type 50/50 chance
+        try:
+            sample_function(scope, ops, RASP_OPS )
+            success = True
+        except NoTypeInScope as E:
+            pass
     scope.__add__(SOp, "indices", Cat.numeric, weight=1) 
     for i in range(0, max_ops-2):
         sample_function(scope, ops, RASP_OPS )
@@ -283,8 +294,20 @@ def compile_program(ops):
                 G.add_edge(op_names[inp], idx)
     if 1 in G:
         G.remove_node(op_names['indices']) # we want the longest path to start from the input tokens
-    longest_path = nx.dag_longest_path(G)
+    descendants = nx.descendants(G, 0)
+    all_longest_paths = []
+    for d in descendants:
+        all_longest_paths.append(max(list(nx.simple_paths.all_simple_paths(G, 0, d)), key=len))
+    longest_path = max(all_longest_paths, key=len)
+
+    # longest_path = nx.dag_longest_path(G)
     terminal_node = longest_path[-1]
+
+    while ops[terminal_node-2].operator == rasp.Select:
+        longest_path = longest_path[0:-1]
+        terminal_node = longest_path[-1]
+        if len(longest_path) == 1:
+            break
 
 
     @dataclass

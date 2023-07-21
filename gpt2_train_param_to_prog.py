@@ -581,17 +581,70 @@ decode_test_sample()
 x,y, loss_mask, attention_mask = next(iter(dataset))
 
 
-
-import json
-with open(f'utils/gpt2_configs/gpt2_{args.model.lower()}.json') as f: # GPT2 Large - 774M
-  config_json = json.load(f)
-model_config = GPT2Config(**config_json)
-
-
+if args,model == 'GPT2':
+    import json
+    with open(f'utils/gpt2_configs/gpt2_{args.model.lower()}.json') as f: # GPT2 Large - 774M
+    config_json = json.load(f)
+    model_config = GPT2Config(**config_json)
 
 
 
-model = GPT2(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
+
+
+    model = GPT2(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
+
+if args.model == 'GPTJ':
+    model_config = GPTJConfig(
+            vocab_size=None,
+            n_positions=1024,
+            n_embd=1024,
+            n_layer=28,
+            n_head=16,
+            rotary_dim=64,
+            n_inner=None,
+            activation_function="gelu_new",
+            resid_pdrop=0.0,
+            embd_pdrop=0.0,
+            attn_pdrop=0.0,
+            layer_norm_epsilon=1e-5,
+            initializer_range=0.02,
+            use_cache=True,
+            bos_token_id=None,
+            eos_token_id=None,
+            tie_word_embeddings=False
+    )
+        
+
+    #
+
+
+    model = GPTJ(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob) # if you forget input dense must match gpt hidden
+
+
+if args.model == 'GPTNeo':
+    
+    from transformers import GPTJConfig
+
+    # import yaml
+
+    # with open(r'utils/gptneo_configs/pythia_125m.json') as file:
+    #     documents = yaml.full_load(file)
+
+
+    import json
+
+    with open('utils/gptneo_configs/pythia_1.3B.json') as f:
+    config_json = json.load(f)
+
+
+    model_config = GPTJConfig(**config_json)
+
+    model_config.n_embd  = model_config.hidden_size
+    model_config.n_head  = model_config.num_heads
+    model_config.n_layer = model_config.num_layers
+
+
+    model = GPTNeo(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
 
 trainer = TrainerModule(model, f'PARAM_NumVar_GPT2__{args.model} cont test LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',

@@ -122,8 +122,10 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, n
     # Self optimising timeout to adapt to local compute performance
     # if the average of the tally of successes to failures is less thatn the target, 
     # the time will increase to be successful more often
-    termination_tally = deque([0, 0, 0, 0, 0, 0, 1, 1, 1, 1],maxlen=30)
     IDEAL_FAILURE_RATIO = 0.4
+    termination_tally = deque([0]*int((1-IDEAL_FAILURE_RATIO)*10) + [1]*int(IDEAL_FAILURE_RATIO*10),maxlen=30)
+    # termination_tally = deque([0]*int((1-ideal_failure_ratio)*10) + [1]*int(ideal_failure_ratio*10),maxlen=30)
+    
         
 
     def time_sensitive(return_dict):

@@ -131,14 +131,14 @@ ops_range=(5, 8)
 numeric_range=(5, 8)
 vocab_size_range=(5, 8)
 numeric_inputs_possible=True
-n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
-program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
-actual_ops
+# n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
+# program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
+# actual_ops
 
 
-# raises ValueError sometimes
-assembled_model, compressed_assembled_model = compile_with_compressed(
-    program, vocab, max_seq_len, compression=1)#2)
+# # raises ValueError sometimes
+# assembled_model, compressed_assembled_model = compile_with_compressed(
+#     program, vocab, max_seq_len, compression=1)#2)
 
 
 #craft_model, actual_ops = program_craft_generator(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_range=numeric_range, numeric_inputs_possible=numeric_inputs_possible)
@@ -147,65 +147,10 @@ assembled_model, compressed_assembled_model = compile_with_compressed(
 #%%
 COMPRESSION = 2
 
-import multiprocessing, dill
-from collections import deque
-from statistics import mean
-dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
-multiprocessing.reduction.ForkingPickler = dill.Pickler
-multiprocessing.reduction.dump = dill.dump
-multiprocessing.context.reduction._ForkingPickler = dill.Pickler
-from collections import deque
-from statistics import mean
-
-def time_sensitive(func: callable, ideal_failure_ratio, initial_timeout, MIN_TIME=0.2):
-    """
-    func has a single argument, a dictionary, and writes return vars to this dictionary
-    func returns None
-    return_attr - name of return attribute - to test successful execution
-    """
-    timeout = initial_timeout
-
-    # Self optimising timeout to adapt to local compute performance
-    # if the average of the tally of successes to failures is less thatn the target, 
-    # the time will increase to be successful more often
-    
-    termination_tally = deque([0]*int((1-ideal_failure_ratio)*10) + [1]*int(ideal_failure_ratio*10),maxlen=30)
-    
-    def wrapped_func(return_dict):
-        ret = func()
-        return_dict['ret'] = ret
-
-    manager = multiprocessing.Manager()
-    return_dict = manager.dict()
-    ret = None
-    while ret == None: # sometimes the thread doesnt work properly
-        p = multiprocessing.Process(target=wrapped_func, args=[return_dict])
-        p.start()
-        p.join(timeout)
-        while p.is_alive(): # the process hasnt finished yet
-            
-            termination_tally.append(1) # we had a failure
-            timeout = max(MIN_TIME, timeout + mean(termination_tally) - ideal_failure_ratio) # update timeout
-            p.terminate()   # kill it
-            p.join()        # delete the thread
-            p = multiprocessing.Process(target=wrapped_func, args=[return_dict])
-            p.start()       # start a new one
-            p.join(timeout)     # wait again and repeat
-            print(f'timeout trying {timeout}')
-        # try:
-        #     ret = return_dict[return_attr]
-        # except:
-        #     print("craft model was none, not sure why, but repeating")
-        ret = return_dict['ret']
-        termination_tally.append(0)
-        timeout = max(MIN_TIME, timeout + mean(termination_tally) - ideal_failure_ratio) # update timeout
-
-
-    return ret
-
+from utils.time_sensitive import time_sensitive
 
 def timed_func():
-    #return 'hi'
+    print("running func")
     assembled_model, compressed_assembled_model, actual_ops = None, None, None
     while assembled_model is None:
         n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
@@ -220,10 +165,12 @@ def timed_func():
                 program, vocab, max_seq_len, compression=COMPRESSION)
         except ValueError as E:
             pass
-    return dill.dumps(assembled_model)#, compressed_assembled_model, actual_ops
+        except KeyError as E:
+            pass
+    return assembled_model, compressed_assembled_model, actual_ops
     
 #assembled_model, compressed_assembled_model, actual_ops = time_sensitive(timed_func, return_attr='ret', ideal_failure_ratio=0.4, initial_timeout=5, MIN_TIME=1)
-x = time_sensitive(timed_func, ideal_failure_ratio=0.4, initial_timeout=5, MIN_TIME=1)
+x = time_sensitive(timed_func, 10)
 
 #%%
 #vocab = set(list(input_seq))
@@ -233,7 +180,7 @@ x = time_sensitive(timed_func, ideal_failure_ratio=0.4, initial_timeout=5, MIN_T
 # vocab = {1,2,3,4,5}
 
 
-1/0
+
 
 
 
