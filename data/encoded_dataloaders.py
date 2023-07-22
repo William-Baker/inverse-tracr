@@ -171,31 +171,16 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, n
 
 
 
-# def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple, timeout_multiplier=1.0):
-#     CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs take 0.6
-#     CRAFT_TIMEOUT *= timeout_multiplier
-#     craft_model, actual_ops = None, None
-#     while craft_model is None:
-#         try:
-#             with guard_timeout(CRAFT_TIMEOUT):
-#                 craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
-#         except Exception as E:
-#             if isinstance(E, TimeoutException):
-#                 #print("timeout handled")
-#                 pass
-#             elif isinstance(E, np.core._exceptions._ArrayMemoryError):
-#                 # occassionally a really large memory allocation is attempted
-#                 # /tracr/compiler/expr_to_craft_graph.py ln 181
-#                 # /tracr/craft/vectorspace_fns.py, ln 85
-#                 # /tracr/craft/bases.py ln 176 
-#                 print("mem alloc handled")
-#             else:
-#                 raise(E)
-            
-#     encoded_ops = encode_ops(actual_ops)
-#     encoded_model = encode_craft_model(craft_model)
 
-#     return encoded_model, encoded_ops
+
+def get_vocabs(max_ops: int):
+    OP_VOCAB = ['<PAD>'] + list(RASP_OPS.cls.apply(lambda x: x.__name__))
+    var_name_iter = iter_var_names()
+    VAR_VOCAB = ['<PAD>'] + ['tokens', 'indices'] \
+                    + list(NAMED_PREDICATES.values()) \
+                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM] \
+                    + [next(var_name_iter) for x in range(0, max_ops)] 
+    return OP_VOCAB, VAR_VOCAB
 
 def program_craft_generator_unbounded(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool):
     craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, numeric_range, numeric_inputs_possible=numeric_inputs_possible)
@@ -231,12 +216,8 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), numeric_range=(6,6)
                             - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
                     ]
     """
-    OP_VOCAB = ['<PAD>'] + list(RASP_OPS.cls.apply(lambda x: x.__name__))
-    var_name_iter = iter_var_names()
-    VAR_VOCAB = ['<PAD>'] + ['tokens', 'indices'] \
-                    + list(NAMED_PREDICATES.values()) \
-                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM] \
-                    + [next(var_name_iter) for x in range(0, max(ops_range))] 
+    
+    OP_VOCAB, VAR_VOCAB = get_vocabs(max(ops_range))
     
     if timeout_multiplier is not None:
         lambda x,y,z: func(x,y,z, timeout_multiplier=timeout_multiplier)
@@ -269,12 +250,7 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), numeric_range=(6,
                             - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
                     ]
     """
-    OP_VOCAB = ['<PAD>'] + list(RASP_OPS.cls.apply(lambda x: x.__name__))
-    var_name_iter = iter_var_names()
-    VAR_VOCAB = ['<PAD>'] + ['tokens', 'indices'] \
-                    + list(NAMED_PREDICATES.values()) \
-                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM] \
-                    + [next(var_name_iter) for x in range(0, max(ops_range))] 
+    OP_VOCAB, VAR_VOCAB = get_vocabs(max(ops_range))
                     
     def gen():
         while True:

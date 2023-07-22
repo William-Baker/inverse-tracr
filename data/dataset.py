@@ -530,6 +530,7 @@ def traverse_prog(prog, lambdas = []):
             unvisited = reduce_univisted(unvisited)
     return actual_ops
 
+from data.encoded_dataloaders import encode_ops, encode_craft_model
 def encode_rasp_program(program, PROG_LEN, lambdas=[], numeric_vars: bool = False):
     actual_ops = traverse_prog(program, lambdas)
     vocab = gen_vocab(PROG_LEN, prefix='t', numeric=numeric_vars)
