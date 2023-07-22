@@ -1,7 +1,7 @@
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from dataset import program_dataset
+from data.dataset import program_dataset
 import numpy as np
 
 START_TOKEN = 'PROGRAM_START'

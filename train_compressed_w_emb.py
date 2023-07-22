@@ -29,22 +29,22 @@ args = Namespace(
     compression = 2.0,
     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
     LR = 5e-2,
-    EPOCHS = 20,
+    EPOCHS = 10,
     trn_all = True, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
     add_soft = True, # True, # True, # True, # False, True
-    batch_size = 64,
+    batch_size = 32,
     mult = False, #True, #True,
     sched = 'cosine',
-    #mpow = 1,
-    factor=0.001,
+    #mpow = 2,
+    factor=0.01,
 )
 
 
 jax.config.update('jax_default_matmul_precision', 'float32') # 'bfloat16'
 
 # %% =================== init program and compile transformer programs ===========================
-program, vocab, max_seq_len, assembled_model, compressed_assembled_model, actual_op = [None]*6
+program, vocab, max_seq_len, assembled_model, compressed_assembled_model, actual_op, ops_range = [None]*7
 if args.program != 'random':
     program, vocab, input_seq = get_program(args.program, 6)
     vocab = set(list(input_seq))
@@ -59,12 +59,9 @@ else:
     numeric_range=(5, 8)
     vocab_size_range=(5, 8)
     numeric_inputs_possible=True
-    n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
-    program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
-    max_seq_len = np.random.randint(5, 10)
+    max_seq_len = np.random.randint(4, 9)
 
     def timed_func():
-        print("running func")
         assembled_model, compressed_assembled_model, actual_ops = None, None, None
         
         n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
@@ -85,21 +82,17 @@ else:
             #print("key err")
             return None
 
-        return assembled_model, compressed_assembled_model, actual_ops
-    jax.profiler.start_trace("jax-profile")
-    for i in range(3):
-        ret = None
-        while ret is None:
-            #ret = time_sensitive(timed_func, 10)
-            ret = timed_func()
-        assembled_model, compressed_assembled_model, actual_ops = ret
-        print(len(actual_ops))
-    jax.profiler.stop_trace()
+        return assembled_model, compressed_assembled_model, actual_ops, vocab, program
+
+
+    ret = None
+    while ret is None:
+        ret = time_sensitive(timed_func, 5)
+    assembled_model, compressed_assembled_model, actual_ops, vocab, program = ret
+    print(len(actual_ops))
+
 
     #craft_model, actual_ops = program_craft_generator(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_range=numeric_range, numeric_inputs_possible=numeric_inputs_possible)
-
-
-1 / 0
 
 
 
@@ -210,22 +203,25 @@ elif args.generator == 'Random':
     dataset = TeacherDataset(random_dataloader, assembled_model, assembled_model.forward_no_emb)
 
 next(iter(dataset)) # required otherwise seg fault in dataloader for some reason
-train_dataloader = DataLoader(dataset, batch_size=1, collate_fn=lambda x: x[0], num_workers=4, prefetch_factor=4)#, num_workers=8, prefetch_factor=18, shuffle=True)
+print("dataset")
+train_dataloader = DataLoader(dataset, batch_size=1, collate_fn=lambda x: x[0], num_workers=1, prefetch_factor=4)#, num_workers=8, prefetch_factor=18, shuffle=True)
 
 
-
+next(iter(train_dataloader))
+print("train dataloader")
 
 val_dataset = TeacherDataset(DataLoader(VocabDataset(
-                    vocab, max_seq_len, assembled_model.encode_input), batch_size=64, collate_fn=VocabDataset.collate_fn, shuffle=True), 
+                    vocab, max_seq_len, assembled_model.encode_input), batch_size=32, collate_fn=VocabDataset.collate_fn, shuffle=True), 
                 assembled_model, assembled_model.forward)
 next(iter(val_dataset)) # required otherwise seg fault in dataloader for some reason
+print("val dataset")
 validation_dataloader =  DataLoader(val_dataset, collate_fn=lambda x: x[0], num_workers=1, prefetch_factor=2)
 
 
 
-next(iter(train_dataloader))
-next(iter(val_dataset))
 
+next(iter(val_dataset))
+print("val dataloader")
 
 #%% ==================== Schedulers ==========================================
 
@@ -471,3 +467,31 @@ decoded = compressed_assembled_model.decode_output(output)
 
 # Set the embedding to the identity to disable it
 # state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
+
+
+def compress_params(params):
+    # we first need to find the compression matrix
+    w = params['compressed_transformer']['w_emb'].T
+    compressed_params = dict()
+    for key in params.keys():
+        if 'compressed_transformer/' in key:
+            p = params[key]['w']
+            key = key.replace( 'compressed_transformer/', '')
+            print(key)
+            print(p.shape)
+            if not (key.endswith('linear') or key.endswith('linear_2')):
+                compressed_params[key] = np.array((p.T @ w).T)
+            else:
+                compressed_params[key] = np.array((p @ w))
+            print(compressed_params[key].shape)
+    return compressed_params
+
+compressed = compress_params(state.params)
+# %%
+
+from data.encoded_dataloaders import encode_ops, get_vocabs
+encoded_ops = encode_ops(actual_ops)
+
+OP_VOCAB, VAR_VOCAB = get_vocabs(max(ops_range))
+
+# os.cpu_count()
