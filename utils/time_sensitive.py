@@ -10,7 +10,7 @@ def time_sensitive(func: callable, timeout):
 
 
     manager = multiprocessing.Manager()
-    val = manager.Value(bytes, bytes())
+    val = manager.Value(bytes, cloudpickle.dumps(None))
     
 
     p = multiprocessing.Process(target=wrapped_func, args=[val])

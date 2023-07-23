@@ -177,3 +177,4 @@ utils/pythia/
 jax-profile/
 .clogs/
 .dlogs/
+wandb/

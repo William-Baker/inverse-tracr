@@ -1,82 +1,28 @@
 import sys
 sys.path.append('tracr/')
 
-from typing import Union, TypeVar, Sequence, Callable, Optional
-from random import choice, randint, choices
-from functools import partial
-from tracr.compiler import basis_inference
-from tracr.compiler import craft_graph_to_model
-from tracr.compiler import expr_to_craft_graph
-from tracr.compiler import rasp_to_graph
-from tracr.craft import bases
-from tracr.rasp import rasp
+
 from tracr.craft.transformers import MultiAttentionHead, MLP
 from dataclasses import dataclass
-from data.canonical_ordering import sort_program
+
 from data.rasp_operators import *
 import numpy as np
-from data.sigterm import guard_timeout, TimeoutException
-import inspect
 from collections import defaultdict
 from enum import Enum
 import tracr.compiler.lib as lib
 from tracr.rasp import rasp
 
 from data.dataset import choose_vocab_and_ops, build_program_of_length, compile_program_into_craft_model, program_craft_generator, program_generator
+from data.dataloaders import ProgramEncoder
 
 #============================= Data Encoding ==============================================
 
-def iter_var_names(prefix='v'):
-    i = 0
-    while True:
-        i += 1
-        yield prefix + str(i)
 
 
 
 
-def encode_ops(ops):
-    features = []
-    var_name_iter = iter_var_names()
-    var_names = dict(tokens= 'tokens', indices='indices')
-    for op in ops:
-        op_name = op.operator.__name__
-        params = [NO_PARAM] * 3
-        for i, inp in enumerate(op.inputs):
-            if isinstance(inp, str):
-                if inp in var_names:
-                    params[i] = var_names[inp]
-                else:
-                    var_names[inp] = next(var_name_iter)
-                    params[i] = var_names[inp]
-            # elif isinstance(inp, partial): # ignore the value of the parameter when using a given lambda
-            elif inp in NAMED_PREDICATES.keys():
-                params[i] = NAMED_PREDICATES[inp]  
-            elif isinstance(inp, Callable):
-                assert op.lambda_name != None
-                params[i] = op.lambda_name
-            
-            
-        return_var = op.output
-        if return_var in var_names:
-            ret_name = var_names[return_var]
-        else:
-            var_names[return_var] = next(var_name_iter)
-            ret_name = var_names[return_var]
-        
-        feature = dict(
-            op = op_name,
-            p1 = params[0],
-            p2 = params[1],
-            p3 = params[2],
-            r = ret_name
-        )
-        features.append(feature)
-    
-    # Apply our canonical program ordering to the program
-    features = sort_program(features)
-    
-    return features
+
+
 
 
 def encode_craft_model(craft_model):
@@ -133,7 +79,7 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, n
                 print(E)
                 return None
         craft_model = compile_program_into_craft_model(program, vocab, max(numeric_range))
-        encoded_ops = encode_ops(actual_ops)
+        encoded_ops = ProgramEncoder.encode_ops(actual_ops)
         encoded_model = encode_craft_model(craft_model)
         return encoded_model, encoded_ops
     
@@ -160,7 +106,7 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, n
 def program_craft_generator_unbounded(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool):
     while True:
         craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, numeric_range, numeric_inputs_possible=numeric_inputs_possible)
-        encoded_ops = encode_ops(actual_ops)
+        encoded_ops = ProgramEncoder.encode_ops(actual_ops)
         encoded_model = encode_craft_model(craft_model)
 
         yield encoded_model, encoded_ops
@@ -171,14 +117,7 @@ def program_craft_generator_unbounded(ops_range: tuple, vocab_size_range: tuple,
 # ========================= User Friendly Generators ============================================
 
 
-def get_vocabs(max_ops: int):
-    OP_VOCAB = ['<PAD>'] + list(RASP_OPS.cls.apply(lambda x: x.__name__))
-    var_name_iter = iter_var_names()
-    VAR_VOCAB = ['<PAD>'] + ['tokens', 'indices'] \
-                    + list(NAMED_PREDICATES.values()) \
-                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM] \
-                    + [next(var_name_iter) for x in range(0, max_ops)] 
-    return OP_VOCAB, VAR_VOCAB
+
 
 def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), numeric_range=(6,6), func=program_craft_generator_unbounded, timeout_multiplier=None, numeric_inputs_possible=False):
     """
@@ -202,7 +141,7 @@ def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), numeric_range=(6,6)
                     ]
     """
     
-    OP_VOCAB, VAR_VOCAB = get_vocabs(max(ops_range))
+    OP_VOCAB, VAR_VOCAB = ProgramEncoder.get_vocabs(max(ops_range))
     
     if timeout_multiplier is not None:
         lambda x,y,z: func(x,y,z, timeout_multiplier=timeout_multiplier)
@@ -234,12 +173,12 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), numeric_range=(6,
                             - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
                     ]
     """
-    OP_VOCAB, VAR_VOCAB = get_vocabs(max(ops_range))
+    OP_VOCAB, VAR_VOCAB = ProgramEncoder.get_vocabs(max(ops_range))
                     
     def gen():
         while True:
             _, actual_ops = program_generator(ops_range, vocab_size_range, numeric_range, numeric_inputs_possible=numeric_inputs_possible)
-            encoded_ops = encode_ops(actual_ops)
+            encoded_ops = ProgramEncoder.encode_ops(actual_ops)
             yield encoded_ops
     
     return gen, OP_VOCAB, VAR_VOCAB

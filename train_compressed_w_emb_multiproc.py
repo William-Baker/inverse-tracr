@@ -16,22 +16,27 @@ from data.example_rasp_programs import get_program
 from utils.plot import show_emb, show_images, show_image, figure_to_array
 from argparse import Namespace
 from utils.time_sensitive import time_sensitive
+import torch
+torch.cuda.is_available = lambda : False
+from torch.utils.data import DataLoader
+from datetime import datetime
+from utils.time_sensitive import time_sensitive
+
 jax.config.update('jax_platform_name', 'cpu')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 
 process_args = Namespace(
-    run_id = '42134'.zfill(10)
+    run_id =   str(datetime.now())
 )
-
+np.datetime64('now')
 args = Namespace(
     generator = 'Random', # 'Vocabulary'
-    program = 'random', #'sort_unique', "hist"#"sort"#"length"
     compression = 2.0,
     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
-    LR = 5e-2,
-    EPOCHS = 10,
+    LR = 2e-2, # 5e-2 worked so far but some nans
+    EPOCHS = 7,
     trn_all = True, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
     add_soft = True, # True, # True, # True, # False, True
@@ -42,61 +47,63 @@ args = Namespace(
     factor=0.01,
 )
 
+import wandb
+# start a new wandb run to track this script
+wandb.init(
+    # set the wandb project where this run will be logged
+    project="compressed Tracr",
+    
+    # track hyperparameters and run metadata
+    config=vars(process_args) | vars(args) 
+)
+
 
 jax.config.update('jax_default_matmul_precision', 'float32') # 'bfloat16'
 
 # %% =================== init program and compile transformer programs ===========================
 program, vocab, max_seq_len, assembled_model, compressed_assembled_model, actual_op, ops_range = [None]*7
-if args.program != 'random':
-    program, vocab, input_seq = get_program(args.program, 6)
-    vocab = set(list(input_seq))
-    max_seq_len = len(input_seq)+1
 
-    assembled_model, compressed_assembled_model = compile_with_compressed(
-                        program, vocab, max_seq_len, compression=args.compression)
+from data.dataset import choose_vocab_and_ops, build_program_of_length,program_craft_generator
+ops_range=(10, 15)
+numeric_range=(5, 8)
+vocab_size_range=(5, 8)
+numeric_inputs_possible=True
+max_seq_len = np.random.randint(4, 9)
 
-else:
-    from data.dataset import choose_vocab_and_ops, build_program_of_length,program_craft_generator
-    ops_range=(10, 15)
-    numeric_range=(5, 8)
-    vocab_size_range=(5, 8)
-    numeric_inputs_possible=True
-    max_seq_len = np.random.randint(4, 9)
+def timed_func():
+    assembled_model, compressed_assembled_model, actual_ops = None, None, None
+    
+    n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
+    
+    try:
+        program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
+    except np.core._exceptions._ArrayMemoryError as E:
+        #print("mem alloc err")
+        return None
 
-    def timed_func():
-        assembled_model, compressed_assembled_model, actual_ops = None, None, None
-        
-        n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
-        
-        try:
-            program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
-        except np.core._exceptions._ArrayMemoryError as E:
-            #print("mem alloc err")
-            return None
+    try:
+        assembled_model, compressed_assembled_model = compile_with_compressed(
+            program, vocab, max_seq_len, compression=args.compression)
+    except ValueError as E:
+        #print("val err")
+        return None
+    except KeyError as E:
+        #print("key err")
+        return None
 
-        try:
-            assembled_model, compressed_assembled_model = compile_with_compressed(
-                program, vocab, max_seq_len, compression=args.compression)
-        except ValueError as E:
-            #print("val err")
-            return None
-        except KeyError as E:
-            #print("key err")
-            return None
-
-        return assembled_model, compressed_assembled_model, actual_ops, vocab, program
+    return assembled_model, compressed_assembled_model, actual_ops, vocab, program
 
 
-    ret = None
-    while ret is None:
-        ret = time_sensitive(timed_func, 5)
-    assembled_model, compressed_assembled_model, actual_ops, vocab, program = ret
-    print(len(actual_ops))
+ret = None
+while ret is None:
+    ret = time_sensitive(timed_func, 5)
+assembled_model, compressed_assembled_model, actual_ops, vocab, program = ret
+
 
 
     #craft_model, actual_ops = program_craft_generator(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_range=numeric_range, numeric_inputs_possible=numeric_inputs_possible)
 
-
+wandb.log({"prog len": len(actual_ops), "progress": 0.1})
 
 
 if args.idty: # init embedding to be noisy identiy?
@@ -134,9 +141,6 @@ if args.trn_all:
 
 #%% ======================== Dataloader ======================================
 
-import torch
-torch.cuda.is_available = lambda : False
-from torch.utils.data import DataLoader
 
 class VocabDataset:
     def __init__(self, vocab, max_seq_len, encoder_fn) -> None:
@@ -205,25 +209,31 @@ elif args.generator == 'Random':
     dataset = TeacherDataset(random_dataloader, assembled_model, assembled_model.forward_no_emb)
 
 next(iter(dataset)) # required otherwise seg fault in dataloader for some reason
-print("dataset")
+
 train_dataloader = DataLoader(dataset, batch_size=1, collate_fn=lambda x: x[0], num_workers=1, prefetch_factor=4)#, num_workers=8, prefetch_factor=18, shuffle=True)
 
+  
+sample = time_sensitive(lambda: next(iter(train_dataloader)), 2)
+if sample is None:
+    wandb.log({"failure": 1})
+    exit(1)
+    
 
-next(iter(train_dataloader))
-print("train dataloader")
 
 val_dataset = TeacherDataset(DataLoader(VocabDataset(
                     vocab, max_seq_len, assembled_model.encode_input), batch_size=32, collate_fn=VocabDataset.collate_fn, shuffle=True), 
                 assembled_model, assembled_model.forward)
+
 next(iter(val_dataset)) # required otherwise seg fault in dataloader for some reason
-print("val dataset")
+
 validation_dataloader =  DataLoader(val_dataset, collate_fn=lambda x: x[0], num_workers=1, prefetch_factor=2)
 
 
 
 
 next(iter(val_dataset))
-print("val dataloader")
+
+wandb.log({"progress": 0.2})
 
 #%% ==================== Schedulers ==========================================
 
@@ -276,22 +286,6 @@ def create_learning_rate_fn(warmup_epochs, num_epochs, base_learning_rate, steps
 
 
 
-# class CustomSchedule:
-#     def __init__(self, LR) -> None:
-#         self.history = []
-#         self.LR = LR
-#         self.initial_LR = LR
-#     def log(self, loss):
-#         self.history.append(loss)
-#         if len(self.history) >= 20:
-#             history = self.history
-#             # less than 2% change in 2 epochs per epoch
-#             if (abs(history[-1] - history[-2]) + abs(history[-1] - history[-3])) / history[-1] < 0.04 or \
-#                 abs(history[-1] - history[-3]) / history[-1] < 0.04 and history[-1] > history[-2]:
-#                 self.LR = self.LR / 2
-#                 print(f"updated LR: {self.LR}")
-#                 self.history = []
-
 
 LR_fn = None
 if args.sched == 'cosine': # cosine anealing scheduler
@@ -305,7 +299,7 @@ optimizer = optax.chain(
     #optax.clip(1e-3),
     #optax.adamw(args.LR, weight_decay=0.0001)
     #optax.sgd(learning_rate=args.LR)
-    #optax.sgd(make_schedule(args.LR))
+    #optax.sgd(LR_fn)
     optax.adamw(LR_fn, weight_decay=0.0001) ,
     
 )
@@ -380,11 +374,11 @@ train_step = jax.jit(train_step)
 
 #%% ======================= Train loop =====================================
 
-from torch.utils.tensorboard import SummaryWriter
-log_dir = os.path.join('.clogs', str(vars(args)).replace('\'', '')[1:-1])
-#log_dir = os.path.join('.clogs', f'LR{args.LR} init')
-logger = SummaryWriter(log_dir=log_dir)
+wandb.log({"progress": 0.3})
 
+
+
+avg_loss = 0.0
         
 global_idx = 0
 for epoch in range(args.EPOCHS):
@@ -399,76 +393,57 @@ for epoch in range(args.EPOCHS):
             
             
             tepoch.set_postfix({'Batch': idx, 'Train Loss': loss})
-            logger.add_scalar('hf_loss', loss.item(), global_step=global_idx)
-        
+
             tepoch.update(1)
             total_loss += loss
             global_idx += 1
+            wandb.log({"loss": loss.item()})
 
-            # enable if using custom scheduler
-            #cs.log(loss)
-            logger.add_scalar('LR', np.array(LR_fn(state.step)).item(), global_step=global_idx)
             
 
         
         avg_loss = total_loss / len(train_dataloader)
         tepoch.set_postfix({'Batch': idx, 'Avg Loss': avg_loss})
-        logger.add_scalar('avg loss', avg_loss.item(), global_step=epoch)
+        wandb.log({"avg loss": avg_loss.item()})
+
+        if np.isnan( avg_loss.item() ):
+            wandb.log({"progress": -1, "Failed": 1})
+            sys.exit(1)
         
-        # ======================= Debug Info =====================================
-        fig = show_emb(state.params, show=False)
-        logger.add_figure('emb', fig, global_step=global_idx)
-        output = state.apply_fn(state.params, encoded_tokens)
-        compressed_outs = output.transformer_output.layer_outputs
-        fig = show_images([x[0, :,:].T for x in compressed_outs], show=False)
-        logger.add_figure('outs', fig, global_step=global_idx)
+
 
         
-        
+wandb.log({"progress": 0.4}) 
+
+if avg_loss > 0.05:
+    wandb.log({"progress": -1, "Failed": 1})
+    sys.exit(1)
     
-    VAL_SAMPLES = 10
-    with tqdm(total=VAL_SAMPLES, unit='batch') as tepoch:
-        it = iter(validation_dataloader)
-        avg_acc = 0.0
-        for idx in range(VAL_SAMPLES):        
-            batch = next(it)
-            (formatted_input, encoded_tokens, target_outs, decoded, target_ids) = batch
-            output = jax.jit(compressed_assembled_model.forward)(state.params, encoded_tokens)
-            pred_decoded = compressed_assembled_model.decode_all_outputs(output)
-            acc = np.equal(pred_decoded , decoded).mean()
-            avg_acc += acc
-            logger.add_scalar('acc', acc, global_step=epoch * VAL_SAMPLES + idx)
-            tepoch.set_postfix({'Batch': idx, 'Acc': acc})
-            tepoch.update(1)
-        avg_acc /= VAL_SAMPLES
-        tepoch.set_postfix({'Avg Acc': avg_acc})
-        logger.add_scalar('avg acc', avg_acc, global_step=epoch)
+VAL_SAMPLES = 10
+with tqdm(total=VAL_SAMPLES, unit='batch') as tepoch:
+    it = iter(validation_dataloader)
+    avg_acc = 0.0
+    for idx in range(VAL_SAMPLES):        
+        batch = next(it)
+        (formatted_input, encoded_tokens, target_outs, decoded, target_ids) = batch
+        output = jax.jit(compressed_assembled_model.forward)(state.params, encoded_tokens)
+        pred_decoded = compressed_assembled_model.decode_all_outputs(output)
+        acc = np.equal(pred_decoded , decoded).mean()
+        avg_acc += acc
+        tepoch.set_postfix({'Batch': idx, 'Acc': acc})
+        tepoch.update(1)
+    avg_acc /= VAL_SAMPLES
+    tepoch.set_postfix({'Avg Acc': avg_acc})
+    wandb.log({"acc": avg_acc})
 
-show_emb(state.params)
-
-#%%
-plt.imshow(np.array(state.params['compressed_transformer']['w_emb']))
-plt.imshow(np.array(state.params['compressed_transformer']['w_emb']).T @ np.array(state.params['compressed_transformer']['w_emb']))
-
-#%%
+# show_emb(state.params)
 
 
-
-#%%
-it = iter(dataset)
-
-formatted_input, encoded_tokens, outs, targ_decoded, target_ids = next(it)
-
-output = state.apply_fn(state.params, encoded_tokens)
-decoded = compressed_assembled_model.decode_output(output)
-#print(f"targ: {targ_decoded}, pred: {decoded}")
-#assert (targ_decoded == decoded).all()
+wandb.log({"progress": 0.5})
 
 
 # %%
 
-# Set the embedding to the identity to disable it
-# state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
 
 
 def compress_params(params):
@@ -489,6 +464,9 @@ def compress_params(params):
     return compressed_params
 
 compressed = compress_params(state.params)
+
+wandb.log({"progress": 0.6})
+
 # %%
 
 from data.dataloaders import ProgramEncoder
@@ -518,7 +496,7 @@ def encode_jax_params(params):
 encoded_params = encode_jax_params(compressed)
 
 
-
+wandb.log({"progress": 0.7})
 
 #%%
 
@@ -526,34 +504,45 @@ from zipfile import ZipFile
 from cloudpickle import dumps
 sample = (encoded_params, tokenised_program)
 
+target_db_path = 'cp_dataset'
+if args.trn_all == True:
+    target_db_path += '_train_all'
+else:
+    target_db_path += '_train_w'
 
-zip = ZipFile(file='compressed_params_dataset.zip', mode='w')
+zip = ZipFile(file=target_db_path+'.zip', mode='w')
 zip.writestr( process_args.run_id + '.pkl', dumps(sample))
 zip.close()
+
+wandb.log({"progress": 1.0})
+
+
 #%%
 
 
+# from data.parallelzipfilebetter import ParallelZipFile as ZipFile
+# import cloudpickle
 
-#%%
+# class ZipStreamReader:
+#     def __init__(self, dir:str) -> None:
+#         self.zip = ZipFile(file=dir, mode='r')
+#         self.files = sorted(self.zip.namelist())
+#     def __len__(self):
+#         return len(self.files)
+#     def __getitem__(self, idx):
+#         x = self.zip.read(self.files[idx])
+#         # loaded = np.load(BytesIO(x), allow_pickle=True)
+#         x,y = cloudpickle.loads(x)
+#         return x, y
+
+# df = ZipStreamReader('compressed_params_dataset.zip')
+# it = iter(df)
+# x,y = next(it)
 
 
-# with open('0000042134', 'rb') as pickle_file:
-#     content = load(pickle_file)
 
-#%%
+# from data.dataloaders import ProgramEncoder
 
-import multiprocessing_logging
-import logging
 
-logging.basicConfig(filename='logs.csv', filemode='a', format='%(levelname)s,%(message)s', level=logging.DEBUG)
-
-#multiprocessing_logging.install_mp_handler()
-
-def mlog(cat, msg):
-    logging.error(f"{process_args.run_id}, {cat}, {msg}")
-
-mlog('status', 'start')
-mlog('status', 'end')
-
-mlog('acc', '0.789745')
-
+# prog_enc = ProgramEncoder(15)
+# print(prog_enc.decode_pred(y))
