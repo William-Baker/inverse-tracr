@@ -5,8 +5,6 @@ import jax.numpy as jnp
 from flax.training import train_state
 import optax
 from utils.compile_with_compressed import compile_with_compressed, COMPILER_BOS
-import tracr.compiler.lib as lib
-from tracr.rasp import rasp
 from utils.plot import *
 import jax
 from tqdm import tqdm
@@ -15,6 +13,11 @@ import os
 from data.example_rasp_programs import get_program
 from utils.plot import show_emb, show_images, show_image, figure_to_array
 from argparse import Namespace
+
+import torch
+torch.cuda.is_available = lambda : False
+from torch.utils.data import DataLoader
+from datetime import datetime
 from utils.time_sensitive import time_sensitive
 jax.config.update('jax_platform_name', 'cpu')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
@@ -22,7 +25,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = ''
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 
 process_args = Namespace(
-    run_id = '42134'.zfill(10)
+    run_id = str(datetime.now())
 )
 
 args = Namespace(
@@ -30,9 +33,9 @@ args = Namespace(
     program = 'random', #'sort_unique', "hist"#"sort"#"length"
     compression = 2.0,
     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
-    LR = 5e-2,
-    EPOCHS = 10,
-    trn_all = True, # True,
+    LR = 2e-2, # 5e-2 worked so far but some nans
+    EPOCHS = 7,
+    trn_all = False, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
     add_soft = True, # True, # True, # True, # False, True
     batch_size = 32,
@@ -134,9 +137,6 @@ if args.trn_all:
 
 #%% ======================== Dataloader ======================================
 
-import torch
-torch.cuda.is_available = lambda : False
-from torch.utils.data import DataLoader
 
 class VocabDataset:
     def __init__(self, vocab, max_seq_len, encoder_fn) -> None:
@@ -526,10 +526,16 @@ from zipfile import ZipFile
 from cloudpickle import dumps
 sample = (encoded_params, tokenised_program)
 
+target_db_path = 'cp_dataset'
+if args.trn_all == True:
+    target_db_path += '_train_all'
+else:
+    target_db_path += '_train_w'
 
-zip = ZipFile(file='compressed_params_dataset.zip', mode='w')
+zip = ZipFile(file=target_db_path+'.zip', mode='a')
 zip.writestr( process_args.run_id + '.pkl', dumps(sample))
 zip.close()
+
 #%%
 
 

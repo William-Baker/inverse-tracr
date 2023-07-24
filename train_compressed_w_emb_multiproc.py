@@ -5,23 +5,18 @@ import jax.numpy as jnp
 from flax.training import train_state
 import optax
 from utils.compile_with_compressed import compile_with_compressed, COMPILER_BOS
-import tracr.compiler.lib as lib
-from tracr.rasp import rasp
 from utils.plot import *
 import jax
 from tqdm import tqdm
 from itertools import product
 import os
-from data.example_rasp_programs import get_program
-from utils.plot import show_emb, show_images, show_image, figure_to_array
 from argparse import Namespace
-from utils.time_sensitive import time_sensitive
+
 import torch
 torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from datetime import datetime
 from utils.time_sensitive import time_sensitive
-
 jax.config.update('jax_platform_name', 'cpu')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
@@ -30,14 +25,14 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 process_args = Namespace(
     run_id =   str(datetime.now())
 )
-np.datetime64('now')
+
 args = Namespace(
     generator = 'Random', # 'Vocabulary'
     compression = 2.0,
     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
     LR = 2e-2, # 5e-2 worked so far but some nans
     EPOCHS = 7,
-    trn_all = True, # True,
+    trn_all = False, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
     add_soft = True, # True, # True, # True, # False, True
     batch_size = 32,
@@ -51,11 +46,12 @@ import wandb
 # start a new wandb run to track this script
 wandb.init(
     # set the wandb project where this run will be logged
-    project="compressed Tracr",
+    project="Compressed Tracr All" if args.trn_all == True else "Compressed Tracr emb_W",
     
     # track hyperparameters and run metadata
     config=vars(process_args) | vars(args) 
 )
+
 
 
 jax.config.update('jax_default_matmul_precision', 'float32') # 'bfloat16'
@@ -397,7 +393,7 @@ for epoch in range(args.EPOCHS):
             tepoch.update(1)
             total_loss += loss
             global_idx += 1
-            wandb.log({"loss": loss.item()})
+            # wandb.log({"loss": loss.item()}) # if more than 10 processes, exceeds rate limits
 
             
 
@@ -510,9 +506,15 @@ if args.trn_all == True:
 else:
     target_db_path += '_train_w'
 
-zip = ZipFile(file=target_db_path+'.zip', mode='w')
-zip.writestr( process_args.run_id + '.pkl', dumps(sample))
-zip.close()
+for i in range(10):
+    try:
+        zip = ZipFile(file=target_db_path+'.zip', mode='a')
+        zip.writestr( process_args.run_id + '.pkl', dumps(sample))
+        zip.close()
+        break
+    except:
+        pass
+
 
 wandb.log({"progress": 1.0})
 
@@ -535,14 +537,17 @@ wandb.log({"progress": 1.0})
 #         x,y = cloudpickle.loads(x)
 #         return x, y
 
-# df = ZipStreamReader('compressed_params_dataset.zip')
-# it = iter(df)
-# x,y = next(it)
+# #df = ZipStreamReader('cp_dataset_train_all.zip')
+# df = ZipStreamReader('cp_dataset_train_w.zip')
+# # it = iter(df)
+# # x,y = next(it)
 
-
+# print(len(df))
 
 # from data.dataloaders import ProgramEncoder
 
 
 # prog_enc = ProgramEncoder(15)
 # print(prog_enc.decode_pred(y))
+
+
