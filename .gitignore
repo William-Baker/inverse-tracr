@@ -178,3 +178,4 @@ jax-profile/
 .clogs/
 .dlogs/
 wandb/
+Compressed Tracr emb_W/

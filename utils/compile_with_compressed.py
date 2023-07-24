@@ -33,7 +33,8 @@ def compile_with_compressed(
         compiler_bos=COMPILER_BOS,
         compiler_pad=COMPILER_PAD,
         mlp_exactness=100,
-        compression: float = None):
+        compression: float = None,
+        CRAFT_TIMEOUT=-1):
     
     assert compression >= 1.0
 
@@ -55,11 +56,24 @@ def compile_with_compressed(
         max_seq_len,
     )
 
-    expr_to_craft_graph.add_craft_components_to_rasp_graph(
-        graph,
-        bos_dir=bases.BasisDirection(rasp.tokens.label, compiler_bos),
-        mlp_exactness=mlp_exactness,
-    )
+    if CRAFT_TIMEOUT == -1:
+        expr_to_craft_graph.add_craft_components_to_rasp_graph(
+            graph,
+            bos_dir=bases.BasisDirection(rasp.tokens.label, compiler_bos),
+            mlp_exactness=mlp_exactness,
+        )
+    else:
+        def fun():
+            expr_to_craft_graph.add_craft_components_to_rasp_graph(
+                graph,
+                bos_dir=bases.BasisDirection(rasp.tokens.label, compiler_bos),
+                mlp_exactness=mlp_exactness,
+                )
+            return graph
+        from utils.time_sensitive import time_sensitive
+        graph = time_sensitive(fun, CRAFT_TIMEOUT)
+        if graph == None:
+            raise TimeoutError("Craft took too long to compile")
 
     craft_model = craft_graph_to_model.craft_graph_to_model(graph, sources)
 
@@ -107,7 +121,7 @@ def compile_with_compressed(
         else:
             ca_model.output_encoder = encoder.NumericalEncoder()
 
-    return assembled_model, compressed_assembled_model
+    return assembled_model, compressed_assembled_model, craft_model, rasp_model
 
 
 def assemble_craft_model(
@@ -241,27 +255,32 @@ def assemble_craft_model(
                     (model_config.key_size, residual_space.num_dims))
                 linear_mat[:value_size, :] = project(head.w_ov.output_space).T
                 linear.append(linear_mat)
+                # print(len(query))
+                # print([x.shape for x in query])
+            # Fill up heads that are not used with zero weights
+            for _ in range(model_config.num_heads - module.as_multi().num_heads):
+                query.append(np.zeros_like(query[0]))
+                key.append(np.zeros_like(key[0]))
+                value.append(np.zeros_like(value[0]))
+                linear.append(np.zeros_like(linear[0]))
 
-                # Fill up heads that are not used with zero weights
-                for _ in range(model_config.num_heads - module.as_multi().num_heads):
-                    query.append(np.zeros_like(query[0]))
-                    key.append(np.zeros_like(key[0]))
-                    value.append(np.zeros_like(value[0]))
-                    linear.append(np.zeros_like(linear[0]))
-
-                query = einops.rearrange(query,
-                                         "heads input output -> input (heads output)")
-                key = einops.rearrange(
-                    key, "heads input output -> input (heads output)")
-                value = einops.rearrange(value,
-                                         "heads input output -> input (heads output)")
-                linear = einops.rearrange(linear,
-                                          "heads input output -> (heads input) output")
-
-                params[f"{module_name}/query"]["w"][:, :] = query
-                params[f"{module_name}/key"]["w"][:, :] = key
-                params[f"{module_name}/value"]["w"][:, :] = value
-                params[f"{module_name}/linear"]["w"][:, :] = linear
+            query = einops.rearrange(query,
+                                        "heads input output -> input (heads output)")
+            key = einops.rearrange(
+                key, "heads input output -> input (heads output)")
+            value = einops.rearrange(value,
+                                        "heads input output -> input (heads output)")
+            linear = einops.rearrange(linear,
+                                        "heads input output -> (heads input) output")
+            
+            # print(len(query))
+            # print([x.shape for x in query])
+            # print(params[f"{module_name}/query"]["w"][:, :].shape)
+            # print(query)
+            params[f"{module_name}/query"]["w"][:, :] = query
+            params[f"{module_name}/key"]["w"][:, :] = key
+            params[f"{module_name}/value"]["w"][:, :] = value
+            params[f"{module_name}/linear"]["w"][:, :] = linear
 
 
     

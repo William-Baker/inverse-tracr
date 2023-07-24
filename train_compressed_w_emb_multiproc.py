@@ -11,26 +11,28 @@ from tqdm import tqdm
 from itertools import product
 import os
 from argparse import Namespace
-
 import torch
 torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from datetime import datetime
 from utils.time_sensitive import time_sensitive
 jax.config.update('jax_platform_name', 'cpu')
+jax.config.update("jax_debug_nans", True)
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 
 process_args = Namespace(
-    run_id =   str(datetime.now())
+    run_id =   str(datetime.now().strftime("%m-%d %H.%M.%S.%f"))
 )
 
+#%%
 args = Namespace(
     generator = 'Random', # 'Vocabulary'
     compression = 2.0,
     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
-    LR = 2e-2, # 5e-2 worked so far but some nans
+    LR = 2e-3, # 5e-2 worked so far but some nans
     EPOCHS = 7,
     trn_all = False, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
@@ -42,19 +44,17 @@ args = Namespace(
     factor=0.01,
 )
 
-import wandb
-# start a new wandb run to track this script
-wandb.init(
-    # set the wandb project where this run will be logged
-    project="Compressed Tracr All" if args.trn_all == True else "Compressed Tracr emb_W",
-    
-    # track hyperparameters and run metadata
-    config=vars(process_args) | vars(args) 
-)
+from torch.utils.tensorboard import SummaryWriter
+log_dir = os.path.join("Compressed Tracr All" if args.trn_all == True else "Compressed Tracr emb_W", 
+                        process_args.run_id)
+logger = SummaryWriter(log_dir=log_dir)
 
-
+logger.add_hparams(vars(process_args) | vars(args), dict() )
 
 jax.config.update('jax_default_matmul_precision', 'float32') # 'bfloat16'
+
+
+print("a")
 
 # %% =================== init program and compile transformer programs ===========================
 program, vocab, max_seq_len, assembled_model, compressed_assembled_model, actual_op, ops_range = [None]*7
@@ -65,41 +65,50 @@ numeric_range=(5, 8)
 vocab_size_range=(5, 8)
 numeric_inputs_possible=True
 max_seq_len = np.random.randint(4, 9)
+CRAFT_TIMEOUT = 2# 0.2 + 0.00001 * max(ops_range) ** 4
 
 def timed_func():
     assembled_model, compressed_assembled_model, actual_ops = None, None, None
     
     n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
-    
+    print(n_ops, vocab, TARGET_PROGRAM_LENGTH)
     try:
         program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
     except np.core._exceptions._ArrayMemoryError as E:
-        #print("mem alloc err")
+        print("mem alloc err")
         return None
-
     try:
-        assembled_model, compressed_assembled_model = compile_with_compressed(
-            program, vocab, max_seq_len, compression=args.compression)
+        assembled_model, compressed_assembled_model, craft_model, rasp_model = compile_with_compressed(
+            program, vocab, max_seq_len, compression=args.compression,
+            CRAFT_TIMEOUT=CRAFT_TIMEOUT)
     except ValueError as E:
-        #print("val err")
+        print("val err")
         return None
     except KeyError as E:
-        #print("key err")
+        print("key err")
+        return None
+    except TimeoutError:
+        print("craft timeout")
         return None
 
     return assembled_model, compressed_assembled_model, actual_ops, vocab, program
 
 
+
+#%%
+
 ret = None
 while ret is None:
-    ret = time_sensitive(timed_func, 5)
+    ret = time_sensitive(timed_func, 10)
+    print((ops_range, numeric_range, vocab_size_range, numeric_inputs_possible, max_seq_len))
 assembled_model, compressed_assembled_model, actual_ops, vocab, program = ret
 
-
+print("b")
 
     #craft_model, actual_ops = program_craft_generator(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_range=numeric_range, numeric_inputs_possible=numeric_inputs_possible)
 
-wandb.log({"prog len": len(actual_ops), "progress": 0.1})
+logger.add_scalar("prog len", len(actual_ops), 1)
+logger.add_scalar("progress", 0.1, 1)
 
 
 if args.idty: # init embedding to be noisy identiy?
@@ -134,7 +143,7 @@ if args.trn_all:
 # decoded = compressed_assembled_model.decode_output(output)
 # print(decoded)
 
-
+print("c")
 #%% ======================== Dataloader ======================================
 
 
@@ -179,22 +188,23 @@ class TeacherDataset:
         self.dataloader = dataloader
         self.iter = iter(dataloader)
         self.teacher = teacher
-        self.teacher_call = jax.jit(teacher_call, device=jax.devices("cpu")[0]) #teacher.forward # jax.jit(teacher.forward)
-        self.params = jax.device_put(self.teacher.params, device=jax.devices("cpu")[0])
+        # self.teacher_call = jax.jit(teacher_call, device=jax.devices("cpu")[0]) #teacher.forward # jax.jit(teacher.forward)
+        # self.params = jax.device_put(self.teacher.params, device=jax.devices("cpu")[0])
+        self.teacher_call = jax.jit(teacher_call) #teacher.forward # jax.jit(teacher.forward)
+        self.params = self.teacher.params
     def __len__(self):
         return len(self.dataloader)-2
     def __getitem__(self, idx):
-        with jax.default_device(jax.devices("cpu")[0]):
-            formatted_input, encoded_tokens =  next(self.iter, (None, None))
-            if formatted_input is None:
-                self.iter = iter(self.dataloader)
-                formatted_input, encoded_tokens =  next(self.iter)
-            output = self.teacher_call(self.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
-            target_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
-            decoded = np.array(self.teacher.decode_all_outputs(output))
-            target_ids = jnp.argmax(self.teacher.residual_to_logits(output), axis=-1)
+        formatted_input, encoded_tokens =  next(self.iter, (None, None))
+        if formatted_input is None:
+            self.iter = iter(self.dataloader)
+            formatted_input, encoded_tokens =  next(self.iter)
+        output = self.teacher_call(self.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
+        target_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
+        decoded = np.array(self.teacher.decode_all_outputs(output))
+        target_ids = jnp.argmax(self.teacher.residual_to_logits(output), axis=-1)
         return np.array(formatted_input), np.array(encoded_tokens), np.array(target_outs), decoded, np.array(target_ids)
-
+print("d")
 
 dataset = None
 if args.generator == 'Vocabulary':
@@ -203,33 +213,34 @@ if args.generator == 'Vocabulary':
 elif args.generator == 'Random':
     random_dataloader = DataLoader(RandomDataset(max_seq_len, len(assembled_model.residual_labels)), batch_size=args.batch_size, collate_fn=RandomDataset.collate_fn)
     dataset = TeacherDataset(random_dataloader, assembled_model, assembled_model.forward_no_emb)
+print("e")
 
 next(iter(dataset)) # required otherwise seg fault in dataloader for some reason
-
+print(1)
 train_dataloader = DataLoader(dataset, batch_size=1, collate_fn=lambda x: x[0], num_workers=1, prefetch_factor=4)#, num_workers=8, prefetch_factor=18, shuffle=True)
-
+print(2)
   
 sample = time_sensitive(lambda: next(iter(train_dataloader)), 2)
 if sample is None:
-    wandb.log({"failure": 1})
+    logger.add_scalar("fail", 1, 1)
+    logger.add_scalar("progress", 0, 2)
     exit(1)
     
-
+print(3)
 
 val_dataset = TeacherDataset(DataLoader(VocabDataset(
                     vocab, max_seq_len, assembled_model.encode_input), batch_size=32, collate_fn=VocabDataset.collate_fn, shuffle=True), 
                 assembled_model, assembled_model.forward)
-
+print(4)
 next(iter(val_dataset)) # required otherwise seg fault in dataloader for some reason
-
+print(5)
 validation_dataloader =  DataLoader(val_dataset, collate_fn=lambda x: x[0], num_workers=1, prefetch_factor=2)
-
-
-
+print(6)
 
 next(iter(val_dataset))
+print(7)
 
-wandb.log({"progress": 0.2})
+logger.add_scalar("progress", 0.2, 2)
 
 #%% ==================== Schedulers ==========================================
 
@@ -292,7 +303,7 @@ elif args.sched == 'custom': # custom scheduler
 
 optimizer = optax.chain(
     optax.clip_by_global_norm(0.01),  # Clip gradients at norm 1
-    #optax.clip(1e-3),
+    optax.clip(1), # prevent nan ?
     #optax.adamw(args.LR, weight_decay=0.0001)
     #optax.sgd(learning_rate=args.LR)
     #optax.sgd(LR_fn)
@@ -363,14 +374,14 @@ def train_step(state, batch):
     state = state.apply_gradients(grads=grads)
     return state, loss
 
-train_step = jax.jit(train_step)
+#train_step = jax.jit(train_step)
 
 
 
 
 #%% ======================= Train loop =====================================
 
-wandb.log({"progress": 0.3})
+logger.add_scalar("progress", 0.3, 3)
 
 
 
@@ -394,25 +405,28 @@ for epoch in range(args.EPOCHS):
             total_loss += loss
             global_idx += 1
             # wandb.log({"loss": loss.item()}) # if more than 10 processes, exceeds rate limits
+            # if (global_idx % 50) == 0:
+            logger.add_scalar("loss", loss.item(), global_idx)
 
-            
+            if np.isnan( loss.item() ):
+                logger.add_scalar("progress",  0, 4)
+                logger.add_scalar("fail", 2, 2)
+                sys.exit(1)
 
         
         avg_loss = total_loss / len(train_dataloader)
         tepoch.set_postfix({'Batch': idx, 'Avg Loss': avg_loss})
-        wandb.log({"avg loss": avg_loss.item()})
+        logger.add_scalar("avg loss", avg_loss.item(), epoch)
 
-        if np.isnan( avg_loss.item() ):
-            wandb.log({"progress": -1, "Failed": 1})
-            sys.exit(1)
-        
+ 
 
+ 
 
-        
-wandb.log({"progress": 0.4}) 
+logger.add_scalar("progress", 0.4, 4)
 
 if avg_loss > 0.05:
-    wandb.log({"progress": -1, "Failed": 1})
+    logger.add_scalar("progress",  0, 4)
+    logger.add_scalar("fail", 3, 3)
     sys.exit(1)
     
 VAL_SAMPLES = 10
@@ -430,12 +444,12 @@ with tqdm(total=VAL_SAMPLES, unit='batch') as tepoch:
         tepoch.update(1)
     avg_acc /= VAL_SAMPLES
     tepoch.set_postfix({'Avg Acc': avg_acc})
-    wandb.log({"acc": avg_acc})
+    logger.add_scalar("acc", avg_acc, 1)
 
 # show_emb(state.params)
 
 
-wandb.log({"progress": 0.5})
+logger.add_scalar("progress", 0.5, 5)
 
 
 # %%
@@ -461,7 +475,7 @@ def compress_params(params):
 
 compressed = compress_params(state.params)
 
-wandb.log({"progress": 0.6})
+logger.add_scalar("progress", 0.6, 6)
 
 # %%
 
@@ -491,8 +505,7 @@ def encode_jax_params(params):
 
 encoded_params = encode_jax_params(compressed)
 
-
-wandb.log({"progress": 0.7})
+logger.add_scalar("progress", 0.7, 7)
 
 #%%
 
@@ -516,38 +529,39 @@ for i in range(10):
         pass
 
 
-wandb.log({"progress": 1.0})
+logger.add_scalar("progress", 1, 10)
 
 
 #%%
 
 
-# from data.parallelzipfilebetter import ParallelZipFile as ZipFile
-# import cloudpickle
+from data.parallelzipfilebetter import ParallelZipFile as ZipFile
+import cloudpickle
 
-# class ZipStreamReader:
-#     def __init__(self, dir:str) -> None:
-#         self.zip = ZipFile(file=dir, mode='r')
-#         self.files = sorted(self.zip.namelist())
-#     def __len__(self):
-#         return len(self.files)
-#     def __getitem__(self, idx):
-#         x = self.zip.read(self.files[idx])
-#         # loaded = np.load(BytesIO(x), allow_pickle=True)
-#         x,y = cloudpickle.loads(x)
-#         return x, y
+class ZipStreamReader:
+    def __init__(self, dir:str) -> None:
+        self.zip = ZipFile(file=dir, mode='r')
+        self.files = sorted(self.zip.namelist())
+    def __len__(self):
+        return len(self.files)
+    def __getitem__(self, idx):
+        x = self.zip.read(self.files[idx])
+        # loaded = np.load(BytesIO(x), allow_pickle=True)
+        x,y = cloudpickle.loads(x)
+        return x, y
 
-# #df = ZipStreamReader('cp_dataset_train_all.zip')
-# df = ZipStreamReader('cp_dataset_train_w.zip')
-# # it = iter(df)
-# # x,y = next(it)
+#df = ZipStreamReader('cp_dataset_train_all.zip')
 
-# print(len(df))
+df = ZipStreamReader('cp_dataset_train_w.zip')
+it = iter(df)
+x,y = next(it)
 
-# from data.dataloaders import ProgramEncoder
+print(len(df))
+
+from data.dataloaders import ProgramEncoder
 
 
-# prog_enc = ProgramEncoder(15)
-# print(prog_enc.decode_pred(y))
+prog_enc = ProgramEncoder(15)
+print(prog_enc.decode_pred(y))
 
 
