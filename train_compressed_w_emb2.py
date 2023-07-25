@@ -10,119 +10,114 @@ import jax
 from tqdm import tqdm
 from itertools import product
 import os
+from data.example_rasp_programs import get_program
+from utils.plot import show_emb, show_images, show_image, figure_to_array
 from argparse import Namespace
+
 import torch
 torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from datetime import datetime
 from utils.time_sensitive import time_sensitive
-jax.config.update('jax_platform_name', 'cpu')
 jax.config.update("jax_debug_nans", True)
-
+jax.config.update('jax_platform_name', 'cpu')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 
 process_args = Namespace(
-    run_id =   str(datetime.now().strftime("%m-%d %H.%M.%S.%f"))
+    run_id = str(datetime.now())
 )
 
-#%%
 args = Namespace(
     generator = 'Random', # 'Vocabulary'
-    compression = 1.0,
-    idty = True, # True, # Whether to use a noisy identity to initialise the embedding
-    LR = 1e-4, # 5e-2 worked so far but some nans
-    EPOCHS = 20,
+    program = 'random', #'sort_unique', "hist"#"sort"#"length"
+    compression = 2.0,
+    idty = False, # True, # Whether to use a noisy identity to initialise the embedding
+    LR = 1e-3, # 5e-2 worked so far but some nans
+    EPOCHS = 30,
     trn_all = False, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
-    add_soft = False, #True, # True, # True, # True, # False, True
-    batch_size = 64,
+    add_soft = True, # True, # True, # True, # False, True
+    batch_size = 512,
     mult = False, #True, #True,
     sched = 'cosine',
     #mpow = 2,
     factor=0.01,
+    div=20,
+    run_id = str(datetime.now()),
 )
 
-from torch.utils.tensorboard import SummaryWriter
-log_dir = os.path.join("Compressed Tracr All" if args.trn_all == True else "Compressed Tracr emb_W", 
-                        process_args.run_id)
-logger = SummaryWriter(log_dir=log_dir)
-
-logger.add_hparams(vars(process_args) | vars(args), dict() )
 
 jax.config.update('jax_default_matmul_precision', 'float32') # 'bfloat16'
 
-
-print("a")
-
 # %% =================== init program and compile transformer programs ===========================
 program, vocab, max_seq_len, assembled_model, compressed_assembled_model, actual_op, ops_range = [None]*7
+if args.program != 'random':
+    program, vocab, input_seq = get_program(args.program, 6)
+    vocab = set(list(input_seq))
+    max_seq_len = len(input_seq)+1
 
-from data.dataset import choose_vocab_and_ops, build_program_of_length,program_craft_generator
-ops_range=(10, 15)
-numeric_range=(5, 8)
-vocab_size_range=(5, 8)
-numeric_inputs_possible=True
-max_seq_len = np.random.randint(4, 9)
-CRAFT_TIMEOUT = 2# 0.2 + 0.00001 * max(ops_range) ** 4
+    assembled_model, compressed_assembled_model = compile_with_compressed(
+                        program, vocab, max_seq_len, compression=args.compression)
 
-def timed_func():
-    assembled_model, compressed_assembled_model, actual_ops = None, None, None
-    
-    n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
-    print(n_ops, vocab, TARGET_PROGRAM_LENGTH)
-    try:
-        program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
-    except np.core._exceptions._ArrayMemoryError as E:
-        print("mem alloc err")
-        return None
-    try:
-        assembled_model, compressed_assembled_model, craft_model, rasp_model = compile_with_compressed(
-            program, vocab, max_seq_len, compression=args.compression,
-            CRAFT_TIMEOUT=CRAFT_TIMEOUT)
-    except ValueError as E:
-        print("val err")
-        return None
-    except KeyError as E:
-        print("key err")
-        return None
-    except TimeoutError:
-        print("craft timeout")
-        return None
+else:
+    from data.dataset import choose_vocab_and_ops, build_program_of_length,program_craft_generator
+    ops_range=(10, 15)
+    numeric_range=(5, 8)
+    vocab_size_range=(5, 8)
+    numeric_inputs_possible=True
+    max_seq_len = np.random.randint(4, 9)
+    CRAFT_TIMEOUT = 2
+    def timed_func():
+        assembled_model, compressed_assembled_model, actual_ops = None, None, None
+        
+        n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
+        print(n_ops, vocab, TARGET_PROGRAM_LENGTH)
+        try:
+            program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
+        except np.core._exceptions._ArrayMemoryError as E:
+            print("mem alloc err")
+            return None
+        try:
+            assembled_model, compressed_assembled_model, craft_model, rasp_model = compile_with_compressed(
+                program, vocab, max_seq_len, compression=args.compression,
+                CRAFT_TIMEOUT=CRAFT_TIMEOUT)
+        except ValueError as E:
+            print("val err")
+            return None
+        except KeyError as E:
+            print("key err")
+            return None
+        except TimeoutError:
+            print("craft timeout")
+            return None
 
-    return assembled_model, compressed_assembled_model, actual_ops, vocab, program
+        return assembled_model, compressed_assembled_model, actual_ops, vocab, program
 
 
 
-#%%
 
+    ret = None
+    for i in range(20):
+        ret = time_sensitive(timed_func, 10)
+        if ret is not None:
+            break
+    if ret is None:
+        exit(1)
+    assembled_model, compressed_assembled_model, actual_ops, vocab, program = ret
 
-ret = None
-for i in range(20):
-    ret = time_sensitive(timed_func, 10)
-    if ret is not None:
-        break
-if ret is None:
-    exit(1)
-    logger.add_scalar("progress",  0, 4)
-    logger.add_scalar("fail", 1, 1)
-    sys.exit(1)
-
-assembled_model, compressed_assembled_model, actual_ops, vocab, program = ret
-
-print("b")
 
     #craft_model, actual_ops = program_craft_generator(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_range=numeric_range, numeric_inputs_possible=numeric_inputs_possible)
 
-logger.add_scalar("prog len", len(actual_ops), 1)
-logger.add_scalar("progress", 0.1, 1)
+
 
 
 if args.idty: # init embedding to be noisy identiy?
     compressed_assembled_model.params['compressed_transformer']['w_emb'] = jnp.eye(*compressed_assembled_model.params['compressed_transformer']['w_emb'].shape)
     compressed_assembled_model.params['compressed_transformer']['w_emb'] += jax.random.normal(jax.random.PRNGKey(0), compressed_assembled_model.params['compressed_transformer']['w_emb'].shape) / 10
-
+else:
+    compressed_assembled_model.params['compressed_transformer']['w_emb'] /= args.div
 
 def init_all_params(params):
     rng = jax.random.PRNGKey(0)
@@ -140,15 +135,13 @@ def init_all_params(params):
 if args.trn_all:
     compressed_assembled_model.params = init_all_params(compressed_assembled_model.params)
 
-#%%
 
 for key, val in compressed_assembled_model.params.items():
-        for comp, weight in val.items():
-            if 'compressed_transformer' in key + comp:
-                if comp != 'w_emb':
-                    print(key + ' ' + comp)
-                    assert (weight == assembled_model.params[key.replace('compressed_transformer', 'transformer')][comp]).all()
-
+    for comp, weight in val.items():
+        if 'compressed_transformer' in key + comp:
+            if comp != 'w_emb':
+                print(key + ' ' + comp)
+                assert (weight == assembled_model.params[key.replace('compressed_transformer', 'transformer')][comp]).all()
 
 # # normal
 # encoded_tokens = assembled_model.encode_input(formatted_input)
@@ -161,7 +154,7 @@ for key, val in compressed_assembled_model.params.items():
 # decoded = compressed_assembled_model.decode_output(output)
 # print(decoded)
 
-print("c")
+
 #%% ======================== Dataloader ======================================
 
 
@@ -198,10 +191,7 @@ class RandomDataset:
         encoded_tokens = np.stack(encoded_tokens, axis=0)
         return formatted_input, np.array(encoded_tokens)
 
-            
-
-
-
+        
 print("d")
 
 def make_teacher_call(teacher, teacher_forward):
@@ -215,7 +205,7 @@ def make_teacher_call(teacher, teacher_forward):
 
 def make_validation_teacher_call(teacher, teacher_forward):
     def fun(encoded_tokens):
-        output = teacher_forward(teacher.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
+        output = jax.jit(teacher_forward)(teacher.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
         target_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
         decoded = np.array(teacher.decode_all_outputs(output))
         target_ids = jnp.argmax(teacher.residual_to_logits(output), axis=-1)
@@ -238,7 +228,8 @@ if args.generator == 'Random':
     validation_dataloader =  DataLoader(VocabDataset(vocab, max_seq_len, assembled_model.encode_input), batch_size=32, collate_fn=VocabDataset.collate_fn, shuffle=True, num_workers=1, prefetch_factor=2)
 validation_teacher_call = make_validation_teacher_call(assembled_model, assembled_model.forward)
 
-logger.add_scalar("progress", 0.2, 2)
+
+
 
 #%% ==================== Schedulers ==========================================
 
@@ -291,6 +282,22 @@ def create_learning_rate_fn(warmup_epochs, num_epochs, base_learning_rate, steps
 
 
 
+# class CustomSchedule:
+#     def __init__(self, LR) -> None:
+#         self.history = []
+#         self.LR = LR
+#         self.initial_LR = LR
+#     def log(self, loss):
+#         self.history.append(loss)
+#         if len(self.history) >= 20:
+#             history = self.history
+#             # less than 2% change in 2 epochs per epoch
+#             if (abs(history[-1] - history[-2]) + abs(history[-1] - history[-3])) / history[-1] < 0.04 or \
+#                 abs(history[-1] - history[-3]) / history[-1] < 0.04 and history[-1] > history[-2]:
+#                 self.LR = self.LR / 2
+#                 print(f"updated LR: {self.LR}")
+#                 self.history = []
+
 
 LR_fn = None
 if args.sched == 'cosine': # cosine anealing scheduler
@@ -300,11 +307,11 @@ elif args.sched == 'custom': # custom scheduler
     LR_fn = lambda x: cs.LR
 
 optimizer = optax.chain(
-    # optax.clip_by_global_norm(0.01),  # Clip gradients at norm 1
-    # optax.clip(1), # prevent nan ?
+    optax.clip_by_global_norm(0.01),  # Clip gradients at norm 1
+    #optax.clip(1e-3),
     #optax.adamw(args.LR, weight_decay=0.0001)
     #optax.sgd(learning_rate=args.LR)
-    #optax.sgd(LR_fn)
+    #optax.sgd(make_schedule(args.LR))
     optax.adamw(LR_fn, weight_decay=0.0001) ,
     
 )
@@ -322,10 +329,7 @@ if not args.trn_all:
     compressed_assembled_model.params = unfreeze(compressed_assembled_model.params)
 
 
-#%%
 
-# jax.tree_map(lambda x: jnp.isnan(x).any(), compressed_assembled_model.params)
-# jax.tree_map(lambda x: jnp.isnan(x).any(), assembled_model.params)
 
 #%% ============== init train state ===============================
 
@@ -343,21 +347,21 @@ state = train_state.TrainState.create(
 
 
 def calculate_loss(params, batch):
-    encoded_tokens, target_outs, target_ids = batch
+    encoded_tokens, targets, target_ids = batch
     output = state.apply_fn(params, encoded_tokens)
     compressed_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
 
     loss = 0.0
     # L2 Loss
     if args.loss == 'L2':
-        loss = jnp.mean((target_outs - compressed_outs)** 2) 
+        loss = jnp.mean((targets - compressed_outs)** 2) 
 
     # L1 Loss
     elif args.loss == 'L1':
-        loss = jnp.mean(jnp.abs(target_outs - compressed_outs))
+        loss = jnp.mean(jnp.abs(targets - compressed_outs))
     
     elif args.loss == 'SoftMax':
-        loss = optax.softmax_cross_entropy(compressed_outs, target_outs).mean()
+        loss = optax.softmax_cross_entropy(compressed_outs, targets).mean()
 
     # Additional logit error term
     if args.add_soft:
@@ -366,6 +370,8 @@ def calculate_loss(params, batch):
             loss *= optax.softmax_cross_entropy_with_integer_labels(logits, target_ids).mean() ** args.mpow
         else:
             loss += optax.softmax_cross_entropy_with_integer_labels(logits, target_ids).mean() * args.factor
+    
+    # loss = jnp.nan_to_num(loss)
     
     return loss
 
@@ -384,11 +390,11 @@ train_step = jax.jit(train_step)
 
 #%% ======================= Train loop =====================================
 
-logger.add_scalar("progress", 0.3, 3)
+from torch.utils.tensorboard import SummaryWriter
+log_dir = os.path.join('.clogs', str(vars(args)).replace('\'', '')[1:-1])
+#log_dir = os.path.join('.clogs', f'LR{args.LR} init')
+logger = SummaryWriter(log_dir=log_dir)
 
-
-
-avg_loss = 0.0
         
 global_idx = 0
 for epoch in range(args.EPOCHS):
@@ -403,61 +409,77 @@ for epoch in range(args.EPOCHS):
             
             
             tepoch.set_postfix({'Batch': idx, 'Train Loss': loss})
-
+            logger.add_scalar('hf_loss', loss.item(), global_step=global_idx)
+        
             tepoch.update(1)
             total_loss += loss
             global_idx += 1
-            # wandb.log({"loss": loss.item()}) # if more than 10 processes, exceeds rate limits
-            # if (global_idx % 50) == 0:
-            logger.add_scalar("loss", loss.item(), global_idx)
 
-            if np.isnan( loss.item() ):
-                logger.add_scalar("progress",  0, 4)
-                logger.add_scalar("fail", 2, 2)
-                sys.exit(1)
+            # enable if using custom scheduler
+            #cs.log(loss)
+            logger.add_scalar('LR', np.array(LR_fn(state.step)).item(), global_step=global_idx)
+            
 
         
         avg_loss = total_loss / len(train_dataloader)
         tepoch.set_postfix({'Batch': idx, 'Avg Loss': avg_loss})
-        logger.add_scalar("avg loss", avg_loss.item(), epoch)
+        logger.add_scalar('avg loss', avg_loss.item(), global_step=epoch)
+        
+        # ======================= Debug Info =====================================
+        fig = show_emb(state.params, show=False)
+        logger.add_figure('emb', fig, global_step=global_idx)
+        output = state.apply_fn(state.params, encoded_tokens)
+        compressed_outs = output.transformer_output.layer_outputs
+        fig = show_images([x[0, :,:].T for x in compressed_outs], show=False)
+        logger.add_figure('outs', fig, global_step=global_idx)
 
- 
-
- 
-
-logger.add_scalar("progress", 0.4, 4)
-
-if avg_loss > 0.05:
-    logger.add_scalar("progress",  0, 4)
-    logger.add_scalar("fail", 3, 3)
-    sys.exit(1)
+        
+        
     
-VAL_SAMPLES = 10
-with tqdm(total=VAL_SAMPLES, unit='batch') as tepoch:
-    it = iter(validation_dataloader)
-    avg_acc = 0.0
-    for idx in range(VAL_SAMPLES):        
-        batch = next(it)
-        (formatted_input, encoded_tokens) = batch
-        target_outs, target_ids, decoded = jax.jit(validation_teacher_call)(encoded_tokens)
-        output = jax.jit(compressed_assembled_model.forward)(state.params, encoded_tokens)
-        pred_decoded = compressed_assembled_model.decode_all_outputs(output)
-        acc = np.equal(pred_decoded , decoded).mean()
-        avg_acc += acc
-        tepoch.set_postfix({'Batch': idx, 'Acc': acc})
-        tepoch.update(1)
-    avg_acc /= VAL_SAMPLES
-    tepoch.set_postfix({'Avg Acc': avg_acc})
-    logger.add_scalar("acc", avg_acc, 1)
+    VAL_SAMPLES = 10
+    with tqdm(total=VAL_SAMPLES, unit='batch') as tepoch:
+        it = iter(validation_dataloader)
+        avg_acc = 0.0
+        for idx in range(VAL_SAMPLES):        
+            batch = next(it)
+            (formatted_input, encoded_tokens) = batch
+            target_outs, target_ids, decoded = validation_teacher_call(encoded_tokens)
+            output = jax.jit(compressed_assembled_model.forward)(state.params, encoded_tokens)
+            pred_decoded = compressed_assembled_model.decode_all_outputs(output)
+            acc = np.equal(pred_decoded , decoded).mean()
+            avg_acc += acc
+            logger.add_scalar('acc', acc, global_step=epoch * VAL_SAMPLES + idx)
+            tepoch.set_postfix({'Batch': idx, 'Acc': acc})
+            tepoch.update(1)
+        avg_acc /= VAL_SAMPLES
+        tepoch.set_postfix({'Avg Acc': avg_acc})
+        logger.add_scalar('avg acc', avg_acc, global_step=epoch)
 
-# show_emb(state.params)
+show_emb(state.params)
+
+#%%
+plt.imshow(np.array(state.params['compressed_transformer']['w_emb']))
+plt.imshow(np.array(state.params['compressed_transformer']['w_emb']).T @ np.array(state.params['compressed_transformer']['w_emb']))
+
+#%%
 
 
-logger.add_scalar("progress", 0.5, 5)
+
+#%%
+it = iter(dataset)
+
+formatted_input, encoded_tokens, outs, targ_decoded, target_ids = next(it)
+
+output = state.apply_fn(state.params, encoded_tokens)
+decoded = compressed_assembled_model.decode_output(output)
+#print(f"targ: {targ_decoded}, pred: {decoded}")
+#assert (targ_decoded == decoded).all()
 
 
 # %%
 
+# Set the embedding to the identity to disable it
+# state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
 
 
 def compress_params(params):
@@ -478,9 +500,6 @@ def compress_params(params):
     return compressed_params
 
 compressed = compress_params(state.params)
-
-logger.add_scalar("progress", 0.6, 6)
-
 # %%
 
 from data.dataloaders import ProgramEncoder
@@ -509,7 +528,8 @@ def encode_jax_params(params):
 
 encoded_params = encode_jax_params(compressed)
 
-logger.add_scalar("progress", 0.7, 7)
+
+
 
 #%%
 
@@ -523,49 +543,25 @@ if args.trn_all == True:
 else:
     target_db_path += '_train_w'
 
-for i in range(10):
-    try:
-        zip = ZipFile(file=target_db_path+'.zip', mode='a')
-        zip.writestr( process_args.run_id + '.pkl', dumps(sample))
-        zip.close()
-        break
-    except:
-        pass
-
-
-logger.add_scalar("progress", 1, 10)
-
+zip = ZipFile(file=target_db_path+'.zip', mode='a')
+zip.writestr( process_args.run_id + '.pkl', dumps(sample))
+zip.close()
 
 #%%
 
+def init_w(params):
+    from random import randint
+    rng = jax.random.PRNGKey(randint(0, 1e10))
+    initializer = jax.nn.initializers.glorot_uniform()
 
-from data.parallelzipfilebetter import ParallelZipFile as ZipFile
-import cloudpickle
+    rng, nrng = jax.random.split(rng, 2)
+    if len(params.shape) > 1:
+        return initializer(nrng, params.shape, jnp.float32) / (args.div * 200)
+    else:
+        return jax.random.normal(nrng, params.shape) / 1000
+    
+state.params['compressed_transformer']['w_emb'] = init_w(state.params['compressed_transformer']['w_emb'])
 
-class ZipStreamReader:
-    def __init__(self, dir:str) -> None:
-        self.zip = ZipFile(file=dir, mode='r')
-        self.files = sorted(self.zip.namelist())
-    def __len__(self):
-        return len(self.files)
-    def __getitem__(self, idx):
-        x = self.zip.read(self.files[idx])
-        # loaded = np.load(BytesIO(x), allow_pickle=True)
-        x,y = cloudpickle.loads(x)
-        return x, y
-
-#df = ZipStreamReader('cp_dataset_train_all.zip')
-
-df = ZipStreamReader('cp_dataset_train_w.zip')
-it = iter(df)
-x,y = next(it)
-
-print(len(df))
-
-from data.dataloaders import ProgramEncoder
-
-
-prog_enc = ProgramEncoder(15)
-print(prog_enc.decode_pred(y))
+#%%
 
 

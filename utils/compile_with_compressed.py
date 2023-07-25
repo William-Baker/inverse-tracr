@@ -255,8 +255,7 @@ def assemble_craft_model(
                     (model_config.key_size, residual_space.num_dims))
                 linear_mat[:value_size, :] = project(head.w_ov.output_space).T
                 linear.append(linear_mat)
-                # print(len(query))
-                # print([x.shape for x in query])
+                
             # Fill up heads that are not used with zero weights
             for _ in range(model_config.num_heads - module.as_multi().num_heads):
                 query.append(np.zeros_like(query[0]))
@@ -273,10 +272,6 @@ def assemble_craft_model(
             linear = einops.rearrange(linear,
                                         "heads input output -> (heads input) output")
             
-            # print(len(query))
-            # print([x.shape for x in query])
-            # print(params[f"{module_name}/query"]["w"][:, :].shape)
-            # print(query)
             params[f"{module_name}/query"]["w"][:, :] = query
             params[f"{module_name}/key"]["w"][:, :] = key
             params[f"{module_name}/value"]["w"][:, :] = value
