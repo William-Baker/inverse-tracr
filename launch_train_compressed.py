@@ -3,10 +3,9 @@
 import subprocess
 from threading import Thread
 from torch.utils.tensorboard import SummaryWriter
-from utils.time_sensitive import time_sensitive
 import os
-
-
+from utils.export_compressed_params import transfer_to_archive
+import time
 
 
 def run_experiments(id):
@@ -24,15 +23,34 @@ def run_experiments(id):
 
             count += 1
         except Exception as E:
-            print(E)
-            print(E.with_traceback())
+            import traceback
+            print(str(E))
+            tb = traceback.format_exc()
+            print(str(tb))
         
 
 if __name__ == '__main__':
-    processes = int(os.cpu_count() // 1.25)
-    #processes = 1
+    #processes = int(os.cpu_count() // 1.25)
+    processes = int(os.cpu_count() * 1.5)
     print({'Processes': processes})
     threads = [Thread(target = run_experiments, args = (idx, )) for idx in range(processes)]
     [thread.start() for thread in threads]
+    while True:
+        try:
+            transfer_to_archive(source_dir = 'cp_dataset_train_all')
+        except:
+            pass
+        try:
+            transfer_to_archive(source_dir = 'cp_dataset_train_w')
+        except:
+            pass
+        time.sleep(180)
+
 
 #%%
+
+
+#%%
+
+
+# %%

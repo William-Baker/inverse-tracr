@@ -66,3 +66,19 @@ def export_params(params, max_ops, actual_ops, trn_all, run_id):
             sleep(1)
             print("failed to save to zip archive")
 
+def transfer_to_archive(source_dir: str):
+    dest_dir = source_dir + '.zip'
+    from zipfile import ZipFile
+    import os
+    source_files = os.listdir(source_dir)
+    zip = ZipFile(dest_dir, mode='a')
+    dest_files = [x.filename for x in zip.filelist]
+    transfer_files = set(source_files) - set(dest_files)
+    for file in transfer_files:
+        zip.write(os.path.join(source_dir, file), file)
+    zip.close()
+    for file in transfer_files:
+        try:
+            os.remove(os.path.join(source_dir, file))
+        except Exception as E:
+            pass
