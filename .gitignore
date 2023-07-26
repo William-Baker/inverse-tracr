@@ -179,3 +179,7 @@ jax-profile/
 .dlogs/
 wandb/
 Compressed Tracr emb_W/
+Compressed Tracr emb_W fail/
+Compressed Tracr emb_W success/
+cp_dataset_train_w/
+pool compressed Tracr/

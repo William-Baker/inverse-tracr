@@ -1,21 +1,20 @@
 # %%
 import sys
 sys.path.append('tracr/')
-import jax.numpy as jnp
 from flax.training import train_state
-import optax
 from utils.compile_with_compressed import compile_with_compressed, COMPILER_BOS
 from utils.plot import *
-import jax
+import jax, optax, torch, os
+import jax.numpy as jnp
 from tqdm import tqdm
 from itertools import product
-import os
 from argparse import Namespace
-import torch
 torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from datetime import datetime
 from utils.time_sensitive import time_sensitive
+from shutil import move as move_dir
+from utils.export_compressed_params import export_params
 jax.config.update('jax_platform_name', 'cpu')
 jax.config.update("jax_debug_nans", True)
 
@@ -28,36 +27,48 @@ process_args = Namespace(
 )
 
 #%%
+from random import choice
 args = Namespace(
     generator = 'Random', # 'Vocabulary'
-    compression = 1.0,
-    idty = True, # True, # Whether to use a noisy identity to initialise the embedding
-    LR = 1e-4, # 5e-2 worked so far but some nans
-    EPOCHS = 20,
+    compression = 2.0,
+    idty = False, # True, # Whether to use a noisy identity to initialise the embedding
+    LR = 1e-2, # 4e-3, # 5e-2 worked so far but some nans
+    EPOCHS = 30,
     trn_all = False, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
-    add_soft = False, #True, # True, # True, # True, # False, True
-    batch_size = 64,
+    add_soft = True, # True, # True, # True, # False, True
+    batch_size = 512,
     mult = False, #True, #True,
     sched = 'cosine',
     #mpow = 2,
     factor=0.01,
+    div=20,
 )
 
 from torch.utils.tensorboard import SummaryWriter
 log_dir = os.path.join("Compressed Tracr All" if args.trn_all == True else "Compressed Tracr emb_W", 
-                        process_args.run_id)
+                        process_args.run_id)# + f"{args.LR}")
 logger = SummaryWriter(log_dir=log_dir)
 
-logger.add_hparams(vars(process_args) | vars(args), dict() )
 
 jax.config.update('jax_default_matmul_precision', 'float32') # 'bfloat16'
 
+def failure(id: int):
+    logger.add_scalar("progress",  0, 4)
+    logger.add_scalar("fail", id, id)
+    logger.close()
+    move_dir(log_dir, log_dir.replace('/', ' fail/'))
+    sys.exit(1)
 
-print("a")
+def finish():
+    logger.add_scalar("progress",  1,10)
+    logger.close()
+    move_dir(log_dir, log_dir.replace('/', ' success/'))
+    sys.exit(0)
+
 
 # %% =================== init program and compile transformer programs ===========================
-program, vocab, max_seq_len, assembled_model, compressed_assembled_model, actual_op, ops_range = [None]*7
+program, vocab, max_seq_len, assembled_model, compressed_assembled_model, actual_ops, ops_range = [None]*7
 
 from data.dataset import choose_vocab_and_ops, build_program_of_length,program_craft_generator
 ops_range=(10, 15)
@@ -104,17 +115,10 @@ for i in range(20):
     if ret is not None:
         break
 if ret is None:
-    exit(1)
-    logger.add_scalar("progress",  0, 4)
-    logger.add_scalar("fail", 1, 1)
-    sys.exit(1)
+    failure(1)
 
 assembled_model, compressed_assembled_model, actual_ops, vocab, program = ret
-
-print("b")
-
-    #craft_model, actual_ops = program_craft_generator(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_range=numeric_range, numeric_inputs_possible=numeric_inputs_possible)
-
+print(len(actual_ops))
 logger.add_scalar("prog len", len(actual_ops), 1)
 logger.add_scalar("progress", 0.1, 1)
 
@@ -122,7 +126,8 @@ logger.add_scalar("progress", 0.1, 1)
 if args.idty: # init embedding to be noisy identiy?
     compressed_assembled_model.params['compressed_transformer']['w_emb'] = jnp.eye(*compressed_assembled_model.params['compressed_transformer']['w_emb'].shape)
     compressed_assembled_model.params['compressed_transformer']['w_emb'] += jax.random.normal(jax.random.PRNGKey(0), compressed_assembled_model.params['compressed_transformer']['w_emb'].shape) / 10
-
+else:
+    compressed_assembled_model.params['compressed_transformer']['w_emb'] /= args.div
 
 def init_all_params(params):
     rng = jax.random.PRNGKey(0)
@@ -143,25 +148,14 @@ if args.trn_all:
 #%%
 
 for key, val in compressed_assembled_model.params.items():
-        for comp, weight in val.items():
-            if 'compressed_transformer' in key + comp:
-                if comp != 'w_emb':
-                    print(key + ' ' + comp)
-                    assert (weight == assembled_model.params[key.replace('compressed_transformer', 'transformer')][comp]).all()
+    for comp, weight in val.items():
+        if 'compressed_transformer' in key + comp:
+            if comp != 'w_emb':
+                assert (weight == assembled_model.params[key.replace('compressed_transformer', 'transformer')][comp]).all()
 
 
-# # normal
-# encoded_tokens = assembled_model.encode_input(formatted_input)
-# output = assembled_model.forward(assembled_model.params, encoded_tokens)
-# decoded = assembled_model.decode_output(output)
-# print(decoded)
 
-# # compressed
-# output = compressed_assembled_model.forward(compressed_assembled_model.params, encoded_tokens)
-# decoded = compressed_assembled_model.decode_output(output)
-# print(decoded)
 
-print("c")
 #%% ======================== Dataloader ======================================
 
 
@@ -200,10 +194,6 @@ class RandomDataset:
 
             
 
-
-
-print("d")
-
 def make_teacher_call(teacher, teacher_forward):
     def fun(encoded_tokens):
         output = teacher_forward(teacher.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
@@ -215,7 +205,7 @@ def make_teacher_call(teacher, teacher_forward):
 
 def make_validation_teacher_call(teacher, teacher_forward):
     def fun(encoded_tokens):
-        output = teacher_forward(teacher.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
+        output = jax.jit(teacher_forward)(teacher.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
         target_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
         decoded = np.array(teacher.decode_all_outputs(output))
         target_ids = jnp.argmax(teacher.residual_to_logits(output), axis=-1)
@@ -300,8 +290,8 @@ elif args.sched == 'custom': # custom scheduler
     LR_fn = lambda x: cs.LR
 
 optimizer = optax.chain(
-    # optax.clip_by_global_norm(0.01),  # Clip gradients at norm 1
-    # optax.clip(1), # prevent nan ?
+    optax.clip_by_global_norm(0.01),  # Clip gradients at norm 1
+    #optax.clip(1e-3),
     #optax.adamw(args.LR, weight_decay=0.0001)
     #optax.sgd(learning_rate=args.LR)
     #optax.sgd(LR_fn)
@@ -343,21 +333,21 @@ state = train_state.TrainState.create(
 
 
 def calculate_loss(params, batch):
-    encoded_tokens, target_outs, target_ids = batch
+    encoded_tokens, targets, target_ids = batch
     output = state.apply_fn(params, encoded_tokens)
     compressed_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
 
     loss = 0.0
     # L2 Loss
     if args.loss == 'L2':
-        loss = jnp.mean((target_outs - compressed_outs)** 2) 
+        loss = jnp.mean((targets - compressed_outs)** 2) 
 
     # L1 Loss
     elif args.loss == 'L1':
-        loss = jnp.mean(jnp.abs(target_outs - compressed_outs))
+        loss = jnp.mean(jnp.abs(targets - compressed_outs))
     
     elif args.loss == 'SoftMax':
-        loss = optax.softmax_cross_entropy(compressed_outs, target_outs).mean()
+        loss = optax.softmax_cross_entropy(compressed_outs, targets).mean()
 
     # Additional logit error term
     if args.add_soft:
@@ -412,14 +402,25 @@ for epoch in range(args.EPOCHS):
             logger.add_scalar("loss", loss.item(), global_idx)
 
             if np.isnan( loss.item() ):
-                logger.add_scalar("progress",  0, 4)
-                logger.add_scalar("fail", 2, 2)
-                sys.exit(1)
+                failure(2)
 
         
         avg_loss = total_loss / len(train_dataloader)
         tepoch.set_postfix({'Batch': idx, 'Avg Loss': avg_loss})
         logger.add_scalar("avg loss", avg_loss.item(), epoch)
+
+        if avg_loss > 2: # probrably wont converge if we haven't already
+                failure(3)
+            
+        if (args.EPOCHS - epoch ) in [1, 2,3,4]: # export the 4th to last to the 2nd to last
+            if (args.EPOCHS - epoch) == 1:
+                if avg_loss > 0.05:
+                    failure(4)
+                export_params(state.params, max(ops_range), actual_ops, args.trn_all, process_args.run_id)
+            else:
+                if avg_loss < 0.05:
+                    export_params(state.params, max(ops_range), actual_ops, args.trn_all, process_args.run_id + f" {epoch}")
+            logger.add_scalar("progress", epoch/args.EPOCHS, (epoch/args.EPOCHS)*10)
 
  
 
@@ -427,19 +428,16 @@ for epoch in range(args.EPOCHS):
 
 logger.add_scalar("progress", 0.4, 4)
 
-if avg_loss > 0.05:
-    logger.add_scalar("progress",  0, 4)
-    logger.add_scalar("fail", 3, 3)
-    sys.exit(1)
+
     
 VAL_SAMPLES = 10
+avg_acc = 0.0
 with tqdm(total=VAL_SAMPLES, unit='batch') as tepoch:
     it = iter(validation_dataloader)
-    avg_acc = 0.0
     for idx in range(VAL_SAMPLES):        
         batch = next(it)
         (formatted_input, encoded_tokens) = batch
-        target_outs, target_ids, decoded = jax.jit(validation_teacher_call)(encoded_tokens)
+        target_outs, target_ids, decoded = validation_teacher_call(encoded_tokens)
         output = jax.jit(compressed_assembled_model.forward)(state.params, encoded_tokens)
         pred_decoded = compressed_assembled_model.decode_all_outputs(output)
         acc = np.equal(pred_decoded , decoded).mean()
@@ -450,122 +448,50 @@ with tqdm(total=VAL_SAMPLES, unit='batch') as tepoch:
     tepoch.set_postfix({'Avg Acc': avg_acc})
     logger.add_scalar("acc", avg_acc, 1)
 
-# show_emb(state.params)
+fig = show_emb(state.params, show=False)
+logger.add_figure('emb', fig, global_step=global_idx)
+
+logger.add_hparams(vars(process_args) | vars(args), {'loss': avg_loss.item(), 'acc': avg_acc} )
 
 
-logger.add_scalar("progress", 0.5, 5)
-
-
-# %%
-
-
-
-def compress_params(params):
-    # we first need to find the compression matrix
-    w = params['compressed_transformer']['w_emb'].T
-    compressed_params = dict()
-    for key in params.keys():
-        if 'compressed_transformer/' in key:
-            p = params[key]['w']
-            key = key.replace( 'compressed_transformer/', '')
-            print(key)
-            print(p.shape)
-            if not (key.endswith('linear') or key.endswith('linear_2')):
-                compressed_params[key] = np.array((p.T @ w).T)
-            else:
-                compressed_params[key] = np.array((p @ w))
-            print(compressed_params[key].shape)
-    return compressed_params
-
-compressed = compress_params(state.params)
-
-logger.add_scalar("progress", 0.6, 6)
-
-# %%
-
-from data.dataloaders import ProgramEncoder
-from collections import defaultdict
-
-prog_enc = ProgramEncoder(max(ops_range))
-encoded_ops = ProgramEncoder.encode_ops(actual_ops)
-tokenised_program = prog_enc.tokenise_program(encoded_ops)
-
-
-def encode_jax_params(params):
-    collected_by_block = defaultdict(lambda: dict())
-    for key, val in params.items():
-        layer_no, layer_type, param_name = key.split('/')
-        collected_by_block[layer_no + layer_type][param_name] = val
-    
-    model_params = []
-    for key, val in collected_by_block.items():
-        if 'attn' in layer_type:
-            model_params.append({'MHA': val})
-        elif 'mlp' in layer_type:
-            model_params.append({'MLP': val})
-        else:
-            raise NotImplementedError()
-    return model_params
-
-encoded_params = encode_jax_params(compressed)
-
-logger.add_scalar("progress", 0.7, 7)
-
-#%%
-
-from zipfile import ZipFile
-from cloudpickle import dumps
-sample = (encoded_params, tokenised_program)
-
-target_db_path = 'cp_dataset'
-if args.trn_all == True:
-    target_db_path += '_train_all'
-else:
-    target_db_path += '_train_w'
-
-for i in range(10):
-    try:
-        zip = ZipFile(file=target_db_path+'.zip', mode='a')
-        zip.writestr( process_args.run_id + '.pkl', dumps(sample))
-        zip.close()
-        break
-    except:
-        pass
+with open(log_dir.split('/')[0] + "/stats.csv",'a+') as f:
+		f.write(f"{process_args.run_id},{avg_acc},{avg_loss},{args.EPOCHS},{args.LR},{args.batch_size}\n")
 
 
 logger.add_scalar("progress", 1, 10)
 
+finish()
 
 #%%
 
 
-from data.parallelzipfilebetter import ParallelZipFile as ZipFile
-import cloudpickle
+# from data.parallelzipfilebetter import ParallelZipFile as ZipFile
+# import cloudpickle
 
-class ZipStreamReader:
-    def __init__(self, dir:str) -> None:
-        self.zip = ZipFile(file=dir, mode='r')
-        self.files = sorted(self.zip.namelist())
-    def __len__(self):
-        return len(self.files)
-    def __getitem__(self, idx):
-        x = self.zip.read(self.files[idx])
-        # loaded = np.load(BytesIO(x), allow_pickle=True)
-        x,y = cloudpickle.loads(x)
-        return x, y
+# class ZipStreamReader:
+#     def __init__(self, dir:str) -> None:
+#         self.zip = ZipFile(file=dir, mode='r')
+#         self.files = sorted(self.zip.namelist())
+#     def __len__(self):
+#         return len(self.files)
+#     def __getitem__(self, idx):
+#         x = self.zip.read(self.files[idx])
+#         # loaded = np.load(BytesIO(x), allow_pickle=True)
+#         x,y = cloudpickle.loads(x)
+#         return x, y
 
-#df = ZipStreamReader('cp_dataset_train_all.zip')
+# #df = ZipStreamReader('cp_dataset_train_all.zip')
 
-df = ZipStreamReader('cp_dataset_train_w.zip')
-it = iter(df)
-x,y = next(it)
+# df = ZipStreamReader('cp_dataset_train_w.zip')
+# it = iter(df)
+# x,y = next(it)
 
-print(len(df))
+# print(len(df))
 
-from data.dataloaders import ProgramEncoder
+# from data.dataloaders import ProgramEncoder
 
 
-prog_enc = ProgramEncoder(15)
-print(prog_enc.decode_pred(y))
+# prog_enc = ProgramEncoder(15)
+# print(prog_enc.decode_pred(y))
 
 

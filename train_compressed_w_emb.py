@@ -33,16 +33,17 @@ args = Namespace(
     program = 'random', #'sort_unique', "hist"#"sort"#"length"
     compression = 2.0,
     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
-    LR = 2e-2, # 5e-2 worked so far but some nans
-    EPOCHS = 7,
+    LR = 1e-3, # 5e-2 worked so far but some nans
+    EPOCHS = 30,
     trn_all = False, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
     add_soft = True, # True, # True, # True, # False, True
-    batch_size = 32,
+    batch_size = 512,
     mult = False, #True, #True,
     sched = 'cosine',
     #mpow = 2,
     factor=0.01,
+    div=20,
 )
 
 
@@ -65,7 +66,7 @@ else:
     vocab_size_range=(5, 8)
     numeric_inputs_possible=True
     max_seq_len = np.random.randint(4, 9)
-
+    CRAFT_TIMEOUT = 2
     def timed_func():
         assembled_model, compressed_assembled_model, actual_ops = None, None, None
         
@@ -74,25 +75,34 @@ else:
         try:
             program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
         except np.core._exceptions._ArrayMemoryError as E:
-            #print("mem alloc err")
+            print("mem alloc err")
             return None
-
         try:
-            assembled_model, compressed_assembled_model = compile_with_compressed(
-                program, vocab, max_seq_len, compression=args.compression)
+            assembled_model, compressed_assembled_model, craft_model, rasp_model = compile_with_compressed(
+                program, vocab, max_seq_len, compression=args.compression,
+                CRAFT_TIMEOUT=CRAFT_TIMEOUT)
         except ValueError as E:
-            #print("val err")
+            print("val err")
             return None
         except KeyError as E:
-            #print("key err")
+            print("key err")
+            return None
+        except TimeoutError:
+            print("craft timeout")
             return None
 
         return assembled_model, compressed_assembled_model, actual_ops, vocab, program
 
 
+
+
     ret = None
-    while ret is None:
-        ret = time_sensitive(timed_func, 5)
+    for i in range(20):
+        ret = time_sensitive(timed_func, 10)
+        if ret is not None:
+            break
+    if ret is None:
+        exit(1)
     assembled_model, compressed_assembled_model, actual_ops, vocab, program = ret
     print(len(actual_ops))
 
@@ -105,7 +115,8 @@ else:
 if args.idty: # init embedding to be noisy identiy?
     compressed_assembled_model.params['compressed_transformer']['w_emb'] = jnp.eye(*compressed_assembled_model.params['compressed_transformer']['w_emb'].shape)
     compressed_assembled_model.params['compressed_transformer']['w_emb'] += jax.random.normal(jax.random.PRNGKey(0), compressed_assembled_model.params['compressed_transformer']['w_emb'].shape) / 10
-
+else:
+    compressed_assembled_model.params['compressed_transformer']['w_emb'] /= args.div
 
 def init_all_params(params):
     rng = jax.random.PRNGKey(0)
@@ -122,6 +133,14 @@ def init_all_params(params):
 
 if args.trn_all:
     compressed_assembled_model.params = init_all_params(compressed_assembled_model.params)
+
+
+for key, val in compressed_assembled_model.params.items():
+    for comp, weight in val.items():
+        if 'compressed_transformer' in key + comp:
+            if comp != 'w_emb':
+                print(key + ' ' + comp)
+                assert (weight == assembled_model.params[key.replace('compressed_transformer', 'transformer')][comp]).all()
 
 # # normal
 # encoded_tokens = assembled_model.encode_input(formatted_input)
@@ -173,57 +192,42 @@ class RandomDataset:
 
             
 
+def make_teacher_call(teacher, teacher_forward):
+    def fun(encoded_tokens):
+        output = teacher_forward(teacher.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
+        target_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
+        # decoded = np.array(teacher.decode_all_outputs(output))
+        target_ids = jnp.argmax(teacher.residual_to_logits(output), axis=-1)
+        return target_outs, target_ids
+    return fun
 
-class TeacherDataset:
-    def __init__(self, dataloader, teacher, teacher_call) -> None:
-        self.dataloader = dataloader
-        self.iter = iter(dataloader)
-        self.teacher = teacher
-        self.teacher_call = jax.jit(teacher_call, device=jax.devices("cpu")[0]) #teacher.forward # jax.jit(teacher.forward)
-        self.params = jax.device_put(self.teacher.params, device=jax.devices("cpu")[0])
-    def __len__(self):
-        return len(self.dataloader)-2
-    def __getitem__(self, idx):
-        with jax.default_device(jax.devices("cpu")[0]):
-            formatted_input, encoded_tokens =  next(self.iter, (None, None))
-            if formatted_input is None:
-                self.iter = iter(self.dataloader)
-                formatted_input, encoded_tokens =  next(self.iter)
-            output = self.teacher_call(self.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
-            target_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
-            decoded = np.array(self.teacher.decode_all_outputs(output))
-            target_ids = jnp.argmax(self.teacher.residual_to_logits(output), axis=-1)
-        return np.array(formatted_input), np.array(encoded_tokens), np.array(target_outs), decoded, np.array(target_ids)
+def make_validation_teacher_call(teacher, teacher_forward):
+    def fun(encoded_tokens):
+        output = jax.jit(teacher_forward)(teacher.params, encoded_tokens) # todo improve performance by calling the teacher on a batch
+        target_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
+        decoded = np.array(teacher.decode_all_outputs(output))
+        target_ids = jnp.argmax(teacher.residual_to_logits(output), axis=-1)
+        return target_outs, target_ids, decoded
+    return fun
 
+train_teacher_call = None
 
 dataset = None
 if args.generator == 'Vocabulary':
-    x_vocab_dataloader = DataLoader(VocabDataset(vocab, max_seq_len, assembled_model.encode_input), batch_size=args.batch_size, collate_fn=VocabDataset.collate_fn, shuffle=True)
-    dataset = TeacherDataset(x_vocab_dataloader, assembled_model, assembled_model.forward)
+    
+    train_dataloader = DataLoader(VocabDataset(vocab, max_seq_len, assembled_model.encode_input), batch_size=args.batch_size, collate_fn=VocabDataset.collate_fn, shuffle=True, num_workers=1, prefetch_factor=2)
+    train_teacher_call = make_teacher_call(assembled_model, assembled_model.forward)
 elif args.generator == 'Random':
-    random_dataloader = DataLoader(RandomDataset(max_seq_len, len(assembled_model.residual_labels)), batch_size=args.batch_size, collate_fn=RandomDataset.collate_fn)
-    dataset = TeacherDataset(random_dataloader, assembled_model, assembled_model.forward_no_emb)
+    train_dataloader = DataLoader(RandomDataset(max_seq_len, len(assembled_model.residual_labels)), batch_size=args.batch_size, collate_fn=RandomDataset.collate_fn, num_workers=1, prefetch_factor=2)
+    train_teacher_call = make_teacher_call(assembled_model, assembled_model.forward_no_emb)
 
-next(iter(dataset)) # required otherwise seg fault in dataloader for some reason
-print("dataset")
-train_dataloader = DataLoader(dataset, batch_size=1, collate_fn=lambda x: x[0], num_workers=1, prefetch_factor=4)#, num_workers=8, prefetch_factor=18, shuffle=True)
-
-
-next(iter(train_dataloader))
-print("train dataloader")
-
-val_dataset = TeacherDataset(DataLoader(VocabDataset(
-                    vocab, max_seq_len, assembled_model.encode_input), batch_size=32, collate_fn=VocabDataset.collate_fn, shuffle=True), 
-                assembled_model, assembled_model.forward)
-next(iter(val_dataset)) # required otherwise seg fault in dataloader for some reason
-print("val dataset")
-validation_dataloader =  DataLoader(val_dataset, collate_fn=lambda x: x[0], num_workers=1, prefetch_factor=2)
+validation_dataloader = train_dataloader
+if args.generator == 'Random':
+    validation_dataloader =  DataLoader(VocabDataset(vocab, max_seq_len, assembled_model.encode_input), batch_size=32, collate_fn=VocabDataset.collate_fn, shuffle=True, num_workers=1, prefetch_factor=2)
+validation_teacher_call = make_validation_teacher_call(assembled_model, assembled_model.forward)
 
 
 
-
-next(iter(val_dataset))
-print("val dataloader")
 
 #%% ==================== Schedulers ==========================================
 
@@ -276,23 +280,6 @@ def create_learning_rate_fn(warmup_epochs, num_epochs, base_learning_rate, steps
 
 
 
-# class CustomSchedule:
-#     def __init__(self, LR) -> None:
-#         self.history = []
-#         self.LR = LR
-#         self.initial_LR = LR
-#     def log(self, loss):
-#         self.history.append(loss)
-#         if len(self.history) >= 20:
-#             history = self.history
-#             # less than 2% change in 2 epochs per epoch
-#             if (abs(history[-1] - history[-2]) + abs(history[-1] - history[-3])) / history[-1] < 0.04 or \
-#                 abs(history[-1] - history[-3]) / history[-1] < 0.04 and history[-1] > history[-2]:
-#                 self.LR = self.LR / 2
-#                 print(f"updated LR: {self.LR}")
-#                 self.history = []
-
-
 LR_fn = None
 if args.sched == 'cosine': # cosine anealing scheduler
     LR_fn = create_learning_rate_fn(1, args.EPOCHS, args.LR, len(train_dataloader))    
@@ -336,7 +323,7 @@ elif args.generator == 'Random':
 
 # Initialize training state
 state = train_state.TrainState.create(
-    apply_fn=jax.jit(forward_fn), params=compressed_assembled_model.params, tx=optimizer)
+    apply_fn=forward_fn, params=compressed_assembled_model.params, tx=optimizer)
 
 
 
@@ -367,7 +354,9 @@ def calculate_loss(params, batch):
     
     return loss
 
-def train_step(state, batch):
+def train_step(state, encoded_tokens):
+    target_outs, target_ids =  train_teacher_call(encoded_tokens) 
+    batch = (encoded_tokens, target_outs, target_ids)
     loss_fn = lambda params: calculate_loss(params, batch)
     loss, grads = jax.value_and_grad(loss_fn)(state.params)
     state = state.apply_gradients(grads=grads)
@@ -392,10 +381,10 @@ for epoch in range(args.EPOCHS):
         total_loss = 0.0
         for idx, batch in enumerate(train_dataloader):
 
-            (formatted_input, encoded_tokens, target_outs, decoded, target_ids) = batch 
+            (formatted_input, encoded_tokens) = batch 
 
 
-            state, loss = train_step(state, (encoded_tokens, target_outs, target_ids))
+            state, loss = train_step(state, encoded_tokens)
             
             
             tepoch.set_postfix({'Batch': idx, 'Train Loss': loss})
@@ -432,7 +421,8 @@ for epoch in range(args.EPOCHS):
         avg_acc = 0.0
         for idx in range(VAL_SAMPLES):        
             batch = next(it)
-            (formatted_input, encoded_tokens, target_outs, decoded, target_ids) = batch
+            (formatted_input, encoded_tokens) = batch
+            target_outs, target_ids, decoded = validation_teacher_call(encoded_tokens)
             output = jax.jit(compressed_assembled_model.forward)(state.params, encoded_tokens)
             pred_decoded = compressed_assembled_model.decode_all_outputs(output)
             acc = np.equal(pred_decoded , decoded).mean()
@@ -542,24 +532,4 @@ zip.close()
 
 #%%
 
-
-# with open('0000042134', 'rb') as pickle_file:
-#     content = load(pickle_file)
-
-#%%
-
-import multiprocessing_logging
-import logging
-
-logging.basicConfig(filename='logs.csv', filemode='a', format='%(levelname)s,%(message)s', level=logging.DEBUG)
-
-#multiprocessing_logging.install_mp_handler()
-
-def mlog(cat, msg):
-    logging.error(f"{process_args.run_id}, {cat}, {msg}")
-
-mlog('status', 'start')
-mlog('status', 'end')
-
-mlog('acc', '0.789745')
 

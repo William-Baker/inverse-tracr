@@ -2,27 +2,25 @@
 
 import subprocess
 from threading import Thread
-import wandb
+from torch.utils.tensorboard import SummaryWriter
 from utils.time_sensitive import time_sensitive
 import os
 
-# start a new wandb run to track this script
-wandb.init(
-    # set the wandb project where this run will be logged
-    project="pool compressed Tracr",
-)
+
+
 
 def run_experiments(id):
+    logger = SummaryWriter(log_dir=f"pool compressed Tracr/{id}")
     count = 0
     while True:
         try:
             print(f'proc{id}-{count}')
-            wandb.log({f'proc{id}': count})
+            logger.add_scalar('proc', count, count)
             try:
                 ret = subprocess.call('python train_compressed_w_emb_multiproc.py', shell=True, timeout=30*60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except subprocess.TimeoutExpired as E:
                 print(f'proc {id} {count} did not terminate in time')
-                wandb.log({f'proc{id}': -1})            
+                logger.add_scalar('proc', -1, count)      
 
             count += 1
         except Exception as E:
@@ -33,7 +31,7 @@ def run_experiments(id):
 if __name__ == '__main__':
     processes = int(os.cpu_count() // 1.25)
     #processes = 1
-    wandb.log({'Processes': processes})
+    print({'Processes': processes})
     threads = [Thread(target = run_experiments, args = (idx, )) for idx in range(processes)]
     [thread.start() for thread in threads]
 
