@@ -640,8 +640,7 @@ for i in range(args.batch_size):
     #print(src_dataset.decode_pred(logits, i))
 
 
-    fig.show()
-    fig.to_html('test{i}.html')
+    fig.write_html(f'test{i}.html')
 
     print(f"{acc*100:.0f}%")
 
