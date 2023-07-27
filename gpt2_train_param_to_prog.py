@@ -28,6 +28,7 @@
 # export PATH=$PATH:/home/wb326/miniconda3/envs/venv/lib
 # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/wb326/miniconda3/envs/venv/lib
 
+# ps -a | grep python
 
 
 import os
@@ -59,7 +60,7 @@ import optax
 from flax.training import train_state, checkpoints
 from tqdm import tqdm
 import numpy as np
-import torch
+import torch, flax
 torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from data.parameter_program_dataloader import TorchParameterProgramDataset
@@ -96,7 +97,7 @@ args = Namespace(
     model = 'GPT2',
     config = 'SMALL', # 'LARGE'
     trail_name='testing',
-    task='Native' # 'Stock', 'Compressed', 'Natural'
+    task='Compressed' # 'Stock', 'Compressed', 'Natural'
 )
 
 CHECKPOINT_PATH = ".logs/"
@@ -140,7 +141,7 @@ class TrainerModule:
         self.logger = SummaryWriter(log_dir=self.log_dir)
         self.create_functions()
         self.init_model(exmp_batch)
-        
+        self.src_dataset = src_dataset
 
     
     def init_model(self, exmp_batch):
@@ -168,8 +169,8 @@ class TrainerModule:
         self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=params, tx=optimizer)
     
     def raw_apply(self, encoded_model, encoded_ops):
-        post_encoded_program = TorchParameterProgramDataset.tokens_to_onehot(encoded_ops)
-        x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.dataset.prog_len, x=np.array(encoded_model), y=post_encoded_program)
+        post_encoded_program = self.src_dataset.tokens_to_onehot(encoded_ops)
+        x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.dataset.prog_len, x=np.array(encoded_model), y=post_encoded_program, TIMESTEPS=TIMESTEPS, ARCH_LABELS=ARCH)
         x,y, loss_mask, attention_mask, pos_ids = collate_fn( data=[[x, y, loss_mask, attention_mask]])
         logits, fig = self.apply(x, attention_mask=attention_mask, pos_id=pos_ids, labels=y)
         return logits, fig
@@ -397,8 +398,8 @@ class TrainerModule:
                     jax.lib.xla_bridge.get_backend().defragment()
                     if isinstance(E, KeyboardInterrupt):
                         raise(E)
-            
-            self.eval_programs(step=epoch)
+            if args.task=='Stock':
+                self.eval_programs(step=epoch)
             self.logger.add_scalar('train/loss', loss_sum / count, global_step=epoch)
             self.logger.add_scalar('train/accuracy', acc_sum / count, global_step=epoch)
             trainer.logger.flush()
@@ -432,8 +433,11 @@ class TrainerModule:
 
     def save_model(self, step=0):
         # Save current model at certain training iteration
-        checkpoints.save_checkpoint(ckpt_dir=self.log_dir, target=self.state.params, step=step)
-        dump(self.state.opt_state, open(os.path.join(self.log_dir, "optimiser_state.pkl"), "wb"))    
+        try:
+            checkpoints.save_checkpoint(ckpt_dir=self.log_dir, target=self.state.params, step=step)
+            dump(self.state.opt_state, open(os.path.join(self.log_dir, "optimiser_state.pkl"), "wb"))    
+        except flax.errors.InvalidCheckpointError:
+            print(f"failed to save the checkpoint, an newer checkpoint exists than step {step}")
 
     def load_model(self, log_dir=None, load_state=True):
         log_dir = self.log_dir if log_dir is None else log_dir

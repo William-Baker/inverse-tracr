@@ -1,5 +1,5 @@
 #%%
-from data.dataloader_streams import StreamReader
+
 import numpy as np
 
 
@@ -67,7 +67,8 @@ def get_onehot_timestep_encoder(TIMESTEPS: Sequence[str]):
 
 def encode_sample(x, y, max_prog_len: int, TIMESTEPS: Sequence[str], ARCH_LABELS: Sequence[str]):
     ONEHOT_TIMESTEP_ENCODER = get_onehot_timestep_encoder(TIMESTEPS)
-    x = x.reshape(-1)
+    if type(x) == np.array:
+        x = x.reshape(-1)
     layer_names = [list(i.keys())[0] for i in x]
     architecture = encode_architecture(layer_names, max_prog_len, ARCH_LABELS=ARCH_LABELS)
     block_names, blocks, terminal_block_flags = block_params(x)
@@ -167,6 +168,7 @@ def test_flat_match(src, B):
 #%%
 
 if __name__ == "__main__":
+    from data.dataloader_streams import StreamReader
     pth = '.data/iTracr_dataset/'
     dataset = StreamReader(pth)
 

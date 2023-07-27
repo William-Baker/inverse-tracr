@@ -16,6 +16,7 @@ import jax.numpy as jnp
 import numpy as np
 from tracr.craft import vectorspace_fns
 from tracr.transformer import model
+from utils.compiled_transformer_model import CompiledTransformerModel
 from tracr.transformer import encoder
 # , AssembledTransformerModel
 from tracr.compiler.assemble import _get_model_config_and_module_names, _make_embedding_modules
@@ -167,7 +168,7 @@ def assemble_craft_model(
             tokens_space=tokens_space,
             indices_space=indices_space,
             output_space=output_space)
-        return model.CompiledTransformerModel(
+        return CompiledTransformerModel(
             transformer=transformer,
             token_embed=embed_modules.token_embed,
             position_embed=embed_modules.pos_embed,
@@ -185,7 +186,7 @@ def assemble_craft_model(
             tokens_space=tokens_space,
             indices_space=indices_space,
             output_space=output_space)
-        return model.CompiledTransformerModel(
+        return CompiledTransformerModel(
             transformer=transformer,
             token_embed=embed_modules.token_embed,
             position_embed=embed_modules.pos_embed,

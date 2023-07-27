@@ -54,7 +54,7 @@ class StreamReader:
         loaded = np.load(self.dir + self.files[idx], allow_pickle=True)
         return loaded['x'].squeeze(), loaded['y'].squeeze()
 
-import scipy
+
 import pickle
 
 class SparseConverter:
@@ -111,26 +111,10 @@ class ZipPickleStreamReader(ZipStreamReader):
     def __getitem__(self, idx):
         x = self.zip.read(self.files[idx])
         x,y = cloudpickle.loads(x)
-        return x, y
+        return np.array(x), y
 
 
 
-
-
-import os, subprocess, sys
-mode = 'params' # programs
-shuffled = True
-if __name__ == "__main__":
-    # from os import chdir
-    # chdir('../')
-    if mode == 'programs':
-        from data.program_dataloader import TorchProgramDataset
-        dataset = TorchProgramDataset(100000, shuffled_inputs=shuffled)
-        pth = '.data/p2p_dataset/' if shuffled else '.data/p2p_dataset_unshuffled/'
-        sw = StreamWriter(pth, dataset)
-        sw.write_samples(num_threads=20)
-    else:
-        pass
 
             
         
