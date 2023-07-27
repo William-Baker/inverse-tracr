@@ -512,19 +512,7 @@ encoded_params = encode_jax_params(compressed)
 
 #%%
 
-from zipfile import ZipFile
-from cloudpickle import dumps
-sample = (encoded_params, tokenised_program)
 
-target_db_path = 'cp_dataset'
-if args.trn_all == True:
-    target_db_path += '_train_all'
-else:
-    target_db_path += '_train_w'
-
-zip = ZipFile(file=target_db_path+'.zip', mode='a')
-zip.writestr( process_args.run_id + '.pkl', dumps(sample))
-zip.close()
 
 #%%
 

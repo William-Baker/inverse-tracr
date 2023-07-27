@@ -84,15 +84,37 @@ from data.parallelzipfilebetter import ParallelZipFile as ZipFile
 #from zipfile import ZipFile
 from io import BytesIO
 class ZipStreamReader:
-    def __init__(self, dir:str) -> None:
+    def __init__(self, dir:str, first=None, last= None) -> None:
+        """
+        first - float - percent of samples from front to keep
+        last - float - percent of samples from end to keep
+        """
         self.zip = ZipFile(file=dir, mode='r')
         self.files = sorted(self.zip.namelist()[1:])
+        if first is not None:
+            cutoff = int(len(self.files) * first)
+            self.files = self.files[:cutoff]
+        elif last is not None:
+            cutoff = 1 - int(len(self.files) * last)
+            self.files = self.files[cutoff:]
     def __len__(self):
         return len(self.files)
     def __getitem__(self, idx):
         x = self.zip.read(self.files[idx])
         loaded = np.load(BytesIO(x), allow_pickle=True)
         return loaded['x'].squeeze(), loaded['y'].squeeze()
+
+
+import cloudpickle
+
+class ZipPickleStreamReader(ZipStreamReader):
+    def __getitem__(self, idx):
+        x = self.zip.read(self.files[idx])
+        x,y = cloudpickle.loads(x)
+        return x, y
+
+
+
 
 
 import os, subprocess, sys

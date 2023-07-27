@@ -68,7 +68,8 @@ from utils.jax_helpers import JaxMemUsage
 JaxMemUsage.launch(interval=0.01)
 from dill import dump, load
 from jaxlib.xla_extension import XlaRuntimeError
-from data.dataset import example_program_dataset, encode_rasp_program
+from data.dataset import example_program_dataset
+from data.encoded_dataloaders import encode_rasp_program
 
 from models import GPT2, GPT2Config
 
@@ -92,10 +93,27 @@ args = Namespace(
     LEARNING_RATE=1e-6,
     input_dropout_prob = 0.05,
     max_timesteps = 40,
-    model = 'LARGE', # 'LARGE'
+    model = 'GPT2',
+    config = 'SMALL', # 'LARGE'
+    trail_name='testing',
+    task='Native' # 'Stock', 'Compressed', 'Natural'
 )
 
 CHECKPOINT_PATH = ".logs/"
+
+dataset_path = None
+if args.task == 'Native':
+    from data.dataloader_streams import ZipStreamReader as StoreReader
+    from data.parameter_encoder import CRAFT_TIMESTEPS as TIMESTEPS
+    from data.parameter_encoder import CRAFT_ARCH as ARCH
+    dataset_path = '.data/iTracr_dataset_v2_train.zip'
+elif args.task == 'Compressed':
+    from data.dataloader_streams import ZipPickleStreamReader as StoreReader
+    from data.parameter_encoder import JAX_TIMESTEPS as TIMESTEPS
+    from data.parameter_encoder import JAX_ARCH as ARCH
+    dataset_path = 'cp_dataset_train_w.zip'
+
+
 
 class TrainerModule:
 
@@ -115,7 +133,7 @@ class TrainerModule:
         self.lr = lr
         self.warmup = warmup
         self.seed = seed
-        self.seg_sizes=src_dataset.segment_sizes
+        self.seg_sizes=src_dataset.get_segment_sizes()
         self.dataset = dataset
         self.model = model
         self.log_dir = os.path.join(CHECKPOINT_PATH, self.model_name)
@@ -440,11 +458,11 @@ class TrainerModule:
 
 
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
-from data.dataloader_streams import ZipStreamReader
 
-class WrappedDataset(ZipStreamReader):
-    def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int) -> None:
-        super().__init__(dir)
+
+class WrappedDataset(StoreReader):
+    def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int, first=None, last=None) -> None:
+        super().__init__(dir, first, last)
         self.max_prog_len = max_prog_len
         self.max_timesteps = max_time_step_reduction_sample
     
@@ -455,7 +473,7 @@ class WrappedDataset(ZipStreamReader):
         while x_shape > self.max_timesteps:
             circular_index = (idx + offset) % self.__len__()
             x,y = super().__getitem__(circular_index)
-            x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.max_prog_len, x=x, y=y)
+            x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.max_prog_len, x=x, y=y, TIMESTEPS=TIMESTEPS, ARCH_LABELS=ARCH)
             x_shape = x.shape[0]
             offset += 1
         return x,y,loss_mask,attention_mask
@@ -485,46 +503,50 @@ def make_collate_fn(PROG_LEN):
     # |  ...  |
 
     from torch.nn.utils.rnn import pad_sequence
-    from data.parameter_encoder import ONEHOT_TIMESTEP_ENCODER
-    
+    from data.parameter_encoder import get_onehot_timestep_encoder
+    ONEHOT_TIMESTEP_ENCODER = get_onehot_timestep_encoder(TIMESTEPS)
 
 
     INPUT_PROGRAM_FLAGS = torch.tensor(np.stack([ONEHOT_TIMESTEP_ENCODER[token] for token in ['PROGRAM_START'] + (['PAD'] * PROG_LEN) + ['PROGRAM_END']]))
 
 
     def collate_fn(data):
-            inputs = [torch.tensor(d[0], device='cpu') for d in data]
-            targets = [torch.tensor(d[1], device='cpu') for d in data]
-            loss_masks = [torch.tensor(d[2], device='cpu') for d in data]
-            attention_masks = [torch.tensor(d[3], device='cpu') for d in data]
-            inputs = pad_sequence(inputs, batch_first=True)
-            attention_masks = pad_sequence(attention_masks, batch_first=True)
-            
+        inputs = [torch.tensor(d[0], device='cpu') for d in data]
+        targets = [torch.tensor(d[1], device='cpu') for d in data]
+        loss_masks = [torch.tensor(d[2], device='cpu') for d in data]
+        attention_masks = [torch.tensor(d[3], device='cpu') for d in data]
+        inputs = pad_sequence(inputs, batch_first=True)
+        attention_masks = pad_sequence(attention_masks, batch_first=True)
+        
 
-            targets = torch.stack(targets)
-            loss_masks = torch.stack(loss_masks)
+        targets = torch.stack(targets)
+        loss_masks = torch.stack(loss_masks)
 
-            bs, parameter_timesteps, parameter_features = inputs.shape
-            # Grow width to feature size
-            program_flags =  torch.nn.ConstantPad2d((0, parameter_features - INPUT_PROGRAM_FLAGS.shape[1], 0, 0), 0)(INPUT_PROGRAM_FLAGS)
-            program_flags = program_flags.unsqueeze(0).repeat(bs, 1, 1) # repeat across batches
+        bs, parameter_timesteps, parameter_features = inputs.shape
+        # Grow width to feature size
+        program_flags =  torch.nn.ConstantPad2d((0, parameter_features - INPUT_PROGRAM_FLAGS.shape[1], 0, 0), 0)(INPUT_PROGRAM_FLAGS)
+        program_flags = program_flags.unsqueeze(0).repeat(bs, 1, 1) # repeat across batches
 
-            inputs = torch.concatenate([inputs, program_flags], axis=1)
-            attention_masks = torch.concatenate([attention_masks, torch.ones(program_flags.shape[0:2])], axis=1)
-            pos_ids = np.expand_dims(np.arange(1, inputs.shape[1]+1), axis=0).repeat(bs, 1)
+        inputs = torch.concatenate([inputs, program_flags], axis=1)
+        attention_masks = torch.concatenate([attention_masks, torch.ones(program_flags.shape[0:2])], axis=1)
+        pos_ids = np.expand_dims(np.arange(1, inputs.shape[1]+1), axis=0).repeat(bs, 1)
 
-            padding = torch.zeros(targets.shape[0], parameter_timesteps, targets.shape[2])
-            targets = torch.concatenate((padding, targets), axis=1)
-            loss_masks = torch.concatenate((padding[:, :, 0], loss_masks), axis=1)
-            
+        padding = torch.zeros(targets.shape[0], parameter_timesteps, targets.shape[2])
+        targets = torch.concatenate((padding, targets), axis=1)
+        loss_masks = torch.concatenate((padding[:, :, 0], loss_masks), axis=1)
+        
 
-            return np.array(inputs), np.array(targets).astype(int), np.array(loss_masks), np.array(attention_masks), pos_ids
+        return np.array(inputs), np.array(targets).astype(int), np.array(loss_masks), np.array(attention_masks), pos_ids
     return collate_fn
 
 
-dataset = WrappedDataset('.data/iTracr_dataset_v2_train.zip', args.PROG_LEN, args.max_timesteps)
-test_dataset = WrappedDataset('.data/iTracr_dataset_v2_test.zip', args.PROG_LEN, args.max_timesteps)
+dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.9)
+test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.1)
 
+next(iter(dataset))
+next(iter(test_dataset))
+
+#%%
 
 print(f"Dataset contains: {len(dataset)} samples" )
 
@@ -537,6 +559,10 @@ test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_f
 num_train_iters = len(train_dataloader) * args.max_epochs
 
 
+next(iter(train_dataloader))
+next(iter(test_dataloader))
+
+
 
 def testing_loaders():
     it = iter(test_dataloader)
@@ -546,7 +572,7 @@ def testing_loaders():
     it = iter(train_dataloader)
     x,y,_,_, _ = next(it)
 
-    # print(src_dataset.decode_pred(y, 0))
+    #print(src_dataset.decode_pred(y, 0))
 
 
 testing_loaders()
@@ -556,44 +582,35 @@ testing_loaders()
 
 
 
-from data.parameter_encoder import ONEHOT_TIMESTEP_ENCODER
-def decode_timesteps(x, batch=0):
-    TIMESTEP_TOKEN_SIZE = list(ONEHOT_TIMESTEP_ENCODER.values())[0].shape[0]
-    this_batch = x[batch, :, :]
-    s = []
-    terminals = []
-    for timestep in range(this_batch.shape[0]):
-        index = np.array(this_batch[timestep, : TIMESTEP_TOKEN_SIZE]).argmax()
-        #print(list(ONEHOT_TIMESTEP_ENCODER.keys())[index])
-        s += [list(ONEHOT_TIMESTEP_ENCODER.keys())[index]]
-        terminals += [bool(np.array(this_batch[timestep, TIMESTEP_TOKEN_SIZE]).item())]
-    return s, terminals
+from data.parameter_encoder import decode_timesteps
+
 
 test_it = iter(test_dataloader)
 def decode_test_sample():
     sample = next(test_it)
-    decode_timesteps(sample[0], batch=1)
-    #print(src_dataset.decode_pred(sample[1], 0))
+    print(src_dataset.decode_pred(sample[1], 0))
+    print(decode_timesteps(sample[0], TIMESTEPS=TIMESTEPS, batch=1))
 decode_test_sample()
 
 
 
-x,y, loss_mask, attention_mask = next(iter(dataset))
+# x,y, loss_mask, attention_mask = next(iter(dataset))
 
-
-if args,model == 'GPT2':
+#%%
+model, model_config = None, None
+if args.model == 'GPT2':
     import json
-    with open(f'utils/gpt2_configs/gpt2_{args.model.lower()}.json') as f: # GPT2 Large - 774M
-    config_json = json.load(f)
+    with open(f'utils/gpt2_configs/gpt2_{args.config.lower()}.json') as f: # GPT2 Large - 774M
+        config_json = json.load(f)
     model_config = GPT2Config(**config_json)
 
 
 
 
 
-    model = GPT2(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
+    model = GPT2(num_classes=sum(src_dataset.get_segment_sizes()), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
-if args.model == 'GPTJ':
+elif args.model == 'GPTJ':
     model_config = GPTJConfig(
             vocab_size=None,
             n_positions=1024,
@@ -618,10 +635,10 @@ if args.model == 'GPTJ':
     #
 
 
-    model = GPTJ(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob) # if you forget input dense must match gpt hidden
+    model = GPTJ(num_classes=sum(src_dataset.get_segment_sizes()), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob) # if you forget input dense must match gpt hidden
 
 
-if args.model == 'GPTNeo':
+elif args.model == 'GPTNeo':
     
     from transformers import GPTJConfig
 
@@ -633,8 +650,8 @@ if args.model == 'GPTNeo':
 
     import json
 
-    with open('utils/gptneo_configs/pythia_1.3B.json') as f:
-    config_json = json.load(f)
+    with open(f'utils/gptneo_configs/{args.config}.json') as f:
+        config_json = json.load(f)
 
 
     model_config = GPTJConfig(**config_json)
@@ -644,10 +661,10 @@ if args.model == 'GPTNeo':
     model_config.n_layer = model_config.num_layers
 
 
-    model = GPTNeo(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
+    model = GPTNeo(num_classes=sum(src_dataset.get_segment_sizes()), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
 
-trainer = TrainerModule(model, f'PARAM_NumVar_GPT2__{args.model} cont test LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
+trainer = TrainerModule(model, f'{args.trail_name}{args.model} LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
@@ -657,7 +674,7 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 #%%
 
 # trainer.eval_programs()
-trainer.load_model(log_dir=f"PARAM_NumVar_GPT2_{args.model} cont LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}")
+# trainer.load_model(log_dir=f"XXX{args.model} cont LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}")
 
 #%%
 

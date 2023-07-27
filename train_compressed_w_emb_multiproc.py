@@ -16,12 +16,12 @@ from utils.time_sensitive import time_sensitive
 from shutil import move as move_dir
 from utils.export_compressed_params import export_params
 jax.config.update('jax_platform_name', 'cpu')
-jax.config.update("jax_debug_nans", True)
+#jax.config.update("jax_debug_nans", True)
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
-
+# 
 process_args = Namespace(
     run_id =   str(datetime.now().strftime("%m-%d %H.%M.%S.%f"))
 )
@@ -34,7 +34,7 @@ args = Namespace(
     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
     LR = 1e-2, # 4e-3, # 5e-2 worked so far but some nans
     EPOCHS = 30,
-    trn_all = False, # True,
+    trn_all = True, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
     add_soft = True, # True, # True, # True, # False, True
     batch_size = 512,
@@ -146,13 +146,13 @@ try:
     if args.trn_all:
         compressed_assembled_model.params = init_all_params(compressed_assembled_model.params)
 
-
-
-    for key, val in compressed_assembled_model.params.items():
-        for comp, weight in val.items():
-            if 'compressed_transformer' in key + comp:
-                if comp != 'w_emb':
-                    assert (weight == assembled_model.params[key.replace('compressed_transformer', 'transformer')][comp]).all()
+    else:
+        # we should only be initialising w_emb if we're not training all
+        for key, val in compressed_assembled_model.params.items():
+            for comp, weight in val.items():
+                if 'compressed_transformer' in key + comp:
+                    if comp != 'w_emb':
+                        assert (weight == assembled_model.params[key.replace('compressed_transformer', 'transformer')][comp]).all()
 
 
 
@@ -476,7 +476,7 @@ except Exception as E:
         f.write(str(tb))
 
 
-
+# #%%
 # from data.parallelzipfilebetter import ParallelZipFile as ZipFile
 # import cloudpickle
 

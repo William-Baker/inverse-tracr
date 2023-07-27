@@ -28,9 +28,9 @@ def encode_jax_params(params):
     
     model_params = []
     for key, val in collected_by_block.items():
-        if 'attn' in layer_type:
+        if 'attn' in key:
             model_params.append({'MHA': val})
-        elif 'mlp' in layer_type:
+        elif 'mlp' in key:
             model_params.append({'MLP': val})
         else:
             raise NotImplementedError()
@@ -68,10 +68,10 @@ def export_params(params, max_ops, actual_ops, trn_all, run_id):
 
 def transfer_to_archive(source_dir: str):
     dest_dir = source_dir + '.zip'
-    from zipfile import ZipFile
+    from zipfile import ZipFile, ZIP_DEFLATED
     import os
     source_files = os.listdir(source_dir)
-    zip = ZipFile(dest_dir, mode='a')
+    zip = ZipFile(dest_dir, mode='a', compression=ZIP_DEFLATED, compresslevel=9)
     dest_files = [x.filename for x in zip.filelist]
     transfer_files = set(source_files) - set(dest_files)
     for file in transfer_files:

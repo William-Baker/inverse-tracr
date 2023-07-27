@@ -15,27 +15,29 @@ import numpy as np
 # Architecture concatenated onehot encoded layer types e.g. Head, MLP, head = [100110<PAD>]
 #  (padded upto the program length x2)
 
-TIMESTEP_ENCODER = dict(zip(['PAD', 'w_qk', 'w_ov', 'fst', 'snd', 'PROGRAM_START', 'PROGRAM_END'], range(7)))
 PARAMETER_BLOCK_SZ = 512
-ARCHITECTURE_ENCODER = {'PAD': 0, 'HEAD': 1, 'MLP': 2}
 
-TIMESTEP_DECODER = dict(zip(TIMESTEP_ENCODER.values(), TIMESTEP_ENCODER.keys()))
-ARCHITECTURE_DECODER = dict(zip(ARCHITECTURE_ENCODER.values(), ARCHITECTURE_ENCODER.keys()))
+CRAFT_TIMESTEPS = ['PAD', 'w_qk', 'w_ov', 'fst', 'snd', 'PROGRAM_START', 'PROGRAM_END']
+JAX_TIMESTEPS = ['PAD', 'key', 'value', 'query', 'linear', 'linear_1', 'linear_2', 'PROGRAM_START', 'PROGRAM_END']
+
+CRAFT_ARCH = ['PAD', 'HEAD', 'MLP']
+JAX_ARCH = ['PAD', 'MHA', 'MLP']
 
 from typing import Sequence
-def encode_architecture(layer_types: Sequence[str], max_prog_length: int):
+def encode_architecture(layer_types: Sequence[str], max_prog_length: int, ARCH_LABELS: Sequence[str]):
+    ARCHITECTURE_ENCODER = dict(zip(ARCH_LABELS, range(len(ARCH_LABELS))))
     encoding = np.zeros((max_prog_length*3, len(ARCHITECTURE_ENCODER)))
     for layer_no, layer_name in enumerate(layer_types):
         encoding[layer_no, ARCHITECTURE_ENCODER[layer_name]] = 1
     return encoding.reshape(-1)
 
-def decoder_architecture(encoding: np.ndarray):
+def decoder_architecture(encoding: np.ndarray, ARCH_LABELS: Sequence[str]):
+    ARCHITECTURE_DECODER = dict(zip(range(len(ARCH_LABELS)), ARCH_LABELS))
     encoding = encoding.reshape(-1, len(ARCHITECTURE_DECODER))
     layer_types = [ARCHITECTURE_DECODER[idx] for idx in encoding.argmax(axis=1) if idx != 0]
     return layer_types
 
-ONEHOT_TIMESTEP_ENCODER = dict(zip(TIMESTEP_ENCODER.keys(), list(np.identity(len(TIMESTEP_ENCODER)))))
-    
+
 
 def block_params(input_sequence: np.ndarray):
     # dict of dict with values being the parameters
@@ -59,13 +61,15 @@ def block_params(input_sequence: np.ndarray):
                     terminal_block_flags.append(True if end >= flat_params.shape[0] else False)
     return (block_names, blocks, terminal_block_flags)
 
+def get_onehot_timestep_encoder(TIMESTEPS: Sequence[str]):
+    return dict(zip(TIMESTEPS, list(np.identity(len(TIMESTEPS)))))
 
 
-
-def encode_sample(x, y, max_prog_len: int):
+def encode_sample(x, y, max_prog_len: int, TIMESTEPS: Sequence[str], ARCH_LABELS: Sequence[str]):
+    ONEHOT_TIMESTEP_ENCODER = get_onehot_timestep_encoder(TIMESTEPS)
     x = x.reshape(-1)
     layer_names = [list(i.keys())[0] for i in x]
-    architecture = encode_architecture(layer_names, max_prog_len)
+    architecture = encode_architecture(layer_names, max_prog_len, ARCH_LABELS=ARCH_LABELS)
     block_names, blocks, terminal_block_flags = block_params(x)
     timesteps = []
     for block_name, block, terminal_block_flag in zip(block_names, blocks, terminal_block_flags):
@@ -76,11 +80,12 @@ def encode_sample(x, y, max_prog_len: int):
     return enc_x, y
 
 
-def decode_sample(x, max_prog_len=None, PARAMETER_BLOCK_SZ=None):
+def decode_sample(x, TIMESTEPS: Sequence[str], max_prog_len=None, PARAMETER_BLOCK_SZ=None):
+    TIMESTEP_DECODER = dict(zip(range(len(TIMESTEPS)), TIMESTEPS))
     if max_prog_len:
-        block_type, terminal, block, architecture = np.argmax(x[:, :len(TIMESTEP_ENCODER)], axis=1), x[:, len(TIMESTEP_ENCODER)], x[:, len(TIMESTEP_ENCODER)+1: -max_prog_len], x[:, -max_prog_len:]
+        block_type, terminal, block, architecture = np.argmax(x[:, :len(TIMESTEPS)], axis=1), x[:, len(TIMESTEPS)], x[:, len(TIMESTEPS)+1: -max_prog_len], x[:, -max_prog_len:]
     else:
-        block_type, terminal, block, architecture = np.argmax(x[:, :len(TIMESTEP_ENCODER)], axis=1), x[:, len(TIMESTEP_ENCODER)], x[:, len(TIMESTEP_ENCODER)+1: len(TIMESTEP_ENCODER)+1+PARAMETER_BLOCK_SZ], x[:, len(TIMESTEP_ENCODER)+1+PARAMETER_BLOCK_SZ:]
+        block_type, terminal, block, architecture = np.argmax(x[:, :len(TIMESTEPS)], axis=1), x[:, len(TIMESTEPS)], x[:, len(TIMESTEPS)+1: len(TIMESTEPS)+1+PARAMETER_BLOCK_SZ], x[:, len(TIMESTEPS)+1+PARAMETER_BLOCK_SZ:]
     
     NUM_BLOCKS = block_type.shape[0]
 
@@ -102,7 +107,18 @@ def decode_sample(x, max_prog_len=None, PARAMETER_BLOCK_SZ=None):
         model.append({layer: d})
     return model
 
-
+def decode_timesteps(x, TIMESTEPS: Sequence[str], batch=0):
+    ONEHOT_TIMESTEP_ENCODER = get_onehot_timestep_encoder(TIMESTEPS)
+    TIMESTEP_TOKEN_SIZE = list(ONEHOT_TIMESTEP_ENCODER.values())[0].shape[0]
+    this_batch = x[batch, :, :]
+    s = []
+    terminals = []
+    for timestep in range(this_batch.shape[0]):
+        index = np.array(this_batch[timestep, : TIMESTEP_TOKEN_SIZE]).argmax()
+        #print(list(ONEHOT_TIMESTEP_ENCODER.keys())[index])
+        s += [list(ONEHOT_TIMESTEP_ENCODER.keys())[index]]
+        terminals += [bool(np.array(this_batch[timestep, TIMESTEP_TOKEN_SIZE]).item())]
+    return s, terminals
 
 def test_flat_match(src, B):
     for a, b in zip(src, B):

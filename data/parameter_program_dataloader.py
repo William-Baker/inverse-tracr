@@ -12,7 +12,7 @@ from data.parameter_encoder import encode_sample
 START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'
 
-from data.dataset import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
+from data.encoded_dataloaders import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
 from data.dataloaders import ProgramEncoder
 from data.program_dataloader import TorchProgramDataset
 class TorchParameterProgramDataset(TorchProgramDataset):
@@ -76,7 +76,7 @@ class TorchParameterProgramDataset(TorchProgramDataset):
         y = self.prog_enc.tokenise_program(y)
         return x,y
 
-    def post_process_step(max_prog_len, x, y):
+    def post_process_step(max_prog_len, x, y, TIMESTEPS, ARCH_LABELS):
         sample_prog_length = y.shape[0]
         ammount_to_pad = max_prog_len + 2 - y.shape[0]
         padding = np.zeros((ammount_to_pad, y.shape[1]))
@@ -86,7 +86,7 @@ class TorchParameterProgramDataset(TorchProgramDataset):
         loss_mask = np.ones((sample_prog_length))#, y.shape[1]))
         loss_mask = np.concatenate((loss_mask,padding[:, 0]), axis=0)
 
-        enc_x, y = encode_sample(x, y, max_prog_len=max_prog_len)
+        enc_x, y = encode_sample(x, y, max_prog_len=max_prog_len, TIMESTEPS=TIMESTEPS, ARCH_LABELS=ARCH_LABELS)
         attention_mask = np.ones(enc_x.shape[0])
 
         return enc_x,y,loss_mask, attention_mask
@@ -94,7 +94,8 @@ class TorchParameterProgramDataset(TorchProgramDataset):
     def tokens_to_onehot(self, encoded):
         return self.prog_enc.tokens_to_onehot(encoded)
     
-   
+    def get_segment_sizes(self):
+        return self.prog_enc.segment_sizes
 
 
 

@@ -36,6 +36,7 @@ if __name__ == '__main__':
     threads = [Thread(target = run_experiments, args = (idx, )) for idx in range(processes)]
     [thread.start() for thread in threads]
     while True:
+        print("Archiving samples...")
         try:
             transfer_to_archive(source_dir = 'cp_dataset_train_all')
         except:
