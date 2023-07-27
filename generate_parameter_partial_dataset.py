@@ -1,8 +1,7 @@
-#%%
-import argparse
-import sys
 
-from data.dataloader_streams import StreamReader, StreamWriter
+import argparse
+
+from data.dataloader_streams import StreamWriter
 from data.parameter_program_dataloader import TorchParameterProgramDataset
 
 
@@ -31,4 +30,3 @@ dataset = TorchParameterProgramDataset(15, no_samples = args.samples, generator_
 pth = '.data/iTracr_dataset_v2_test/'
 sw = StreamWriter(pth, dataset, id_N=(args.id_number, args.proc_num), start_offset=args.offset)
 sw.write_samples(num_threads=0)
-# %%

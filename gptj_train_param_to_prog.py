@@ -95,7 +95,7 @@ class TrainerModule:
         self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=params, tx=optimizer)
     
     def raw_apply(self, encoded_model, encoded_ops):
-        post_encoded_program = TorchParameterProgramDataset.encode_program(encoded_ops, src_dataset.op_encoder, src_dataset.var_encoder)
+        post_encoded_program =  TorchParameterProgramDataset.tokens_to_onehot(encoded_ops)
         x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.dataset.prog_len, x=np.array(encoded_model), y=post_encoded_program)
         pos_ids = np.arange(1, x.shape[0]+1)
         x,y, loss_mask, attention_mask, pos_ids = TorchParameterProgramDataset.collate_fn_w_posid( PROG_LEN = self.dataset.prog_len, data=[[x, y, loss_mask, attention_mask, pos_ids]])

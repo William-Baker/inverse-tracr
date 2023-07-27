@@ -1,6 +1,3 @@
-#%%
-
-
 import sys
 sys.path.append('tracr/')
 
@@ -29,6 +26,8 @@ class Cat(Enum):
     categoric = 2
     boolean = 3
 
+class NoTypeInScope(Exception):
+    pass
 
 class Scope:
     def __init__(self, vocabulary: Sequence[Union[str, int, bool]], numeric_range) -> None:    
@@ -39,14 +38,14 @@ class Scope:
         self.names_by_type = defaultdict(lambda: [])
         self.names_by_type_and_cat = defaultdict(lambda: defaultdict(lambda: []))
         self.type_cat = dict()
-        self.sampling_weights = [1,1]
+        self.sampling_weights = []
         if type(vocabulary[0]) == str:
             token_type = Cat.categoric
         else:
             token_type = Cat.numeric
         self.__add__(SOp, "tokens", token_type, weight=1)
-        self.__add__(SOp, "indices", Cat.numeric, weight=1)
-        self.sampling_weights = self.sampling_weights[2:]
+        # self.__add__(SOp, "indices", Cat.numeric, weight=1)
+        #self.sampling_weights = self.sampling_weights[-1:]
         self.numeric_range = numeric_range
         self.vocabulary = vocabulary
 
@@ -61,7 +60,12 @@ class Scope:
         self.type_cat[name] = cat
         self.names.add(name)
         self.types.add(t)
-        new_weight = (self.sampling_weights[-1] * 2 - self.sampling_weights[-2] + 1)
+        # preferentially sample most recent ops
+        if len(self.sampling_weights) > 1:
+            new_weight = (self.sampling_weights[-1] * 2 - self.sampling_weights[-2] + 1)
+        else:
+            new_weight = 1
+
         sample_weight = new_weight if weight is None else weight
         self.sampling_weights.append(sample_weight)
         self.names_by_type[t].append((name, sample_weight))
@@ -78,9 +82,13 @@ class Scope:
         return sample[0][0]
 
     def pick_var(self, y: type): 
+        if len(self.names_by_type[y]) == 0:
+            raise NoTypeInScope(f"no varables of type {y} are in scope")
         return Scope.weighted_sample(self.names_by_type[y])
     
     def pick_var_cat(self, y: type, cat: Cat):
+        if len(self.names_by_type_and_cat[y][cat]) == 0:
+            raise NoTypeInScope(f"no varables of type {y} and cat {cat} are in scope")
         return Scope.weighted_sample(self.names_by_type_and_cat[y][cat])
     
     def var_exists(self, desired_type: type):
@@ -261,14 +269,47 @@ def sample_function(scope: Scope, ops, df=RASP_OPS):
 def generate_ops(max_ops: int, vocab: Sequence, numeric_range: tuple):
     scope = Scope(vocab, numeric_range)
     ops = []
-
-    for i in range(0, max_ops-1):
+    success = False
+    while not success: # will fail if sample samples numeric type, rejection sample for categoric type 50/50 chance
+        try:
+            sample_function(scope, ops, RASP_OPS )
+            success = True
+        except NoTypeInScope as E:
+            pass
+    scope.__add__(SOp, "indices", Cat.numeric, weight=1) 
+    for i in range(0, max_ops-2):
         sample_function(scope, ops, RASP_OPS )
     sample_function(scope, ops, RASP_OPS_RETURNS_SOP)
 
     return ops
-
+import networkx as nx
 def compile_program(ops):
+    op_names = dict([(op.output, idx+2) for idx, op in enumerate(ops)] + [('tokens', 0), ('indices', 1)])
+
+    G = nx.DiGraph()
+    for idx, op in enumerate(ops):
+        idx += 2
+        for inp in op.inputs:
+            if isinstance(inp, str):
+                G.add_edge(op_names[inp], idx)
+    if 1 in G:
+        G.remove_node(op_names['indices']) # we want the longest path to start from the input tokens
+    descendants = nx.descendants(G, 0)
+    all_longest_paths = []
+    for d in descendants:
+        all_longest_paths.append(max(list(nx.simple_paths.all_simple_paths(G, 0, d)), key=len))
+    longest_path = max(all_longest_paths, key=len)
+
+    # longest_path = nx.dag_longest_path(G)
+    terminal_node = longest_path[-1]
+
+    while ops[terminal_node-2].operator == rasp.Select:
+        longest_path = longest_path[0:-1]
+        terminal_node = longest_path[-1]
+        if len(longest_path) == 1:
+            break
+
+
     @dataclass
     class Program:
         ops: Sequence[Operation]
@@ -298,7 +339,7 @@ def compile_program(ops):
         return named_ret
 
 
-    program = populate_params(ops[-1], Program(ops))
+    program = populate_params(ops[terminal_node-2], Program(ops))
 
     # discard duplicates
     seen = []
@@ -359,6 +400,7 @@ def gen_vocab(vocab_size: int, prefix='t', numeric=False):
 
 def build_program_of_length(n_ops, vocab, numeric_range: tuple, TARGET_PROGRAM_LENGTH):
     program_length = 0
+    program, actual_ops = None, None
     while program_length < TARGET_PROGRAM_LENGTH:
         ops = generate_ops(n_ops, vocab, numeric_range)
         program, actual_ops = compile_program(ops)
@@ -376,7 +418,7 @@ def choose_vocab_and_ops(ops_range: tuple, vocab_size_range: tuple, numeric_inpu
 def program_generator(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool):
     n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
     program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
-    return actual_ops
+    return program, actual_ops
 
 
 def program_craft_generator(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool):
@@ -387,265 +429,7 @@ def program_craft_generator(ops_range: tuple, vocab_size_range: tuple, numeric_r
 
 
 
-#============================= Data Encoding ==============================================
 
-def iter_var_names(prefix='v'):
-    i = 0
-    while True:
-        i += 1
-        yield prefix + str(i)
-
-
-
-
-def encode_ops(ops):
-    features = []
-    var_name_iter = iter_var_names()
-    var_names = dict(tokens= 'tokens', indices='indices')
-    for op in ops:
-        op_name = op.operator.__name__
-        params = [NO_PARAM] * 3
-        for i, inp in enumerate(op.inputs):
-            if isinstance(inp, str):
-                if inp in var_names:
-                    params[i] = var_names[inp]
-                else:
-                    var_names[inp] = next(var_name_iter)
-                    params[i] = var_names[inp]
-            # elif isinstance(inp, partial): # ignore the value of the parameter when using a given lambda
-            elif inp in NAMED_PREDICATES.keys():
-                params[i] = NAMED_PREDICATES[inp]  
-            elif isinstance(inp, Callable):
-                assert op.lambda_name != None
-                params[i] = op.lambda_name
-            
-            
-        return_var = op.output
-        if return_var in var_names:
-            ret_name = var_names[return_var]
-        else:
-            var_names[return_var] = next(var_name_iter)
-            ret_name = var_names[return_var]
-        
-        feature = dict(
-            op = op_name,
-            p1 = params[0],
-            p2 = params[1],
-            p3 = params[2],
-            r = ret_name
-        )
-        features.append(feature)
-    
-    # Apply our canonical program ordering to the program
-    features = sort_program(features)
-    
-    return features
-
-
-def encode_craft_model(craft_model):
-    model_params = []
-    for block in craft_model.blocks:
-        if isinstance(block, MultiAttentionHead):
-            for attention_head in block.heads():
-                model_params.append(dict(
-                    HEAD = dict(
-                        w_qk = attention_head.w_qk.matrix,
-                        w_ov = attention_head.w_ov.matrix
-                    )
-                ))
-        elif isinstance(block, MLP):
-            model_params.append(dict(
-                MLP = dict(
-                    fst = block.fst.matrix,
-                    snd = block.snd.matrix
-                )
-            ))
-        else:
-            raise NotImplementedError()
-    return model_params
-
-
-
-#%% ====== encoder with timeout ==================
-import multiprocessing, dill
-dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
-multiprocessing.reduction.ForkingPickler = dill.Pickler
-multiprocessing.reduction.dump = dill.dump
-multiprocessing.context.reduction._ForkingPickler = dill.Pickler
-from collections import deque
-from statistics import mean
-
-def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool, timeout_multiplier=1.0):
-    max_prog_complexity = max(ops_range)
-    CRAFT_TIMEOUT = 0.2 + 0.00001 * max_prog_complexity ** 4 # 10 op programs take 0.2 seconds, 15 op programs take 0.5, 30 op programs take 4 seconds
-    CRAFT_TIMEOUT *= timeout_multiplier
-    
-    n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
-
-    # Self optimising timeout to adapt to local compute performance
-    # if the average of the tally of successes to failures is less thatn the target, 
-    # the time will increase to be successful more often
-    termination_tally = deque([0, 0, 0, 0, 0, 0, 1, 1, 1, 1],maxlen=30)
-    IDEAL_FAILURE_RATIO = 0.4
-        
-
-    def time_sensitive(return_dict):
-        try:
-            program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
-        except Exception as E:
-            if isinstance(E, np.core._exceptions._ArrayMemoryError):
-                print("mem alloc err")
-            else:
-                raise E
-        craft_model = compile_program_into_craft_model(program, vocab, max(numeric_range))
-        encoded_ops = encode_ops(actual_ops)
-        encoded_model = encode_craft_model(craft_model)
-        return_dict['craft_model'] = encoded_model
-        return_dict['actual_ops'] = encoded_ops
-
-    manager = multiprocessing.Manager()
-    return_dict = manager.dict()
-    encoded_model, encoded_ops = None, None
-    while encoded_model == None: # sometimes the thread doesnt work properly
-        p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
-        p.start()
-        p.join(CRAFT_TIMEOUT)
-        while p.is_alive(): # the process hasnt finished yet
-            termination_tally.append(1) # we had a failure
-            CRAFT_TIMEOUT = max(0.2, CRAFT_TIMEOUT + mean(termination_tally) - IDEAL_FAILURE_RATIO) # update timeout
-            p.terminate()   # kill it
-            p.join()        # delete the thread
-            p = multiprocessing.Process(target=time_sensitive, args=[return_dict])
-            p.start()       # start a new one
-            p.join(CRAFT_TIMEOUT)     # wait again and repeat
-
-        try:
-            encoded_model = return_dict['craft_model']
-            encoded_ops = return_dict['actual_ops'] 
-        except:
-            print("craft model was none, not sure why, but repeating")
-        termination_tally.append(0)
-        CRAFT_TIMEOUT = max(0.2, CRAFT_TIMEOUT + mean(termination_tally) - IDEAL_FAILURE_RATIO) # update timeout
-
-
-    return encoded_model, encoded_ops
-
-
-
-# def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, max_sequence_lenghts_range: tuple, timeout_multiplier=1.0):
-#     CRAFT_TIMEOUT = 0.1 + max(ops_range) / 50 # 10 op programs take 0.2 seconds, 30 op programs take 0.6
-#     CRAFT_TIMEOUT *= timeout_multiplier
-#     craft_model, actual_ops = None, None
-#     while craft_model is None:
-#         try:
-#             with guard_timeout(CRAFT_TIMEOUT):
-#                 craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, max_sequence_lenghts_range)
-#         except Exception as E:
-#             if isinstance(E, TimeoutException):
-#                 #print("timeout handled")
-#                 pass
-#             elif isinstance(E, np.core._exceptions._ArrayMemoryError):
-#                 # occassionally a really large memory allocation is attempted
-#                 # /tracr/compiler/expr_to_craft_graph.py ln 181
-#                 # /tracr/craft/vectorspace_fns.py, ln 85
-#                 # /tracr/craft/bases.py ln 176 
-#                 print("mem alloc handled")
-#             else:
-#                 raise(E)
-            
-#     encoded_ops = encode_ops(actual_ops)
-#     encoded_model = encode_craft_model(craft_model)
-
-#     return encoded_model, encoded_ops
-
-def program_craft_generator_unbounded(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool):
-    craft_model, actual_ops = program_craft_generator(ops_range, vocab_size_range, numeric_range, numeric_inputs_possible=numeric_inputs)
-    encoded_ops = encode_ops(actual_ops)
-    encoded_model = encode_craft_model(craft_model)
-
-    return encoded_model, encoded_ops
-
-
-
-
-# ========================= User Friendly Generators ============================================
-
-
-def craft_dataset(ops_range=(10,10), vocab_size_range=(6,6), numeric_range=(6,6), func=program_craft_generator_unbounded, timeout_multiplier=None, numeric_inputs_possible=False):
-    """
-    Compile a generator of transformer weights and programs
-    params:
-        ops_range = (min, max) - the range of program lengths to generate BEFORE retracing reduction
-        vocab_size_range = (min, max) - the range of vocabulary sizes to build the transformer with
-                                            - will scale the number of parameter
-        max_sequence_lengths_range = (min, max) - the range of sequence lengths to build the code AND transformer with 
-                                            - will scale the number of constants used in lambdas
-                                            - and the number of model parameters
-
-    returns:
-        gen - generator that yields (model_params, program)
-        OP_VOCAB - vocab for the craft functions ['Map', 'Select', 'SequenceMap', 'Aggregate', 'SelectorWidth']
-        VAR_VOCAB - [ 'tokens', 'indices', 'NA',
-                    'PRED_EQ', 'PRED_FALSE', 'PRED_TRUE', 'PRED_GEQ', 'PRED_GT', 'PRED_LEQ', 'PRED_LT', 'PRED_NEQ',
-                    'LAM_LT', 'LAM_LE', 'LAM_GT', 'LAM_GE', 'LAM_NE', 'LAM_EQ', 'LAM_IV', 'LAM_ADD', 'LAM_MUL', 'LAM_SUB', 'LAM_AND', 'LAM_OR', 
-                    'vXXX' - where XXX is the ID of variable - in range (0, ops_range_max)
-                            - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
-                    ]
-    """
-    OP_VOCAB = ['<PAD>'] + list(RASP_OPS.cls.apply(lambda x: x.__name__))
-    var_name_iter = iter_var_names()
-    VAR_VOCAB = ['<PAD>'] + ['tokens', 'indices'] \
-                    + list(NAMED_PREDICATES.values()) \
-                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM] \
-                    + [next(var_name_iter) for x in range(0, max(ops_range))] 
-    
-    if timeout_multiplier is not None:
-        lambda x,y,z: func(x,y,z, timeout_multiplier=timeout_multiplier)
-    def gen():
-        while True:
-            encoded_model, encoded_ops = func(ops_range, vocab_size_range, numeric_range, numeric_inputs_possible=numeric_inputs_possible)
-            yield encoded_model, encoded_ops
-    
-    return gen, OP_VOCAB, VAR_VOCAB
-
-
-def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), numeric_range=(6,6), numeric_inputs_possible: bool = False):
-    """
-    Compile a generator of programs ONLY
-    params:
-        ops_range = (min, max) - the range of program lengths to generate BEFORE retracing reduction
-        vocab_size_range = (min, max) - the range of vocabulary sizes to build the transformer with
-                                            - will scale the number of parameter
-        max_sequence_lengths_range = (min, max) - the range of sequence lengths to build the code AND transformer with 
-                                            - will scale the number of constants used in lambdas
-                                            - and the number of model parameters
-
-    returns:
-        gen - generator that yields (model_params, program)
-        OP_VOCAB - vocab for the craft functions ['Map', 'Select', 'SequenceMap', 'Aggregate', 'SelectorWidth']
-        VAR_VOCAB - [ 'tokens', 'indices', 'NA',
-                    'PRED_EQ', 'PRED_FALSE', 'PRED_TRUE', 'PRED_GEQ', 'PRED_GT', 'PRED_LEQ', 'PRED_LT', 'PRED_NEQ',
-                    'LAM_LT', 'LAM_LE', 'LAM_GT', 'LAM_GE', 'LAM_NE', 'LAM_EQ', 'LAM_IV', 'LAM_ADD', 'LAM_MUL', 'LAM_SUB', 'LAM_AND', 'LAM_OR', 
-                    'vXXX' - where XXX is the ID of variable - in range (0, ops_range_max)
-                            - NOTE previously I said it was in range (0, ops_range_max * 2), but now i dont think so
-                    ]
-    """
-    OP_VOCAB = ['<PAD>'] + list(RASP_OPS.cls.apply(lambda x: x.__name__))
-    var_name_iter = iter_var_names()
-    VAR_VOCAB = ['<PAD>'] + ['tokens', 'indices'] \
-                    + list(NAMED_PREDICATES.values()) \
-                    + list(x[-1] for x in UNI_LAMBDAS + SEQUENCE_LAMBDAS) + [NO_PARAM] \
-                    + [next(var_name_iter) for x in range(0, max(ops_range))] 
-                    
-    def gen():
-        while True:
-            actual_ops = program_generator(ops_range, vocab_size_range, numeric_range, numeric_inputs_possible=numeric_inputs_possible)
-            encoded_ops = encode_ops(actual_ops)
-            yield encoded_ops
-    
-    return gen, OP_VOCAB, VAR_VOCAB
-
-#%%
 
 
 
@@ -746,12 +530,14 @@ def traverse_prog(prog, lambdas = []):
             unvisited = reduce_univisted(unvisited)
     return actual_ops
 
+from data.encoded_dataloaders import encode_craft_model
+from data.dataloaders import ProgramEncoder
 def encode_rasp_program(program, PROG_LEN, lambdas=[], numeric_vars: bool = False):
     actual_ops = traverse_prog(program, lambdas)
     vocab = gen_vocab(PROG_LEN, prefix='t', numeric=numeric_vars)
     craft_model = compile_program_into_craft_model(program, vocab, PROG_LEN)
 
-    encoded_ops = encode_ops(actual_ops)
+    encoded_ops = ProgramEncoder.encode_ops(actual_ops)
     encoded_model = encode_craft_model(craft_model)
     return encoded_model, encoded_ops
 
@@ -787,18 +573,3 @@ example_program_dataset = [
     (lambda: rasp.Map(lambda x: x > 1, rasp.Map(lambda x: x == "t1", rasp.tokens)), ['LAM_EQ', 'LAM_GT'], 'map_map_char', False),        
 ]
 
-#%%
-
-
-#gen, OP_VOCAB, VAR_VOCAB = craft_dataset(ops_range=(30,30))
-
-# dataset = gen()
-
-# #%%
-
-
-# model_params, program = next(dataset)
-
-# program
-
-# # %%

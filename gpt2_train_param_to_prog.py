@@ -42,6 +42,7 @@ import jax
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
 #os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
+#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 # from jax import config
 # config.update("jax_disable_jit", True)
 
@@ -71,12 +72,29 @@ from data.dataset import example_program_dataset, encode_rasp_program
 
 from models import GPT2, GPT2Config
 
+from argparse import Namespace
 
+# GPT Large Train config
+# args = Namespace(
+#     batch_size=128,
+#     PROG_LEN = 15,
+#     max_epochs = 20,
+#     LEARNING_RATE=1e-4,
+#     input_dropout_prob = 0.05,
+#     max_timesteps = 40,
+# )
 
+# GPT Large Cont fine tune Train config
+args = Namespace(
+    batch_size=256,
+    PROG_LEN = 15,
+    max_epochs = 20,
+    LEARNING_RATE=1e-6,
+    input_dropout_prob = 0.05,
+    max_timesteps = 40,
+    model = 'LARGE', # 'LARGE'
+)
 
-
-#%%
-#import jax.profiler
 CHECKPOINT_PATH = ".logs/"
 
 class TrainerModule:
@@ -132,7 +150,7 @@ class TrainerModule:
         self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=params, tx=optimizer)
     
     def raw_apply(self, encoded_model, encoded_ops):
-        post_encoded_program = TorchParameterProgramDataset.encode_program(encoded_ops, src_dataset.op_encoder, src_dataset.var_encoder)
+        post_encoded_program = TorchParameterProgramDataset.tokens_to_onehot(encoded_ops)
         x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.dataset.prog_len, x=np.array(encoded_model), y=post_encoded_program)
         x,y, loss_mask, attention_mask, pos_ids = collate_fn( data=[[x, y, loss_mask, attention_mask]])
         logits, fig = self.apply(x, attention_mask=attention_mask, pos_id=pos_ids, labels=y)
@@ -419,28 +437,7 @@ class TrainerModule:
 
 
 
-from argparse import Namespace
 
-# GPT Large Train config
-# args = Namespace(
-#     batch_size=128,
-#     PROG_LEN = 15,
-#     max_epochs = 20,
-#     LEARNING_RATE=1e-4,
-#     input_dropout_prob = 0.05,
-#     max_timesteps = 40,
-# )
-
-# GPT Large Cont fine tune Train config
-args = Namespace(
-    batch_size=256,
-    PROG_LEN = 15,
-    max_epochs = 20,
-    LEARNING_RATE=1e-6,
-    input_dropout_prob = 0.05,
-    max_timesteps = 40,
-    model = 'LARGE', # 'LARGE'
-)
 
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
 from data.dataloader_streams import ZipStreamReader
@@ -584,17 +581,70 @@ decode_test_sample()
 x,y, loss_mask, attention_mask = next(iter(dataset))
 
 
-
-import json
-with open(f'utils/gpt2_configs/gpt2_{args.model.lower()}.json') as f: # GPT2 Large - 774M
-  config_json = json.load(f)
-model_config = GPT2Config(**config_json)
-
-
+if args,model == 'GPT2':
+    import json
+    with open(f'utils/gpt2_configs/gpt2_{args.model.lower()}.json') as f: # GPT2 Large - 774M
+    config_json = json.load(f)
+    model_config = GPT2Config(**config_json)
 
 
 
-model = GPT2(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
+
+
+    model = GPT2(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
+
+if args.model == 'GPTJ':
+    model_config = GPTJConfig(
+            vocab_size=None,
+            n_positions=1024,
+            n_embd=1024,
+            n_layer=28,
+            n_head=16,
+            rotary_dim=64,
+            n_inner=None,
+            activation_function="gelu_new",
+            resid_pdrop=0.0,
+            embd_pdrop=0.0,
+            attn_pdrop=0.0,
+            layer_norm_epsilon=1e-5,
+            initializer_range=0.02,
+            use_cache=True,
+            bos_token_id=None,
+            eos_token_id=None,
+            tie_word_embeddings=False
+    )
+        
+
+    #
+
+
+    model = GPTJ(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob) # if you forget input dense must match gpt hidden
+
+
+if args.model == 'GPTNeo':
+    
+    from transformers import GPTJConfig
+
+    # import yaml
+
+    # with open(r'utils/gptneo_configs/pythia_125m.json') as file:
+    #     documents = yaml.full_load(file)
+
+
+    import json
+
+    with open('utils/gptneo_configs/pythia_1.3B.json') as f:
+    config_json = json.load(f)
+
+
+    model_config = GPTJConfig(**config_json)
+
+    model_config.n_embd  = model_config.hidden_size
+    model_config.n_head  = model_config.num_heads
+    model_config.n_layer = model_config.num_layers
+
+
+    model = GPTNeo(num_classes=sum(src_dataset.segment_sizes), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
 
 trainer = TrainerModule(model, f'PARAM_NumVar_GPT2__{args.model} cont test LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',

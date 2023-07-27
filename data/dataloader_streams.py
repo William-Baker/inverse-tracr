@@ -94,32 +94,7 @@ class ZipStreamReader:
         loaded = np.load(BytesIO(x), allow_pickle=True)
         return loaded['x'].squeeze(), loaded['y'].squeeze()
 
-# import fcntl
-# class Locker:
-#     def __enter__ (self):
-#         self.fp = open(".data/zip_lock.lck", 'w')
-#         fcntl.flock(self.fp.fileno(), fcntl.LOCK_EX)
 
-#     def __exit__ (self, _type, value, tb):
-#         fcntl.flock(self.fp.fileno(), fcntl.LOCK_UN)
-#         self.fp.close()
-
-# from threading import Lock
-# class ZipStreamReader:
-#     mutex = Lock()
-#     def __init__(self, dir:str) -> None:
-#         self.zip = ZipFile(file=dir, mode='r')
-#         self.files = sorted(self.zip.namelist()[1:])
-#     def __len__(self):
-#         return len(self.files)
-#     def __getitem__(self, idx):
-#         with Locker():
-#             x = BytesIO(self.zip.read(self.files[idx]))
-#             loaded = np.load(x, allow_pickle=True)
-#         return loaded['x'].squeeze(), loaded['y'].squeeze()
-
-
-#%%
 import os, subprocess, sys
 mode = 'params' # programs
 shuffled = True
@@ -133,29 +108,9 @@ if __name__ == "__main__":
         sw = StreamWriter(pth, dataset)
         sw.write_samples(num_threads=20)
     else:
-        # from parameter_program_dataloader import TorchParameterProgramDataset
-        # dataset = TorchProgramDataset( no_samples = 10000, generator_backend='bounded')
-        # pth = '.data/iTracr_dataset/'
-        # sw = StreamWriter(pth, dataset)
-        # sw.write_samples(num_threads=1)
-        N = 20
-        samples = 1000000
-        offset  = 0
-        vocab_range = (1, 10)
-        numeric_range = (1, 10)
-        numeric_inputs_possible = True
-        for i in range(N):
-            #os.chdir('../')
-            cmd = f"python generate_parameter_partial_dataset.py -off {offset} -s {samples} -pn {N} -idn {i} -vmin {vocab_range[0]} -vmax {vocab_range[1]} -nmin {numeric_range[0]} -nmax {numeric_range[1]} -num {numeric_inputs_possible}"
-            #os.system(f"python data/generate_parameter_partial_dataset.py -s {samples} -pn {N} -idn {i}")
-            #pid = subprocess.Popen([sys.executable, cmd])
-            #p = subprocess.Popen(["start", "cmd", "/k", cmd], shell = True)#os.system("start /wait cmd /c {command}")
-            #os.system(f"cmd /c {cmd}")
-            #subprocess.call(cmd, shell=True)
-            subprocess.Popen(cmd, shell=True)
-            # print(cmd)
+        pass
 
             
-        #zip -r iTracr_dataset_v2_train.zip iTracr_dataset/
+        
     
 #%%

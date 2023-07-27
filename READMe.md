@@ -379,3 +379,126 @@ miss pred tripple agg
 66%
 71%
 90%
+
+
+
+
+[ rasp.Map,          [lambda1, SOp],                  SOp     , 4],
+[ rasp.Select,       [rasp.Predicate, SOp, SOp]       Selector, 3],
+[ rasp.SequenceMap,  [lambda2, SOp, SOpNumericValue], SOp,      2],
+[ rasp.Aggregate,    [Selector, SOp],                 SOp,      2],
+[ rasp.SelectorWidth,[Selector],                      SOp,      2],
+
+
+ex 2 - 90% - valid
+ex 3 - 70% - invalid - Agg trying 2 SOps
+ex 4 - 60% - valid
+ex 5 - 70% - valid
+ex 6 - 70% - invalid - selector width takes var not lamda
+ex 7 - 40% - invalid - Select requires a predicate
+ex 8 - 50% - invalid - selctor width takes 1 arg, selector requires predicate
+ex 9 - 50% - invalid - map takes 2 args, map takes a lam, 
+
+
+# Large
+90%
+LAM AND vs OR
+select arg ordering x 2
+LAM ADD vs MUL
+
+95% LAMs
+
+95% indicies vs tokens vs vars
+
+50% lams
+missed a map
+mistoog aggreage map select map aggregate as agg agg agg
+
+50%
+exta map after sequence map
+extra gg
+missed 4 maps for 1 map
+
+60%
+1 missed map
+
+50%
+extra map
+missed select
+agg x 4 instead of agg map agg map
+
+80%
+Lams or vs and
+sequence map  not map
+
+95%
+lams / vars
+
+90%
+select not map
+map not agg
+
+40%
+seqmap not map
+missed a select
+
+98% vars
+
+35%
+map not select
+extra seelector width
+extra map after sequence map
+missedsequence mao
+missed selector width
+
+
+
+
+
+54%
+98%
+84%
+84%
+47%
+86%
+75%
+67%
+92%
+88%
+60%
+68%
+87%
+84%
+64%
+71%
+90%
+56%
+80%
+73%
+93%
+83%
+92%
+48%
+57%
+90%
+67%
+68%
+90%
+98%
+70%
+92%
+64%
+79%
+68%
+70%
+96%
+90%
+87%
+80%
+90%
+60%
+70%
+57%
+72%
+55%
+62%

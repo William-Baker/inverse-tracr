@@ -13,8 +13,9 @@ START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'
 
 from data.dataset import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
-
-class TorchParameterProgramDataset(torch.utils.data.Dataset):
+from data.dataloaders import ProgramEncoder
+from data.program_dataloader import TorchProgramDataset
+class TorchParameterProgramDataset(TorchProgramDataset):
     def __init__(self, prog_len: int, no_samples = 10000, generator_backend=Union['bounded', 'unbounded'], bounded_timeout_multiplier=1, vocab_size_range=(6,6), numeric_range=(6,6), numeric_inputs_possible: bool = False):
         self.vocab_size_range, self.numeric_range, self.numeric_inputs_possible = vocab_size_range, numeric_range, numeric_inputs_possible
         self.no_samples = no_samples
@@ -25,48 +26,9 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
         self.gen, OP_VOCAB, VAR_VOCAB = craft_dataset((prog_len,prog_len), func=func, timeout_multiplier=bounded_timeout_multiplier.as_integer_ratio,
                                             vocab_size_range=self.vocab_size_range, numeric_range=self.numeric_range, numeric_inputs_possible=self.numeric_inputs_possible)
         self.it = iter(self.gen())
-        
-        OP_VOCAB_SIZE, VAR_VOCAB_SIZE = len(OP_VOCAB), len(VAR_VOCAB)
-        
-        self.OP_VOCAB_SIZE = OP_VOCAB_SIZE
-        self.VAR_VOCAB_SIZE = VAR_VOCAB_SIZE
 
-        self.op_encoder = dict(zip(OP_VOCAB, [i for i in range(OP_VOCAB_SIZE)]))
-        self.op_encoder[START_TOKEN] = self.OP_VOCAB_SIZE # Add a token for the start of the program
-        self.OP_VOCAB_SIZE += 1
-        self.op_encoder[END_TOKEN] = self.OP_VOCAB_SIZE # Add a token for the end of the program
-        self.OP_VOCAB_SIZE += 1
-        
-        self.var_encoder = dict(zip(VAR_VOCAB, [i for i in range(VAR_VOCAB_SIZE)]))
-        self.op_decoder = dict(zip(self.op_encoder.values(), self.op_encoder.keys()))
-        self.var_decoder = dict(zip(self.var_encoder.values(), self.var_encoder.keys()))
-
-        self.segment_sizes = [self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.VAR_VOCAB_SIZE]
-        self.encoders = [self.op_encoder, self.var_encoder, self.var_encoder, self.var_encoder, self.var_encoder]
-
-    def encode_program(program, op_encoder, var_encoder):
-        encoded = np.zeros((len(program)+2, 5), np.int32)
-        encoded[0, 0] = op_encoder[START_TOKEN]
-        for t, instruction in enumerate(program):
-            # Loop through each operation which cotains list of {'op': 'SelectorWidth', 'p1': 'v1', 'p2': 'NA', 'p3': 'NA', 'r': 'v2'}
-            encoded[t+1, 0] = op_encoder[instruction['op']]
-            encoded[t+1, 1] = var_encoder[instruction['p1']]
-            encoded[t+1, 2] = var_encoder[instruction['p2']]
-            encoded[t+1, 3] = var_encoder[instruction['p3']]
-            encoded[t+1, 4] = var_encoder[instruction['r']]
-        encoded[-1, 0] = op_encoder[END_TOKEN]
-        return encoded
-    def encoded_program_to_onehot(encoded, OP_VOCAB_SIZE, VAR_VOCAB_SIZE, segment_sizes):
-        one_hot = np.zeros((encoded.shape[0], OP_VOCAB_SIZE + 4 * VAR_VOCAB_SIZE))
-        for t in range(encoded.shape[0]):
-            ptr = 0
-            # Loop through each operation which cotains list of 5 integer id's for each token
-            for i in range(len(segment_sizes)):
-                id = encoded[t, i]
-                one_hot[t, ptr + id] = 1
-                ptr += segment_sizes[i]
-        return one_hot
-
+        self.prog_enc = ProgramEncoder(self.prog_len)
+    
     def collate_fn(PROG_LEN, data):
         inputs = [torch.tensor(d[0], device='cpu') for d in data]
         targets = [torch.tensor(d[1], device='cpu') for d in data]
@@ -108,21 +70,10 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
             pos_ids = torch.nn.ConstantPad1d((0, ammount_to_pad), 0)(pos_ids)
         return np.array(inputs), np.array(targets), np.array(loss_masks), np.array(attention_masks[:,:,0]), np.array(pos_ids)
 
-    def __len__(self):
-        'Denotes the total number of samples'
-        return self.no_samples
 
     def __getitem__(self, index):
         x, y = next(self.it)
-        y = TorchParameterProgramDataset.encode_program(y, self.op_encoder, self.var_encoder)
-        # x = TorchProgramDataset.encoded_program_to_onehot(y, self.OP_VOCAB_SIZE, self.VAR_VOCAB_SIZE, self.segment_sizes)
-        
-        # ammount_to_pad = self.prog_len + 2 - y.shape[0]
-        # y = np.concatenate((y,np.zeros((ammount_to_pad, y.shape[1]))), axis=0)
-        # y = y.astype(int)
-        # print(y.shape)
-        # assert (y.shape[0] == self.prog_len + 2) and (y.shape[1] == 5)
-
+        y = self.prog_enc.tokenise_program(y)
         return x,y
 
     def post_process_step(max_prog_len, x, y):
@@ -139,33 +90,11 @@ class TorchParameterProgramDataset(torch.utils.data.Dataset):
         attention_mask = np.ones(enc_x.shape[0])
 
         return enc_x,y,loss_mask, attention_mask
+
+    def tokens_to_onehot(self, encoded):
+        return self.prog_enc.tokens_to_onehot(encoded)
     
-    def logit_classes_np(self, logits):
-        classes = np.zeros((logits.shape[0], self.OP_VOCAB_SIZE))
-        logits = np.array(logits)
-        for t in range(logits.shape[0]):
-            ptr = 0
-            for i, seg_size in enumerate(self.segment_sizes):
-                classes[t, i] = logits[t, ptr:ptr + seg_size].argmax()
-                ptr += seg_size
-        return classes
-
-    def decode_pred(self, y, batch_index: int):
-        pred = y[batch_index, :, :]
-
-        if pred.shape[-1] > 5: # compute the argmax in each segment
-            pred = self.logit_classes_np(pred)
-
-        translated = str()
-        for t in range(pred.shape[0]):
-            # if pred[t].sum().item() == 0: # skip padding
-            #     continue
-            op = self.op_decoder[pred[t, 0].item()]
-            translated += op
-            for i in range(1,5):
-                translated += " " + self.var_decoder[pred[t, i].item()]
-            translated += "\n"
-        return translated
+   
 
 
 
