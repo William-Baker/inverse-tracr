@@ -1,6 +1,6 @@
 #%%
 # srun -t 1:0:0 --nodes 1 --cpus-per-task 38 -p icelake --ntasks 1 -A KRUEGER-SL3-CPU --pty bash --qos=INTR
-# sintr -t 1:0:0 --nodes 1 --cpus-per-task 1 -p icelake --ntasks 1 -A KRUEGER-SL2-CPU --qos=INTR
+# sintr -t 24:0:0 --nodes 1 --cpus-per-task 1 -p icelake --ntasks 76 -A KRUEGER-SL3-CPU --qos=INTR
 # module load cuda/11.8 cudnn/8.9_cuda-11.8
 # source venv/bin/activate
 # squeue -u wb326 -o "%a %c %C %D %e %F %L %M %p %q"
@@ -35,23 +35,7 @@ def run_experiments(id):
         
 
 if __name__ == '__main__':
-    #processes = int(os.cpu_count() // 1.25)
-    #processes = 5#int(os.cpu_count() * 1.5)
-    processes = int(len(os.sched_getaffinity(0)))#os.cpu_count()
-    print({'Processes': processes})
-    threads = [Thread(target = run_experiments, args = (idx, )) for idx in range(processes)]
-    [thread.start() for thread in threads]
-    # while True:
-    #     print("Archiving samples...")
-    #     try:
-    #         transfer_to_archive(source_dir = 'cp_dataset_train_all')
-    #     except:
-    #         pass
-    #     try:
-    #         transfer_to_archive(source_dir = 'cp_dataset_train_w')
-    #     except:
-    #         pass
-    #     time.sleep(180)
+    run_experiments(0)
 
 
 #%%

@@ -1,6 +1,8 @@
 #%%
 # srun -t 20:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
 # srun -t 00:10:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:2 --partition=pascal -A MLMI-WB326-SL2-GPU --pty bash
+# srun -t 2:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
+
 # conda activate venv
 # source venv/bin/activate
 # jupyter lab --no-browser --ip=* --port=8081
@@ -42,6 +44,7 @@ import jax
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 #os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 #os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 # from jax import config
@@ -72,33 +75,38 @@ from jaxlib.xla_extension import XlaRuntimeError
 from data.dataset import example_program_dataset
 from data.encoded_dataloaders import encode_rasp_program
 
-from models import GPT2, GPT2Config
+from models import GPT2, GPT2Config, GPTNeo, GPTJ
+from transformers.models.gptj.configuration_gptj import GPTJConfig
 
 from argparse import Namespace
 
 # GPT Large Train config
-# args = Namespace(
-#     batch_size=128,
-#     PROG_LEN = 15,
-#     max_epochs = 20,
-#     LEARNING_RATE=1e-4,
-#     input_dropout_prob = 0.05,
-#     max_timesteps = 40,
-# )
-
-# GPT Large Cont fine tune Train config
 args = Namespace(
-    batch_size=256,
+    batch_size=128,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 20,
-    LEARNING_RATE=1e-6,
+    LEARNING_RATE=1e-4,
     input_dropout_prob = 0.05,
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'SMALL', # 'LARGE'
-    trail_name='testing',
+    config = 'VERY_VERY_TINY', #'MEDIUM', # 'LARGE'
+    trail_name='train_w v2 ',
     task='Compressed' # 'Stock', 'Compressed', 'Natural'
 )
+
+# # GPT Large Cont fine tune Train config
+# args = Namespace(
+#     batch_size=128, 
+#     PROG_LEN = 15,
+#     max_epochs = 20, # 20
+#     LEARNING_RATE=1e-4,
+#     input_dropout_prob = 0.05,
+#     max_timesteps = 40,
+#     model = 'GPT2',
+#     config = 'LARGE', #'MEDIUM', # 'LARGE'
+#     trail_name='train_w large ',
+#     task='Compressed' # 'Stock', 'Compressed', 'Natural'
+# )
 
 CHECKPOINT_PATH = ".logs/"
 
@@ -113,6 +121,11 @@ elif args.task == 'Compressed':
     from data.parameter_encoder import JAX_TIMESTEPS as TIMESTEPS
     from data.parameter_encoder import JAX_ARCH as ARCH
     dataset_path = 'cp_dataset_train_w.zip'
+elif args.task == 'Natural':
+    from data.dataloader_streams import ZipPickleStreamReader as StoreReader
+    from data.parameter_encoder import JAX_TIMESTEPS as TIMESTEPS
+    from data.parameter_encoder import JAX_ARCH as ARCH
+    dataset_path = 'cp_dataset_train_all.zip'
 
 
 
@@ -365,7 +378,7 @@ class TrainerModule:
 
                     
                     # ----------- TF metrics ----------
-                    global_step = idx * batch[0].shape[0] + (epoch - 1) * DATALOADER_LENGTH * batch[0].shape[0]
+                    global_step = idx * args.batch_size + (epoch - 1) * DATALOADER_LENGTH * args.batch_size
                     self.logger.add_scalar('train_hf/loss', loss, global_step=global_step)
                     self.logger.add_scalar('train_hf/accuracy', accuracy, global_step=global_step)
                     
@@ -615,25 +628,47 @@ if args.model == 'GPT2':
     model = GPT2(num_classes=sum(src_dataset.get_segment_sizes()), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
 elif args.model == 'GPTJ':
-    model_config = GPTJConfig(
-            vocab_size=None,
-            n_positions=1024,
-            n_embd=1024,
-            n_layer=28,
-            n_head=16,
-            rotary_dim=64,
-            n_inner=None,
-            activation_function="gelu_new",
-            resid_pdrop=0.0,
-            embd_pdrop=0.0,
-            attn_pdrop=0.0,
-            layer_norm_epsilon=1e-5,
-            initializer_range=0.02,
-            use_cache=True,
-            bos_token_id=None,
-            eos_token_id=None,
-            tie_word_embeddings=False
-    )
+    import json
+    with open(f'utils/gptj_pythia/{args.config}.yml') as f:
+        config_json = json.load(f)
+        model_config = GPTJConfig(
+            vocab_size =          None,
+            n_positions =         config_json['hidden_size'],#config_json['max_position_embeddings'],
+            n_embd =              config_json['hidden_size'],
+            n_layer =             config_json['num_layers'],
+            n_head =              config_json['num_attention_heads'],
+            rotary_dim =          64,
+            n_inner =             None,
+            activation_function = "gelu_new",
+            resid_pdrop =         config_json['hidden_dropout'],
+            embd_pdrop =          config_json['hidden_dropout'],
+            attn_pdrop =          config_json['attention_dropout'],
+            layer_norm_epsilon =  1e-5,
+            initializer_range =   0.02,
+            use_cache =           True,
+            bos_token_id =        None,
+            eos_token_id =        None,
+            tie_word_embeddings = False,
+        )
+    # model_config = GPTJConfig(
+    #         vocab_size=None,
+    #         n_positions=1024,
+    #         n_embd=1024,
+    #         n_layer=28,
+    #         n_head=16,
+    #         rotary_dim=64,
+    #         n_inner=None,
+    #         activation_function="gelu_new",
+    #         resid_pdrop=0.0,
+    #         embd_pdrop=0.0,
+    #         attn_pdrop=0.0,
+    #         layer_norm_epsilon=1e-5,
+    #         initializer_range=0.02,
+    #         use_cache=True,
+    #         bos_token_id=None,
+    #         eos_token_id=None,
+    #         tie_word_embeddings=False
+    # )
         
 
     #
@@ -642,7 +677,7 @@ elif args.model == 'GPTJ':
     model = GPTJ(num_classes=sum(src_dataset.get_segment_sizes()), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob) # if you forget input dense must match gpt hidden
 
 
-elif args.model == 'GPTNeo':
+elif args.model == 'GPTNEO':
     
     from transformers import GPTJConfig
 
@@ -664,11 +699,16 @@ elif args.model == 'GPTNeo':
     model_config.n_head  = model_config.num_heads
     model_config.n_layer = model_config.num_layers
 
+    # model_config.resid_dropout = 0.2
+    # model_config.embed_dropout = 0.2
+    # model_config.attention_dropout = 0.2
+
 
     model = GPTNeo(num_classes=sum(src_dataset.get_segment_sizes()), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
 
-trainer = TrainerModule(model, f'{args.trail_name}{args.model} LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
+trainer = TrainerModule(model, 
+                        f'{args.trail_name} {args.model} {args.config} LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
