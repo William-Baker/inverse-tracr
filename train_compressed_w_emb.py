@@ -19,6 +19,7 @@ torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from datetime import datetime
 from utils.time_sensitive import time_sensitive
+#jax.config.update("jax_debug_nans", True)
 jax.config.update('jax_platform_name', 'cpu')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
@@ -44,6 +45,7 @@ args = Namespace(
     #mpow = 2,
     factor=0.01,
     div=20,
+    run_id = str(datetime.now()),
 )
 
 
