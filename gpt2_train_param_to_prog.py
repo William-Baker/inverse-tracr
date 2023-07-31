@@ -46,7 +46,7 @@ import jax
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 #os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
-#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 # from jax import config
 # config.update("jax_disable_jit", True)
 
@@ -74,10 +74,8 @@ from dill import dump, load
 from jaxlib.xla_extension import XlaRuntimeError
 from data.dataset import example_program_dataset
 from data.encoded_dataloaders import encode_rasp_program
-
 from models import GPT2, GPT2Config, GPTNeo, GPTJ
 from transformers.models.gptj.configuration_gptj import GPTJConfig
-
 from argparse import Namespace
 
 # GPT Large Train config
