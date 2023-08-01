@@ -114,3 +114,17 @@ def figure_to_array(fig):
     fig.savefig(picture_stream, format='png')
     img = np.array(Image.open(picture_stream))
     return img
+
+
+def show_images(arrays, show=True):
+    fig, axs = plt.subplots(1,len(arrays))
+    stacked = np.stack(arrays)
+    subfigs = [axs[i].imshow(arrays[i], vmin=stacked.min(), vmax=stacked.max()) for i in range(len(arrays))]
+    
+    # add space for colour bar
+    fig.subplots_adjust(right=0.85)
+    cbar_ax = fig.add_axes([0.88, 0.15, 0.04, 0.7])
+    fig.colorbar(subfigs[-1], cax=cbar_ax)
+    if show:
+        fig.show()
+    return fig

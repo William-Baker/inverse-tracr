@@ -40,12 +40,12 @@ import cloudpickle
 from os import makedirs
 
 def export_params(params, max_ops, actual_ops, trn_all, run_id):
-    compressed = compress_params(params)
+    #compressed = compress_params(params)
     prog_enc = ProgramEncoder(max_ops)
     encoded_ops = ProgramEncoder.encode_ops(actual_ops)
     tokenised_program = prog_enc.tokenise_program(encoded_ops)
-    encoded_params = encode_jax_params(compressed)
-    sample = (encoded_params, tokenised_program)
+    #encoded_params = encode_jax_params(params)
+    sample = (params, tokenised_program)
 
     target_db_path = 'cp_dataset'
     if trn_all == True:
