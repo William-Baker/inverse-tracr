@@ -32,7 +32,7 @@ args = Namespace(
     factor=0.10,
     compression = 2.0,
     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
-    LR = 1e-2, # 4e-3, # 5e-2 worked so far but some nans
+    LR = choice([1e-2, 5e-2, 1e-1, 5e-3, 1e-3]), # 4e-3, # 5e-2 worked so far but some nans
     EPOCHS = 20,
     trn_all = False, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
@@ -380,7 +380,7 @@ try:
 
 
     avg_loss = 0.0
-            
+    avg_acc = 0.0
     global_idx = 0
     for epoch in range(args.EPOCHS):
         with tqdm(total=len(train_random_dataloader), unit='batch') as tepoch:
@@ -417,8 +417,8 @@ try:
                 
             if (args.EPOCHS - epoch ) in [1, 2,3,4]: # export the 4th to last to the 2nd to last
                 if (args.EPOCHS - epoch) == 4:
-                    acc = measure_accuracy()
-                    if acc < 0.9:
+                    avg_acc = measure_accuracy()
+                    if avg_acc < 0.9:
                         failure(5)
                 if (args.EPOCHS - epoch) == 1:
                     if avg_loss > 0.05:

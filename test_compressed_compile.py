@@ -38,7 +38,7 @@ print(n_ops, vocab, TARGET_PROGRAM_LENGTH)
 program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
 
 assembled_model, compressed_assembled_model, craft_model, rasp_model = compile_with_compressed(
-    program, vocab, max_seq_len, compression=1,
+    program, vocab, max_seq_len, compression=2,
     CRAFT_TIMEOUT=CRAFT_TIMEOUT)
 
 # make the embedding identity so teacher == compressed
@@ -96,3 +96,208 @@ plot_basis_dir(axs, outs, "")
 #%%
 
 
+
+def attn_layer(x, Q, K, V, linear, heads):
+    def project(x, params, heads):
+        query_heads = x @ params['w'] + params['b']
+        *leading_dims, _ = x.shape
+        return query_heads.reshape((*leading_dims, heads, -1))
+    query_heads = project(x, Q, heads) # [T', H, Q=K]
+    key_heads = project(x, K, heads) # [T, H, Q=K]
+    value_heads = project(x, V, heads) # [T, H, V]
+    attn_logits = np.einsum("...thd,...Thd->...htT", query_heads, key_heads)
+    attn_logits = attn_logits / np.sqrt(key_heads.shape[-1]).astype(x.dtype)
+    #attn_weights = softmax(attn_logits)
+    attn_weights = np.array(jax.nn.softmax(attn_logits))  # [H, T', T]
+    attn = np.einsum("...htT,...Thd->...thd", attn_weights, value_heads)
+    *leading_dims, sequence_length, _ = x.shape
+    attn = np.reshape(attn, (*leading_dims, sequence_length, -1))  # [T', H*V]
+
+    # Apply another projection to get the final embeddings.
+    final_projection = attn @ linear['w'] + linear['b']
+    return final_projection
+
+def mlp_layer(x, fst, snd):
+    f = x @ fst['w'] + fst['b']
+    #f = np.max(f, 0)
+    f = np.array(jax.nn.relu(f))
+    s = f @ snd['w'] + snd['b']
+    return s
+
+from collections import defaultdict
+def interp_params(params):
+    new_params = defaultdict(lambda: dict())
+    for key, val in params.items():
+        try:
+            model_name, layer, block, p = key.split('/')
+            np_vals = dict([(k,np.array(v)) for k,v in val.items()])
+            new_params['/'.join([model_name, layer, block])]['/'.join([block, p])] = np_vals
+        except:
+            pass
+    return new_params
+
+def execute(params, x, heads):
+    outs = []
+    resid = x
+    for layer, blocks in params.items():
+        block_1, p_1 = list(blocks.keys())[0].split('/')
+        print(layer, blocks.keys())
+        if block_1 == 'attn':
+            Q, K, V, linear = blocks['attn/query'], blocks['attn/key'], blocks['attn/value'], blocks['attn/linear']
+            res = attn_layer(resid, Q, K, V, linear, heads)
+            print(f"attn_out {res.mean()}")
+            outs.append(res)
+            resid += res
+        elif block_1 == 'mlp':
+            fst, snd = blocks['mlp/linear_1'], blocks['mlp/linear_2']
+            res = mlp_layer(resid, fst, snd)
+            print(f"mlp_out {res.mean()}")
+            outs.append(res)
+            resid += res
+        print(resid.mean())
+        print(resid.shape)
+    return outs
+
+ps = interp_params(compressed_assembled_model.params)
+encoded = assembled_model.encode_input(formatted_input)
+x = assembled_model.forward_emb(assembled_model.params, encoded)
+outs = execute(ps, x, assembled_model.model_config.num_heads)
+
+jax_outs = assembled_model.forward_no_emb(assembled_model.params, x)
+
+
+for i in range(len(outs)):
+    plt.imshow(outs[i].squeeze())
+    plt.show()
+    plt.imshow(np.array(jax_outs.transformer_output.layer_outputs[i]).squeeze())
+    plt.show()
+
+
+
+#%%
+
+
+def execute_compressed(params, x, heads, w_emb):
+    outs = []
+    compress = lambda x: x @ w_emb.T 
+    decompress = lambda x: x @ w_emb
+    resid = compress(x)
+    for layer, blocks in params.items():
+        block_1, p_1 = list(blocks.keys())[0].split('/')
+        print(layer, blocks.keys())
+        decompressed = decompress(resid)
+        if block_1 == 'attn':
+            Q, K, V, linear = blocks['attn/query'], blocks['attn/key'], blocks['attn/value'], blocks['attn/linear']
+            res = attn_layer(decompressed, Q, K, V, linear, heads)
+            print(f"attn_out {res.mean()}")
+            outs.append(res)
+            resid += compress(res)
+        elif block_1 == 'mlp':
+            fst, snd = blocks['mlp/linear_1'], blocks['mlp/linear_2']
+            res = mlp_layer(decompressed, fst, snd)
+            print(f"mlp_out {res.mean()}")
+            outs.append(res)
+            resid += compress(res)
+        print(resid.mean())
+        print(resid.shape)
+    return outs
+ps = interp_params(compressed_assembled_model.params)
+encoded = compressed_assembled_model.encode_input(formatted_input)
+x = compressed_assembled_model.forward_emb(compressed_assembled_model.params, encoded)
+outs = execute_compressed(ps, x, compressed_assembled_model.model_config.num_heads, compressed_assembled_model.params['compressed_transformer']['w_emb'])
+jax_outs = compressed_assembled_model.forward_no_emb(compressed_assembled_model.params, x)
+
+
+for i in range(len(outs)):
+    plt.imshow(outs[i].squeeze())
+    plt.show()
+    plt.imshow(np.array(jax_outs.transformer_output.layer_outputs[i]).squeeze())
+    plt.show()
+
+#%%
+
+
+def attn_layer(x, Q, K, V, linear, heads, w_emb):
+
+    def project(x, w, b, heads):
+        query_heads = x @ w + b
+        *leading_dims, _ = x.shape
+        return query_heads.reshape((*leading_dims, heads, -1))
+    query_heads = project(x, (w_emb @ Q['w']), Q['b'], heads) # [T', H, Q=K]
+    key_heads = project(x, (w_emb @ K['w']), K['b'], heads) # [T, H, Q=K]
+    value_heads = project(x, (w_emb @ V['w']) , V['b'], heads) # [T, H, V]
+    attn_logits = np.einsum("...thd,...Thd->...htT", query_heads, key_heads)
+    attn_logits = attn_logits / np.sqrt(key_heads.shape[-1]).astype(x.dtype)
+    #attn_weights = softmax(attn_logits)
+    attn_weights = np.array(jax.nn.softmax(attn_logits))  # [H, T', T]
+    attn = np.einsum("...htT,...Thd->...thd", attn_weights, value_heads)
+    *leading_dims, sequence_length, _ = x.shape
+    attn = np.reshape(attn, (*leading_dims, sequence_length, -1))  # [T', H*V]
+
+
+    # Apply another projection to get the final embeddings.
+    final_projection = attn @ (linear['w'] @ w_emb.T)  + linear['b'] @ w_emb.T
+    #assert (linear['b'] == np.zeros_like(linear['b'])).all()
+
+    uncompressed_for_comparison = (attn @ linear['w'])  + linear['b']
+
+    return final_projection, uncompressed_for_comparison
+
+def mlp_layer(x, fst, snd, w_emb):
+    # compress = lambda x: x @ w_emb.T 
+    # decompress = lambda x: x @ w_emb
+    f = x @ (w_emb @ fst['w']) + fst['b']
+    #f = np.max(f, 0)
+    f = np.array(jax.nn.relu(f))
+    s = (f @ snd['w'] @ w_emb.T + snd['b'] @ w_emb.T) 
+    uncompressed_for_comparison = f @ snd['w'] + snd['b']
+
+    return s, uncompressed_for_comparison
+
+def execute(params, x, heads,w_emb):
+    outs = []
+    compress = lambda x: x @ w_emb.T 
+    decompress = lambda x: x @ w_emb
+    #resid = compress(x)
+    resid = x
+    print(resid.mean())
+    print(resid.shape)
+    for layer, blocks in params.items():
+        block_1, p_1 = list(blocks.keys())[0].split('/')
+        print(layer, blocks.keys())
+        if block_1 == 'attn':
+            Q, K, V, linear = blocks['attn/query'], blocks['attn/key'], blocks['attn/value'], blocks['attn/linear']
+            res, uncomp = attn_layer(resid, Q, K, V, linear, heads, w_emb)
+            print(f"attn_out {res.mean()}")
+            outs.append(uncomp)
+            resid += res
+        elif block_1 == 'mlp':
+            fst, snd = blocks['mlp/linear_1'], blocks['mlp/linear_2']
+            res, uncomp = mlp_layer(resid, fst, snd,w_emb)
+            # print(f"mlp_out {res.mean()}")
+            outs.append(uncomp)
+            resid += res
+        print(f"resid: {resid.mean()}")
+        print(resid.shape)
+        
+    return outs
+
+ps = interp_params(compressed_assembled_model.params)
+
+ps = interp_params(compressed_assembled_model.params)
+encoded = compressed_assembled_model.encode_input(formatted_input)
+x = compressed_assembled_model.forward_emb(compressed_assembled_model.params, encoded)
+outs = execute(ps, x, compressed_assembled_model.model_config.num_heads,compressed_assembled_model.params['compressed_transformer']['w_emb'])
+
+#%%
+jax_outs = compressed_assembled_model.forward_no_emb(compressed_assembled_model.params, x)
+
+#%%
+w_emb = compressed_assembled_model.params['compressed_transformer']['w_emb']
+decompress = lambda x: x @ w_emb
+
+for i in range(len(outs)):
+    plt.imshow(outs[i].squeeze())
+    plt.show()
+    plt.imshow(np.array(jax_outs.transformer_output.layer_outputs[i]).squeeze())
+    plt.show()

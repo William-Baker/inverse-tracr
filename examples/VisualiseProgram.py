@@ -103,7 +103,7 @@ def get_program(program_name, max_seq_len):
 
 
 #%%
-prog_name = "map_test_c"
+prog_name = "hist"
 program, vocab, input_seq = get_program(prog_name, 6)
 vocab = set(list(input_seq))
 formatted_input = ["bos"] + list(input_seq)
