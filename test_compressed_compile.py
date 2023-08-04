@@ -107,7 +107,6 @@ def attn_layer(x, Q, K, V, linear, heads):
     value_heads = project(x, V, heads) # [T, H, V]
     attn_logits = np.einsum("...thd,...Thd->...htT", query_heads, key_heads)
     attn_logits = attn_logits / np.sqrt(key_heads.shape[-1]).astype(x.dtype)
-    #attn_weights = softmax(attn_logits)
     attn_weights = np.array(jax.nn.softmax(attn_logits))  # [H, T', T]
     attn = np.einsum("...htT,...Thd->...thd", attn_weights, value_heads)
     *leading_dims, sequence_length, _ = x.shape
@@ -119,7 +118,6 @@ def attn_layer(x, Q, K, V, linear, heads):
 
 def mlp_layer(x, fst, snd):
     f = x @ fst['w'] + fst['b']
-    #f = np.max(f, 0)
     f = np.array(jax.nn.relu(f))
     s = f @ snd['w'] + snd['b']
     return s
@@ -228,7 +226,6 @@ def attn_layer(x, Q, K, V, linear, heads, w_emb):
     value_heads = project(x, (w_emb @ V['w']) , V['b'], heads) # [T, H, V]
     attn_logits = np.einsum("...thd,...Thd->...htT", query_heads, key_heads)
     attn_logits = attn_logits / np.sqrt(key_heads.shape[-1]).astype(x.dtype)
-    #attn_weights = softmax(attn_logits)
     attn_weights = np.array(jax.nn.softmax(attn_logits))  # [H, T', T]
     attn = np.einsum("...htT,...Thd->...thd", attn_weights, value_heads)
     *leading_dims, sequence_length, _ = x.shape
@@ -237,17 +234,13 @@ def attn_layer(x, Q, K, V, linear, heads, w_emb):
 
     # Apply another projection to get the final embeddings.
     final_projection = attn @ (linear['w'] @ w_emb.T)  + linear['b'] @ w_emb.T
-    #assert (linear['b'] == np.zeros_like(linear['b'])).all()
 
     uncompressed_for_comparison = (attn @ linear['w'])  + linear['b']
 
     return final_projection, uncompressed_for_comparison
 
 def mlp_layer(x, fst, snd, w_emb):
-    # compress = lambda x: x @ w_emb.T 
-    # decompress = lambda x: x @ w_emb
     f = x @ (w_emb @ fst['w']) + fst['b']
-    #f = np.max(f, 0)
     f = np.array(jax.nn.relu(f))
     s = (f @ snd['w'] @ w_emb.T + snd['b'] @ w_emb.T) 
     uncompressed_for_comparison = f @ snd['w'] + snd['b']
@@ -258,8 +251,7 @@ def execute(params, x, heads,w_emb):
     outs = []
     compress = lambda x: x @ w_emb.T 
     decompress = lambda x: x @ w_emb
-    #resid = compress(x)
-    resid = x
+    resid = compress(x)
     print(resid.mean())
     print(resid.shape)
     for layer, blocks in params.items():
