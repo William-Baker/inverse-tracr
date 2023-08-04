@@ -143,17 +143,13 @@ def execute(params, x, heads):
         if block_1 == 'attn':
             Q, K, V, linear = blocks['attn/query'], blocks['attn/key'], blocks['attn/value'], blocks['attn/linear']
             res = attn_layer(resid, Q, K, V, linear, heads)
-            print(f"attn_out {res.mean()}")
             outs.append(res)
             resid += res
         elif block_1 == 'mlp':
             fst, snd = blocks['mlp/linear_1'], blocks['mlp/linear_2']
             res = mlp_layer(resid, fst, snd)
-            print(f"mlp_out {res.mean()}")
             outs.append(res)
             resid += res
-        print(resid.mean())
-        print(resid.shape)
     return outs
 
 ps = interp_params(compressed_assembled_model.params)
@@ -187,17 +183,13 @@ def execute_compressed(params, x, heads, w_emb):
         if block_1 == 'attn':
             Q, K, V, linear = blocks['attn/query'], blocks['attn/key'], blocks['attn/value'], blocks['attn/linear']
             res = attn_layer(decompressed, Q, K, V, linear, heads)
-            print(f"attn_out {res.mean()}")
             outs.append(res)
             resid += compress(res)
         elif block_1 == 'mlp':
             fst, snd = blocks['mlp/linear_1'], blocks['mlp/linear_2']
             res = mlp_layer(decompressed, fst, snd)
-            print(f"mlp_out {res.mean()}")
             outs.append(res)
             resid += compress(res)
-        print(resid.mean())
-        print(resid.shape)
     return outs
 ps = interp_params(compressed_assembled_model.params)
 encoded = compressed_assembled_model.encode_input(formatted_input)
@@ -252,26 +244,19 @@ def execute(params, x, heads,w_emb):
     compress = lambda x: x @ w_emb.T 
     decompress = lambda x: x @ w_emb
     resid = compress(x)
-    print(resid.mean())
-    print(resid.shape)
     for layer, blocks in params.items():
         block_1, p_1 = list(blocks.keys())[0].split('/')
         print(layer, blocks.keys())
         if block_1 == 'attn':
             Q, K, V, linear = blocks['attn/query'], blocks['attn/key'], blocks['attn/value'], blocks['attn/linear']
             res, uncomp = attn_layer(resid, Q, K, V, linear, heads, w_emb)
-            print(f"attn_out {res.mean()}")
             outs.append(uncomp)
             resid += res
         elif block_1 == 'mlp':
             fst, snd = blocks['mlp/linear_1'], blocks['mlp/linear_2']
             res, uncomp = mlp_layer(resid, fst, snd,w_emb)
-            # print(f"mlp_out {res.mean()}")
             outs.append(uncomp)
             resid += res
-        print(f"resid: {resid.mean()}")
-        print(resid.shape)
-        
     return outs
 
 ps = interp_params(compressed_assembled_model.params)
