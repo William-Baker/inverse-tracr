@@ -64,9 +64,12 @@ def get_program(program_name, max_seq_len):
     program = lib.make_sort_unique(rasp.tokens, rasp.tokens)
     input_seq = [3,2,1,5,2]
   elif program_name == "hist":
-    vocab = {"a", "b", "c", "d"}
+    # vocab = {"a", "b", "c", "d"}
+    # program = lib.make_hist()
+    # input_seq = "abccd"
+    vocab = {"h", "e", "l", "o"}
     program = lib.make_hist()
-    input_seq = "abccd"
+    input_seq = "hello"
   elif program_name == "sort_freq":
     vocab = {"a", "b", "c", "d"}
     program = lib.make_sort_freq(max_seq_len=max_seq_len)
