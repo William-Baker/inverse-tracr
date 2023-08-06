@@ -113,7 +113,7 @@ class ZipPickleStreamReader(ZipStreamReader):
             x = self.zip.read(self.files[idx])
             try:
                 x,y = cloudpickle.loads(x)
-                return np.array(x), y
+                return x, y
             except: # EOFError/Unpickle err
                 self.files.pop(idx)
                 idx = idx % len(self)
