@@ -11,4 +11,5 @@ while True:
         transfer_to_archive(source_dir = 'cp_dataset_train_w')
     except:
         pass
+    print("done, waiting")
     time.sleep(60 * 30)

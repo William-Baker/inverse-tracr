@@ -68,6 +68,7 @@ torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from data.parameter_program_dataloader import TorchParameterProgramDataset
 from data.plot_true_v_pred import plot_orginal_heatmaps, figure_to_array
+from utils.export_compressed_params import compress_params, encode_jax_params
 from utils.jax_helpers import JaxMemUsage
 JaxMemUsage.launch(interval=0.01)
 from dill import dump, load
@@ -78,6 +79,7 @@ from models import GPT2, GPT2Config, GPTNeo, GPTJ
 from transformers.models.gptj.configuration_gptj import GPTJConfig
 from argparse import Namespace
 
+
 # GPT Large Train config
 args = Namespace(
     batch_size=128,# 256 for medium
@@ -87,7 +89,7 @@ args = Namespace(
     input_dropout_prob = 0.05,
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'VERY_VERY_TINY', #'MEDIUM', # 'LARGE'
+    config = 'VERY_TINY', #'MEDIUM', # 'LARGE'
     trail_name='train_w v2 ',
     task='Compressed' # 'Stock', 'Compressed', 'Natural'
 )
@@ -109,7 +111,7 @@ args = Namespace(
 CHECKPOINT_PATH = ".logs/"
 
 dataset_path = None
-if args.task == 'Native':
+if args.task == 'Stock':
     from data.dataloader_streams import ZipStreamReader as StoreReader
     from data.parameter_encoder import CRAFT_TIMESTEPS as TIMESTEPS
     from data.parameter_encoder import CRAFT_ARCH as ARCH
@@ -488,12 +490,15 @@ class WrappedDataset(StoreReader):
         while x_shape > self.max_timesteps:
             circular_index = (idx + offset) % self.__len__()
             x,y = super().__getitem__(circular_index)
+            if args.task in ['Compressed', 'Natural']: # we left these samples parameters unencoded
+                x = compress_params(x)
+                x = encode_jax_params(x)
             x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.max_prog_len, x=x, y=y, TIMESTEPS=TIMESTEPS, ARCH_LABELS=ARCH)
             x_shape = x.shape[0]
             offset += 1
-        return x,y,loss_mask,attention_mask
+        return np.array(x),np.array(y),np.array(loss_mask),np.array(attention_mask)
 
-
+#%%
 def make_collate_fn(PROG_LEN):
     ########################### Input Format ##########################################
     # | Timestep | Terminal Block Flag | Parameter Block | Architecture    |
@@ -561,7 +566,7 @@ test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, l
 next(iter(dataset))
 next(iter(test_dataset))
 
-#%%
+
 
 print(f"Dataset contains: {len(dataset)} samples" )
 
@@ -569,7 +574,7 @@ collate_fn = make_collate_fn(args.PROG_LEN)
 
 
 # note num_workers * prefetch_factor should be greater than the batch size
-train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=36, shuffle=True)#, pin_memory=True)
+train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=36, shuffle=True)#, pin_memory=True) num_workers=1, prefetch_factor=2)#
 test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=36, shuffle=True)#, pin_memory=True)
 num_train_iters = len(train_dataloader) * args.max_epochs
 
@@ -577,7 +582,7 @@ num_train_iters = len(train_dataloader) * args.max_epochs
 next(iter(train_dataloader))
 next(iter(test_dataloader))
 
-
+#%%
 
 def testing_loaders():
     it = iter(test_dataloader)

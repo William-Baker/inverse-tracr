@@ -1,6 +1,6 @@
 #%%
 # srun -t 1:0:0 --nodes 1 --cpus-per-task 38 -p icelake --ntasks 1 -A KRUEGER-SL3-CPU --pty bash --qos=INTR
-# sintr -t 24:0:0 --nodes 1 --cpus-per-task 1 -p icelake --ntasks 76 -A KRUEGER-SL3-CPU --qos=INTR
+# sintr -t 1:0:0 --nodes 1 --cpus-per-task 1 -p icelake --ntasks 76 -A KRUEGER-SL3-CPU --qos=INTR
 # module load cuda/11.8 cudnn/8.9_cuda-11.8
 # source venv/bin/activate
 # squeue -u wb326 -o "%a %c %C %D %e %F %L %M %p %q"
