@@ -20,6 +20,27 @@ def compress_params(params):
     return compressed_params
 
 
+def compress_params(params):
+    # we first need to find the compression matrix
+    w = params['compressed_transformer']['w_emb']
+    compressed_params = dict()
+    for key in params.keys():
+        if 'compressed_transformer/' in key:
+            p = params[key]['w']
+            key = key.replace( 'compressed_transformer/', '')
+            if key.endswith('key') or key.endswith('query') or key.endswith('value'):
+                compressed_params[key] = np.array(w @ p)
+            elif key.endswith('attn/linear'):
+                compressed_params[key] = np.array(p @ w.T)
+            elif key.endswith('mlp/linear_1'):
+                compressed_params[key] = np.array(w @ p)
+            elif key.endswith('mlp/linear_2'):
+                compressed_params[key] = np.array(p @ w.T)
+            else:
+                raise NotImplementedError(f"No implementation for {key}")
+    return compressed_params
+
+
 def encode_jax_params(params):
     collected_by_block = defaultdict(lambda: dict())
     for key, val in params.items():
@@ -40,12 +61,12 @@ import cloudpickle
 from os import makedirs
 
 def export_params(params, max_ops, actual_ops, trn_all, run_id):
-    compressed = compress_params(params)
+    #compressed = compress_params(params)
     prog_enc = ProgramEncoder(max_ops)
     encoded_ops = ProgramEncoder.encode_ops(actual_ops)
     tokenised_program = prog_enc.tokenise_program(encoded_ops)
-    encoded_params = encode_jax_params(compressed)
-    sample = (encoded_params, tokenised_program)
+    #encoded_params = encode_jax_params(params)
+    sample = (params, tokenised_program)
 
     target_db_path = 'cp_dataset'
     if trn_all == True:

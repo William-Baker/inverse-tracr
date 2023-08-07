@@ -41,7 +41,11 @@ class JaxMemUsage:
                 ).stdout.decode('utf-8')
 
             if output != '':
-                output = output.split('device: Total')[1]
+                output = output.split('device: Total')
+                if len(output) == 1:
+                    continue # we're using a CPU, give up
+                else:
+                    output = output[1]
                 JaxMemUsage.usage_str = output.split('\n')[0].split('\n')[0]
                 if JaxMemUsage.usage_str.endswith('kB'):
                     output = JaxMemUsage.usage_str[:-2]

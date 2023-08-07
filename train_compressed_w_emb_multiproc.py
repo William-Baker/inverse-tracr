@@ -29,19 +29,18 @@ process_args = Namespace(
 #
 from random import choice
 args = Namespace(
-    generator = 'Random', # 'Vocabulary'
+    factor=0.10,
     compression = 2.0,
     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
-    LR = 1e-2, # 4e-3, # 5e-2 worked so far but some nans
-    EPOCHS = 30,
+    LR = 5e-3, # 4e-3, # 5e-2 worked so far but some nans
+    EPOCHS = 20,
     trn_all = False, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
-    add_soft = True, # True, # True, # True, # False, True
     batch_size = 512,
+    vocab_batch_size=64,
     mult = False, #True, #True,
     sched = 'cosine',
     #mpow = 2,
-    factor=0.01,
     div=20,
 )
 
@@ -77,8 +76,7 @@ try:
     vocab_size_range=(5, 8)
     numeric_inputs_possible=True
     max_seq_len = np.random.randint(4, 9)
-    CRAFT_TIMEOUT = 2# 0.2 + 0.00001 * max(ops_range) ** 4
-
+    CRAFT_TIMEOUT = 2
     def timed_func():
         assembled_model, compressed_assembled_model, actual_ops = None, None, None
         
@@ -161,14 +159,16 @@ try:
 
 
     class VocabDataset:
-        def __init__(self, vocab, max_seq_len, encoder_fn) -> None:
+        def __init__(self, vocab, max_seq_len, encoder_fn, length=25000) -> None:
             self.vocab = vocab
-            self.inputs = list(product(*[vocab]*max_seq_len))
+            self.inputs = list(product(*[vocab]*(max_seq_len-1)))
             self.encoder_fn = encoder_fn
+            self.length = length
         def __len__(self):
-            return len(self.inputs)
+            #return len(self.inputs)
+            return self.length
         def __getitem__(self, idx):
-            formatted_input = [COMPILER_BOS] + list(self.inputs[idx])
+            formatted_input = [COMPILER_BOS] + list(self.inputs[idx%len(self.inputs)])
             encoded_tokens =  self.encoder_fn(formatted_input)
             return formatted_input, np.array(encoded_tokens)
         def collate_fn(data):
@@ -213,20 +213,14 @@ try:
             return target_outs, target_ids, decoded
         return fun
 
-    train_teacher_call = None
 
-    dataset = None
-    if args.generator == 'Vocabulary':
-        
-        train_dataloader = DataLoader(VocabDataset(vocab, max_seq_len, assembled_model.encode_input), batch_size=args.batch_size, collate_fn=VocabDataset.collate_fn, shuffle=True, num_workers=1, prefetch_factor=2)
-        train_teacher_call = make_teacher_call(assembled_model, assembled_model.forward)
-    elif args.generator == 'Random':
-        train_dataloader = DataLoader(RandomDataset(max_seq_len, len(assembled_model.residual_labels)), batch_size=args.batch_size, collate_fn=RandomDataset.collate_fn, num_workers=1, prefetch_factor=2)
-        train_teacher_call = make_teacher_call(assembled_model, assembled_model.forward_no_emb)
+    train_vocab_dataloader = DataLoader(VocabDataset(vocab, max_seq_len, assembled_model.encode_input), batch_size=args.vocab_batch_size, collate_fn=VocabDataset.collate_fn, shuffle=True, num_workers=1, prefetch_factor=2)
+    #train_teacher_call = make_teacher_call(assembled_model, assembled_model.forward)
 
-    validation_dataloader = train_dataloader
-    if args.generator == 'Random':
-        validation_dataloader =  DataLoader(VocabDataset(vocab, max_seq_len, assembled_model.encode_input), batch_size=32, collate_fn=VocabDataset.collate_fn, shuffle=True, num_workers=1, prefetch_factor=2)
+    train_random_dataloader = DataLoader(RandomDataset(max_seq_len, len(assembled_model.residual_labels)), batch_size=args.batch_size, collate_fn=RandomDataset.collate_fn, num_workers=1, prefetch_factor=2)
+    train_teacher_call = make_teacher_call(assembled_model, assembled_model.forward_no_emb)
+
+
     validation_teacher_call = make_validation_teacher_call(assembled_model, assembled_model.forward)
 
     logger.add_scalar("progress", 0.2, 2)
@@ -285,7 +279,7 @@ try:
 
     LR_fn = None
     if args.sched == 'cosine': # cosine anealing scheduler
-        LR_fn = create_learning_rate_fn(1, args.EPOCHS, args.LR, len(train_dataloader))    
+        LR_fn = create_learning_rate_fn(1, args.EPOCHS, args.LR, len(train_random_dataloader))    
     elif args.sched == 'custom': # custom scheduler
         #  ensure you uncomment the line in the train loop to use
         LR_fn = lambda x: cs.LR
@@ -321,11 +315,7 @@ try:
     # ============== init train state ===============================
 
 
-    forward_fn = None
-    if args.generator == 'Vocabulary':
-        forward_fn = compressed_assembled_model.forward
-    elif args.generator == 'Random':
-        forward_fn = compressed_assembled_model.forward_no_emb
+    forward_fn = compressed_assembled_model.forward_no_emb
 
     # Initialize training state
     state = train_state.TrainState.create(
@@ -334,35 +324,28 @@ try:
 
 
     def calculate_loss(params, batch):
-        encoded_tokens, targets, target_ids = batch
+        encoded_tokens, targets, target_ids, encoded_vocab, vocab_target_ids = batch
         output = state.apply_fn(params, encoded_tokens)
         compressed_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
+        vocab_output = state.apply_fn(params, encoded_vocab)
 
-        loss = 0.0
-        # L2 Loss
-        if args.loss == 'L2':
-            loss = jnp.mean((targets - compressed_outs)** 2) 
+        #loss = 0.0
 
-        # L1 Loss
-        elif args.loss == 'L1':
-            loss = jnp.mean(jnp.abs(targets - compressed_outs))
-        
-        elif args.loss == 'SoftMax':
-            loss = optax.softmax_cross_entropy(compressed_outs, targets).mean()
+        loss = jnp.mean((targets - compressed_outs)** 2) 
+
 
         # Additional logit error term
-        if args.add_soft:
-            logits = compressed_assembled_model.residual_to_logits(output)
-            if args.mult:
-                loss *= optax.softmax_cross_entropy_with_integer_labels(logits, target_ids).mean() ** args.mpow
-            else:
-                loss += optax.softmax_cross_entropy_with_integer_labels(logits, target_ids).mean() * args.factor
+        logits = compressed_assembled_model.residual_to_logits(vocab_output)
+        loss += optax.softmax_cross_entropy_with_integer_labels(logits, vocab_target_ids).mean() * args.factor
         
         return loss
 
-    def train_step(state, encoded_tokens):
+    def train_step(state, encoded_tokens, encoded_vocab):
+        extra_encoded_tokens = assembled_model.forward_emb(assembled_model.params, encoded_vocab)
+        #encoded_tokens = jnp.concatenate([encoded_tokens, extra_enoded_tokens], axis=0)
         target_outs, target_ids =  train_teacher_call(encoded_tokens) 
-        batch = (encoded_tokens, target_outs, target_ids)
+        _, vocab_target_ids =  train_teacher_call(extra_encoded_tokens) 
+        batch = (encoded_tokens, target_outs, target_ids, extra_encoded_tokens, vocab_target_ids)
         loss_fn = lambda params: calculate_loss(params, batch)
         loss, grads = jax.value_and_grad(loss_fn)(state.params)
         state = state.apply_gradients(grads=grads)
@@ -370,6 +353,23 @@ try:
 
     train_step = jax.jit(train_step)
 
+
+    def measure_accuracy():
+        VAL_SAMPLES = 30
+        avg_acc = 0.0
+        it = iter(train_vocab_dataloader)
+        for idx in range(VAL_SAMPLES):        
+            batch = next(it)
+            (formatted_input, encoded_tokens) = batch
+            target_outs, target_ids, decoded = validation_teacher_call(encoded_tokens)
+            output = jax.jit(compressed_assembled_model.forward)(state.params, encoded_tokens)
+            pred_decoded = compressed_assembled_model.decode_all_outputs(output)
+            acc = np.equal(pred_decoded , decoded).mean()
+            avg_acc += acc
+            
+        avg_acc /= VAL_SAMPLES
+        logger.add_scalar("acc", avg_acc, 1)
+        return avg_acc
 
 
 
@@ -380,17 +380,19 @@ try:
 
 
     avg_loss = 0.0
-            
+    avg_acc = 0.0
     global_idx = 0
     for epoch in range(args.EPOCHS):
-        with tqdm(total=len(train_dataloader), unit='batch') as tepoch:
+        with tqdm(total=len(train_random_dataloader), unit='batch') as tepoch:
             total_loss = 0.0
-            for idx, batch in enumerate(train_dataloader):
+            vocab_iter = iter(train_vocab_dataloader)
+            for idx, batch in enumerate(train_random_dataloader):
 
-                (formatted_input, encoded_tokens) = batch 
+                (formatted_vocab, encoded_vocab) = next(vocab_iter)
+                (formatted_input, encoded_tokens)  = batch 
 
 
-                state, loss = train_step(state, encoded_tokens)
+                state, loss = train_step(state, encoded_tokens, encoded_vocab)
                 
                 
                 tepoch.set_postfix({'Batch': idx, 'Train Loss': loss})
@@ -406,14 +408,18 @@ try:
                     failure(2)
 
             
-            avg_loss = total_loss / len(train_dataloader)
+            avg_loss = total_loss / len(train_random_dataloader)
             tepoch.set_postfix({'Batch': idx, 'Avg Loss': avg_loss})
             logger.add_scalar("avg loss", avg_loss.item(), epoch)
 
-            if avg_loss > 2: # probrably wont converge if we haven't already
+            if avg_loss > 4: # probrably wont converge if we haven't already
                     failure(3)
                 
             if (args.EPOCHS - epoch ) in [1, 2,3,4]: # export the 4th to last to the 2nd to last
+                if (args.EPOCHS - epoch) == 4:
+                    avg_acc = measure_accuracy()
+                    if avg_acc < 0.9:
+                        failure(5)
                 if (args.EPOCHS - epoch) == 1:
                     if avg_loss > 0.05:
                         failure(4)
@@ -431,23 +437,23 @@ try:
 
 
         
-    VAL_SAMPLES = 10
-    avg_acc = 0.0
-    with tqdm(total=VAL_SAMPLES, unit='batch') as tepoch:
-        it = iter(validation_dataloader)
-        for idx in range(VAL_SAMPLES):        
-            batch = next(it)
-            (formatted_input, encoded_tokens) = batch
-            target_outs, target_ids, decoded = validation_teacher_call(encoded_tokens)
-            output = jax.jit(compressed_assembled_model.forward)(state.params, encoded_tokens)
-            pred_decoded = compressed_assembled_model.decode_all_outputs(output)
-            acc = np.equal(pred_decoded , decoded).mean()
-            avg_acc += acc
-            tepoch.set_postfix({'Batch': idx, 'Acc': acc})
-            tepoch.update(1)
-        avg_acc /= VAL_SAMPLES
-        tepoch.set_postfix({'Avg Acc': avg_acc})
-        logger.add_scalar("acc", avg_acc, 1)
+    # VAL_SAMPLES = 30
+    # avg_acc = 0.0
+    # with tqdm(total=VAL_SAMPLES, unit='batch') as tepoch:
+    #     it = iter(train_vocab_dataloader)
+    #     for idx in range(VAL_SAMPLES):        
+    #         batch = next(it)
+    #         (formatted_input, encoded_tokens) = batch
+    #         target_outs, target_ids, decoded = validation_teacher_call(encoded_tokens)
+    #         output = jax.jit(compressed_assembled_model.forward)(state.params, encoded_tokens)
+    #         pred_decoded = compressed_assembled_model.decode_all_outputs(output)
+    #         acc = np.equal(pred_decoded , decoded).mean()
+    #         avg_acc += acc
+    #         tepoch.set_postfix({'Batch': idx, 'Acc': acc})
+    #         tepoch.update(1)
+    #     avg_acc /= VAL_SAMPLES
+    #     tepoch.set_postfix({'Avg Acc': avg_acc})
+    #     logger.add_scalar("acc", avg_acc, 1)
 
     fig = show_emb(state.params, show=False)
     logger.add_figure('emb', fig, global_step=global_idx)
@@ -476,34 +482,5 @@ except Exception as E:
         f.write(str(tb))
 
 
-# #%%
-# from data.parallelzipfilebetter import ParallelZipFile as ZipFile
-# import cloudpickle
-
-# class ZipStreamReader:
-#     def __init__(self, dir:str) -> None:
-#         self.zip = ZipFile(file=dir, mode='r')
-#         self.files = sorted(self.zip.namelist())
-#     def __len__(self):
-#         return len(self.files)
-#     def __getitem__(self, idx):
-#         x = self.zip.read(self.files[idx])
-#         # loaded = np.load(BytesIO(x), allow_pickle=True)
-#         x,y = cloudpickle.loads(x)
-#         return x, y
-
-# #df = ZipStreamReader('cp_dataset_train_all.zip')
-
-# df = ZipStreamReader('cp_dataset_train_w.zip')
-# it = iter(df)
-# x,y = next(it)
-
-# print(len(df))
-
-# from data.dataloaders import ProgramEncoder
-
-
-# prog_enc = ProgramEncoder(15)
-# print(prog_enc.decode_pred(y))
 
 
