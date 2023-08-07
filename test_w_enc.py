@@ -35,13 +35,15 @@ from jax import tree_map
 import numpy as np
 
 zip = ZipFile(file='cp_dataset_train_w.zip', mode='r', compression=ZIP_DEFLATED, compresslevel=9)
-out = ZipFile(file='cp_dataset_train_w_out2.zip', mode='w', compression=ZIP_DEFLATED, compresslevel=9)
-files = sorted(zip.namelist())
+out = ZipFile(file='cp_dataset_train_w_out.zip', mode='a', compression=ZIP_DEFLATED, compresslevel=9)
+in_files = set(sorted(zip.namelist()))
+out_files = set(sorted(out.namelist()))
+files = list(in_files - out_files)
 
 new_params = None
 for idx in tqdm(range(len(files))):
-    x = zip.read(files[idx])
     try:
+        x = zip.read(files[idx])
         x,y = cloudpickle.loads(x)
         new_params = tree_map(lambda x: np.array(x), x)
         b = cloudpickle.dumps((new_params,y))

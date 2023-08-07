@@ -7,9 +7,9 @@
 #SBATCH -A KRUEGER-SL3-CPU
 #! Output filename:
 #! %A means slurm job ID and %a means array index
-#SBATCH --output=slurm/test_dmtcp_%A_%a.out
+#SBATCH --output=test_dmtcp_%A_%a.out
 #! Errors filename:
-#SBATCH --error=slurm/test_dmtcp_%A_%a.err
+#SBATCH --error=test_dmtcp_%A_%a.err
 
 #! Number of nodes to be allocated for the job (for single core jobs always leave this at 1)
 #SBATCH --nodes=1
@@ -18,14 +18,14 @@
 #! How many many cores will be allocated per task? (for single core jobs always leave this at 1)
 #SBATCH --cpus-per-task=1
 #! Estimated runtime: hh:mm:ss (job is force-stopped after if exceeded):
-#SBATCH --time=3:00:00
+#SBATCH --time=1:00:00
 #! Estimated maximum memory needed (job is force-stopped if exceeded):
 #! RAM is allocated in ~5980mb blocks, you are charged per block used,
 #! and unused fractions of blocks will not be usable by others.
 #SBATCH --mem=3380mb
 #! Submit a job array with index values between 0 and 31
 #! NOTE: This must be a range, not a single number (i.e. specifying '32' here would only run one job, with index 32)
-#SBATCH --array=0-5000
+#SBATCH --array=0-500
 
 #! This is the partition name.
 #SBATCH -p icelake
@@ -44,6 +44,7 @@ module purge                               # Removes all modules still loaded
 module load rhel7/default-peta4            # REQUIRED - loads the basic environment
 module load cuda/11.8 cudnn/8.9_cuda-11.8
 source venv/bin/activate
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
 
 #! The variable $SLURM_ARRAY_TASK_ID contains the array index for each job.
 #! In this example, each job will be passed its index, so each output file will contain a different value

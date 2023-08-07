@@ -4,11 +4,18 @@
 # module load cuda/11.8 cudnn/8.9_cuda-11.8
 # source venv/bin/activate
 # squeue -u wb326 -o "%a %c %C %D %e %F %L %M %p %q"
+#!conda init bash
+#!source ~/miniconda3/bin/activate
+#!conda activate /rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
+#/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
+#!module load cuda/11.8 cudnn/8.9_cuda-11.8
 
 import subprocess
 from threading import Thread
+import os, sys
+os.environ["LD_LIBRARY_PATH"] += ":/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib"
+sys.path.append("/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib")
 from torch.utils.tensorboard import SummaryWriter
-import os
 from utils.export_compressed_params import transfer_to_archive
 import time
 

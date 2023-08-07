@@ -29,8 +29,10 @@
 
 # ImportError: libcupti.so.11.7: cannot open shared object file: No such file or directory
 # export PATH=$PATH:/home/wb326/miniconda3/envs/venv/lib
-# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/wb326/rds/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
+# export PATH=$PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
 
+# list all running python processes in case GPU memory not deallocated:
 # ps -a | grep python
 
 
@@ -47,7 +49,6 @@ import jax
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 #os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 # from jax import config
 # config.update("jax_disable_jit", True)
 
@@ -83,14 +84,14 @@ from argparse import Namespace
 
 # GPT Large Train config
 args = Namespace(
-    batch_size=128,# 256 for medium
+    batch_size=256,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 20,
     LEARNING_RATE=1e-4,
     input_dropout_prob = 0.05,
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'VERY_TINY', #'MEDIUM', # 'LARGE'
+    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
     trail_name='train_w v2 ',
     task='Compressed' # 'Stock', 'Compressed', 'Natural'
 )
