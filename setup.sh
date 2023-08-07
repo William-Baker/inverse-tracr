@@ -8,3 +8,7 @@ pip3 install jax chex einops dm-haiku jax networkx numpy typing_extensions matpl
 #pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 
 python -m pip install -e 
+
+conda create --prefix ./envs
+conda install -c "nvidia/label/cuda-11.7.0" cuda-cupti
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/wb326/rds/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib

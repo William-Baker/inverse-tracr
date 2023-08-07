@@ -3,7 +3,8 @@
 # srun -t 00:10:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:2 --partition=pascal -A MLMI-WB326-SL2-GPU --pty bash
 # srun -t 2:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
 
-# conda activate venv
+# =========== To run - use the following commands first ==========
+# conda activate /rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
 # source venv/bin/activate
 # jupyter lab --no-browser --ip=* --port=8081
 
@@ -28,7 +29,7 @@
 
 # ImportError: libcupti.so.11.7: cannot open shared object file: No such file or directory
 # export PATH=$PATH:/home/wb326/miniconda3/envs/venv/lib
-# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/wb326/miniconda3/envs/venv/lib
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/wb326/rds/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
 
 # ps -a | grep python
 
@@ -87,9 +88,9 @@ args = Namespace(
     input_dropout_prob = 0.05,
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'VERY_VERY_TINY', #'MEDIUM', # 'LARGE'
-    trail_name='train_w v2 ',
-    task='Compressed' # 'Stock', 'Compressed', 'Natural'
+    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
+    trail_name='test',
+    task='Stock' # 'Stock', 'Compressed', 'Natural'
 )
 
 # # GPT Large Cont fine tune Train config
