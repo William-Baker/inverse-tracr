@@ -110,8 +110,8 @@ import cloudpickle
 class ZipPickleStreamReader(ZipStreamReader):
     def __getitem__(self, idx):
         while True:
-            x = self.zip.read(self.files[idx])
             try:
+                x = self.zip.read(self.files[idx])
                 x,y = cloudpickle.loads(x)
                 return x, y
             except: # EOFError/Unpickle err

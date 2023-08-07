@@ -22,20 +22,20 @@ def compress_params(params):
 
 def compress_params(params):
     # we first need to find the compression matrix
-    w = params['compressed_transformer']['w_emb']
+    w = np.array(params['compressed_transformer']['w_emb'])
     compressed_params = dict()
     for key in params.keys():
         if 'compressed_transformer/' in key:
-            p = params[key]['w']
+            p = np.array(params[key]['w'])
             key = key.replace( 'compressed_transformer/', '')
             if key.endswith('key') or key.endswith('query') or key.endswith('value'):
-                compressed_params[key] = np.array(w @ p)
+                compressed_params[key] = w @ p
             elif key.endswith('attn/linear'):
-                compressed_params[key] = np.array(p @ w.T)
+                compressed_params[key] = p @ w.T
             elif key.endswith('mlp/linear_1'):
-                compressed_params[key] = np.array(w @ p)
+                compressed_params[key] = w @ p
             elif key.endswith('mlp/linear_2'):
-                compressed_params[key] = np.array(p @ w.T)
+                compressed_params[key] = p @ w.T
             else:
                 raise NotImplementedError(f"No implementation for {key}")
     return compressed_params
@@ -59,6 +59,7 @@ def encode_jax_params(params):
 
 import cloudpickle
 from os import makedirs
+from jax import tree_map
 
 def export_params(params, max_ops, actual_ops, trn_all, run_id):
     #compressed = compress_params(params)
@@ -66,7 +67,8 @@ def export_params(params, max_ops, actual_ops, trn_all, run_id):
     encoded_ops = ProgramEncoder.encode_ops(actual_ops)
     tokenised_program = prog_enc.tokenise_program(encoded_ops)
     #encoded_params = encode_jax_params(params)
-    sample = (params, tokenised_program)
+    np_params = tree_map(lambda x: np.array(x), params)
+    sample = (np_params, tokenised_program)
 
     target_db_path = 'cp_dataset'
     if trn_all == True:
