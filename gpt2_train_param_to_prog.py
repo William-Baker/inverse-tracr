@@ -87,13 +87,13 @@ args = Namespace(
     batch_size=256,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 20,
-    LEARNING_RATE=1e-4,
-    input_dropout_prob = 0.05,
+    LEARNING_RATE=1e-5,
+    input_dropout_prob = 0.40,
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-    trail_name='train_w v2 ',
-    task='Compressed' # 'Stock', 'Compressed', 'Natural'
+    config = 'TINY', # 'LARGE'
+    trail_name='slow 680k dataset nat',
+    task='Natural' # 'Stock', 'Compressed', 'Natural'
 )
 
 # # GPT Large Cont fine tune Train config
@@ -713,7 +713,7 @@ elif args.model == 'GPTNEO':
 
 
 trainer = TrainerModule(model, 
-                        f'{args.trail_name} {args.model} {args.config} LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
+                        f'{args.trail_name} {args.model} {args.config} TASK: {args.task} LR: {args.LEARNING_RATE} InpDrop: {args.input_dropout_prob} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
