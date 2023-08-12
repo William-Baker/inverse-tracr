@@ -185,3 +185,4 @@ envs/
 .clogs_*/
 test_*.err
 test_*.out
+.logs2/

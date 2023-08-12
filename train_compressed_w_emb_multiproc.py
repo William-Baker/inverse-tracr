@@ -26,7 +26,7 @@ process_args = Namespace(
     run_id =   str(datetime.now().strftime("%m-%d %H.%M.%S.%f"))
 )
 
-#
+
 from random import choice
 args = Namespace(
     factor=0.10,
@@ -34,7 +34,7 @@ args = Namespace(
     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
     LR = 5e-3, # 4e-3, # 5e-2 worked so far but some nans
     EPOCHS = 20,
-    trn_all = False, # True,
+    trn_all = True, #False, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
     batch_size = 512,
     vocab_batch_size=64,

@@ -86,13 +86,13 @@ from argparse import Namespace
 args = Namespace(
     batch_size=128,# 256 for medium
     PROG_LEN = 15,
-    max_epochs = 20,
+    max_epochs = 40,
     LEARNING_RATE=1e-5,
-    input_dropout_prob = 0.40,
+    input_dropout_prob = 0.05,
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-    trail_name='Accuracy_rerun',
+    config = 'LARGE', #'MEDIUM', # 'LARGE'
+    trail_name='Accuracy_NumVar',
     task='Stock' # 'Stock', 'Compressed', 'Natural'
 )
 
@@ -398,7 +398,7 @@ class TrainerModule:
 
             self.logger.add_histogram("verbose/output", np.array(logits), global_step=step)
 
-            self.logger.add_scalar("verbose/acc", acc.item(), global_step=step)
+            self.logger.add_scalar("verbose/acc", acc.mean().item(), global_step=step)
 
 
         #self.verbose_step = jax.jit(verbose_step)
@@ -441,13 +441,14 @@ class TrainerModule:
                     # ----------- metrics -------------
                     loss, accuracy = loss.item(), np.array(accuracy)
                     loss_sum += loss
-                    acc_sum += accuracy
+                    acc_sum += accuracy.mean()
 
                     
                     # ----------- TF metrics ----------
                     global_step = idx * args.batch_size + (epoch - 1) * DATALOADER_LENGTH * args.batch_size
                     self.logger.add_scalar('train_hf/loss', loss, global_step=global_step)
                     self.logger.add_scalar('train_hf/accuracy', accuracy.mean(), global_step=global_step)
+                    self.logger.add_scalar('train_hf/accuracy100', (accuracy == 1.0).mean(), global_step=global_step)
                     self.logger.add_scalar('train_hf/accuracy90', (accuracy > 0.9).mean(), global_step=global_step)
                     self.logger.add_scalar('train_hf/accuracy80', (accuracy > 0.8).mean(), global_step=global_step)
                     self.logger.add_scalar('train_hf/accuracy70', (accuracy > 0.7).mean(), global_step=global_step)
@@ -464,6 +465,7 @@ class TrainerModule:
                     if validation_loader is not None and (idx + 1) % VALIDATION_INTERVAL == 0:
                         eval_acc, eval_loss = self.eval_model(validation_loader)
                         self.logger.add_scalar('val/accuracy', eval_acc.mean(), global_step=global_step)
+                        self.logger.add_scalar('val/accuracy100', (eval_acc == 1.0).mean(), global_step=global_step)
                         self.logger.add_scalar('val/accuracy90', (eval_acc > 0.9).mean(), global_step=global_step)
                         self.logger.add_scalar('val/accuracy80', (eval_acc > 0.8).mean(), global_step=global_step)
                         self.logger.add_scalar('val/accuracy70', (eval_acc > 0.7).mean(), global_step=global_step)
@@ -477,7 +479,7 @@ class TrainerModule:
                         
 
                     # ----------- TQDM ----------------
-                    tepoch.set_postfix({'Batch': idx, 'Train Loss': loss, 'Acc': accuracy, 'MaxMem': JaxMemUsage.max_usage_str, 'Mem': JaxMemUsage.usage_str})
+                    tepoch.set_postfix({'Batch': idx, 'Train Loss': loss, 'Acc': accuracy.mean(), 'MaxMem': JaxMemUsage.max_usage_str, 'Mem': JaxMemUsage.usage_str})
                     tepoch.update(1)
                     
                     count += 1
@@ -488,8 +490,8 @@ class TrainerModule:
                     jax.lib.xla_bridge.get_backend().defragment()
                     if isinstance(E, KeyboardInterrupt):
                         raise(E)
-            if args.task=='Stock':
-                self.eval_programs(step=epoch)
+            # if args.task=='Stock':
+            #     self.eval_programs(step=epoch)
             self.logger.add_scalar('train/loss', loss_sum / count, global_step=epoch)
             self.logger.add_scalar('train/accuracy', acc_sum / count, global_step=epoch)
             trainer.logger.flush()
@@ -800,32 +802,13 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 # trainer.eval_programs()
 # trainer.load_model(log_dir=f"XXX{args.model} cont LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}")
 
-trainer.load_model(log_dir=f"PARAM_GPT2_MEDIUM_v2 LR 0.0001 bs: 128 nembed: 1024 n_layer: 24 n_head: 16")
+# trainer.load_model(log_dir=f"PARAM_NumVar_GPT2_LARGE cont LR 1e-06 bs: 256 nembed: 1280 n_layer: 36 n_head: 20")
+# test_val_acc, test_val_loss = trainer.eval_model(test_dataloader)
+# import pandas as pd
+# pd.Series(test_val_acc).to_csv('GPT_LARGE_NUMVAR.csv')
 
 
 #%%
-
-test_val = jax.jit(trainer.eval_model(test_dataloader))
-
-
-#%%
-
-import plotly.express as px
-import pandas as pd
-df = pd.DataFrame(data = test_val[0], columns=['validation_accuracy'])
-# fig = px.histogram(df, x="total_bill", y="tip", color="sex", marginal="rug",
-#                    hover_data=df.columns)
-# fig.show()
-
-fig = px.ecdf(df)
-
-#%%
-jax.profiler.start_trace("jax-profile")
-train_val = trainer.eval_model(test_dataloader)#train_dataloader))
-jax.profiler.stop_trace()
-
-#%%
-
 
 for epoch_idx in range(1, args.max_epochs+1):
     trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=2 )
