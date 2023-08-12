@@ -9,6 +9,7 @@
 #!conda activate /rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
 #/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
 #!module load cuda/11.8 cudnn/8.9_cuda-11.8
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
 
 import subprocess
 from threading import Thread

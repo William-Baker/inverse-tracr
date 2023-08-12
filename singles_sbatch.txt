@@ -25,7 +25,7 @@
 #SBATCH --mem=3380mb
 #! Submit a job array with index values between 0 and 31
 #! NOTE: This must be a range, not a single number (i.e. specifying '32' here would only run one job, with index 32)
-#SBATCH --array=0-500
+#SBATCH --array=0-5000
 
 #! This is the partition name.
 #SBATCH -p icelake

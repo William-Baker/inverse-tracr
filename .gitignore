@@ -182,3 +182,5 @@ cp_dataset_train*/
 pool compressed Tracr/
 Compressed Tracr */
 envs/
+test_*.err
+test_*.out
