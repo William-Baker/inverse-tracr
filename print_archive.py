@@ -14,10 +14,11 @@ class ZipStreamReader:
         x,y = cloudpickle.loads(x)
         return x, y
 
-#df = ZipStreamReader('cp_dataset_train_all.zip')
+df = ZipStreamReader('cp_dataset_train_all.zip')
 
-df = ZipStreamReader('cp_dataset_train_w.zip')
+#df = ZipStreamReader('cp_dataset_train_w.zip')
 #df = ZipStreamReader('fixed.zip')
+print(len(df))
 it = iter(df)
 for i in range(200):
     next(it)

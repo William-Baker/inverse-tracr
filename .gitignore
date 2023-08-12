@@ -183,3 +183,5 @@ pool compressed Tracr/
 Compressed Tracr */
 envs/
 .clogs_*/
+test_*.err
+test_*.out
