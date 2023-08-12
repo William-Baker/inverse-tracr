@@ -92,7 +92,7 @@ args = Namespace(
     max_timesteps = 40,
     model = 'GPT2',
     config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-    trail_name='test',
+    trail_name='Accuracy_rerun',
     task='Stock' # 'Stock', 'Compressed', 'Natural'
 )
 
@@ -496,13 +496,13 @@ class TrainerModule:
 
     def eval_model(self, data_loader):
         # Test model on all data points of a data loader and return avg accuracy
-        loss_sum, count = 0.0, 0.0, 0
+        loss_sum, count = 0.0, 0
         acc_list = []        
-        for batch in data_loader:
+        for batch in tqdm(data_loader, desc='eval model'):
             loss, acc, self.rng = self.eval_step(self.state, self.rng, batch)
 
             bs = batch[0].shape[0]
-            loss, acc = loss.item(), acc.item()
+            loss = loss.item()
             acc_list += list(acc)
             loss_sum += loss * bs
             count += bs
@@ -799,6 +799,30 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 
 # trainer.eval_programs()
 # trainer.load_model(log_dir=f"XXX{args.model} cont LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}")
+
+trainer.load_model(log_dir=f"PARAM_GPT2_MEDIUM_v2 LR 0.0001 bs: 128 nembed: 1024 n_layer: 24 n_head: 16")
+
+
+#%%
+
+test_val = jax.jit(trainer.eval_model(test_dataloader))
+
+
+#%%
+
+import plotly.express as px
+import pandas as pd
+df = pd.DataFrame(data = test_val[0], columns=['validation_accuracy'])
+# fig = px.histogram(df, x="total_bill", y="tip", color="sex", marginal="rug",
+#                    hover_data=df.columns)
+# fig.show()
+
+fig = px.ecdf(df)
+
+#%%
+jax.profiler.start_trace("jax-profile")
+train_val = trainer.eval_model(test_dataloader)#train_dataloader))
+jax.profiler.stop_trace()
 
 #%%
 
