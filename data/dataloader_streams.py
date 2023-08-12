@@ -100,9 +100,17 @@ class ZipStreamReader:
     def __len__(self):
         return len(self.files)
     def __getitem__(self, idx):
-        x = self.zip.read(self.files[idx])
-        loaded = np.load(BytesIO(x), allow_pickle=True)
-        return loaded['x'].squeeze(), loaded['y'].squeeze()
+        while True:
+            try:
+                x = self.zip.read(self.files[idx])
+                loaded = np.load(BytesIO(x), allow_pickle=True)
+                x,y = loaded['x'].squeeze(), loaded['y'].squeeze()
+                assert len(x.shape) > 0
+                return x,y
+            except Exception as E: # EOFError/Unpickle err
+                self.files.pop(idx)
+                idx = idx % len(self)
+        
 
 
 import cloudpickle

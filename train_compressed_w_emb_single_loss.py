@@ -1,4 +1,6 @@
 # %%
+
+%matplotlib inline
 import sys
 sys.path.append('tracr/')
 import jax.numpy as jnp
@@ -28,73 +30,56 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 process_args = Namespace(
     run_id = str(datetime.now())
 )
+from random import choice
+# args = Namespace(
+#     generator = choice(['Random', 'Vocabulary']),
+#     program = 'random', #'sort_unique', "hist"#"sort"#"length"
+#     compression = 2.0,
+#     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
+#     LR = 1e-3, # 5e-2 worked so far but some nans
+#     EPOCHS = 20,
+#     trn_all = False, # True,
+#     loss = choice(['L2', 'L1', 'SoftMax']), #'L2', #  'L2', 'L1', 'SoftMax'
+#     add_soft = choice([True, False]), # True, # True, # True, # False, True
+#     batch_size = 512,
+#     mult = choice([True, False]), #False, #True, #True,
+#     sched = 'cosine',
+#     mpow = 2,
+#     factor=0.01,
+#     div=20,
+#     run_id = str(datetime.now()),
+# )
 
 args = Namespace(
-    run_id = str(datetime.now()),
-    program = 'random', #'sort_unique', "hist"#"sort"#"length"
-    factor=0.01,
+    generator = 'Random', #'Vocabulary',
+    program = 'sort_unique', #'random', #'sort_unique', "hist"#"sort"#"length"
     compression = 2.0,
     idty = False, # True, # Whether to use a noisy identity to initialise the embedding
     LR = 1e-3, # 5e-2 worked so far but some nans
-    EPOCHS = 30,
-    trn_all = True, #False, # True,
+    EPOCHS = 20,
+    trn_all = False, # True,
     loss = 'L2', #'L2', #  'L2', 'L1', 'SoftMax'
+    add_soft = True, # True, # True, # True, # False, True
     batch_size = 512,
-    vocab_batch_size=64,
-    mult = False, #True, #True,
+    mult =  False, #False, #True, #True,
     sched = 'cosine',
-    #mpow = 2,
-    
+    mpow = 2,
+    factor=0.01,
     div=20,
-    
+    run_id = str(datetime.now()),
 )
 
 
 jax.config.update('jax_default_matmul_precision', 'float32') # 'bfloat16'
 
-#%%
-
-def print_prog(program):
-    if 'inner' in vars(program):
-        print_prog(program.inner)
-    if 'fst' in vars(program):
-        print_prog(program.fst)
-    if 'snd' in vars(program):
-        print_prog(program.fst)
-    if 'sop' in vars(program):
-        print_prog(program.sop)
-    if 'selector' in vars(program):
-        print_prog(program.selector)
-    v = vars(program)
-    #if '_annotations' in vars(program): vars(program).pop('_annotations')
-    print(f"{program} {v}")
-
-def str_prog(program):
-    a = []
-    if 'inner' in vars(program):
-        a += str_prog(program.inner)
-    if 'fst' in vars(program):
-        a += str_prog(program.fst)
-    if 'snd' in vars(program):
-        a += str_prog(program.fst)
-    if 'sop' in vars(program):
-        a += str_prog(program.sop)
-    if 'selector' in vars(program):
-        a += str_prog(program.selector)
-    v = vars(program)
-    #if '_annotations' in vars(program): v.pop('_annotations')
-    a.append(f"{program} {v}")
-    return a
-
-
 # %% =================== init program and compile transformer programs ===========================
-program, vocab, max_seq_len, assembled_model, compressed_assembled_model, actual_op, ops_range, a, b = [None]*9
+program, vocab, max_seq_len, assembled_model, compressed_assembled_model, actual_op, ops_range = [None]*7
 if args.program != 'random':
     program, vocab, input_seq = get_program(args.program, 6)
     vocab = set(list(input_seq))
     max_seq_len = len(input_seq)+1
 
-    assembled_model, compressed_assembled_model = compile_with_compressed(
+    assembled_model, compressed_assembled_model, craft_model, rasp_model = compile_with_compressed(
                         program, vocab, max_seq_len, compression=args.compression)
 
 else:
@@ -106,7 +91,7 @@ else:
     max_seq_len = np.random.randint(4, 9)
     CRAFT_TIMEOUT = 2
     def timed_func():
-        assembled_model, compressed_assembled_model, actual_ops, a, b = [None] * 5
+        assembled_model, compressed_assembled_model, actual_ops = None, None, None
         
         n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
         
@@ -115,13 +100,10 @@ else:
         except np.core._exceptions._ArrayMemoryError as E:
             print("mem alloc err")
             return None
-        a = str_prog(program)
         try:
             assembled_model, compressed_assembled_model, craft_model, rasp_model = compile_with_compressed(
                 program, vocab, max_seq_len, compression=args.compression,
                 CRAFT_TIMEOUT=CRAFT_TIMEOUT)
-            b = str_prog(program)
-            
         except ValueError as E:
             print("val err")
             return None
@@ -131,31 +113,28 @@ else:
         except TimeoutError:
             print("craft timeout")
             return None
-        
-        print_prog(program)
-        return assembled_model, compressed_assembled_model, actual_ops, vocab, program, a, b
+
+        return assembled_model, compressed_assembled_model, actual_ops, vocab, program
 
 
 
 
     ret = None
     for i in range(20):
-        ret = timed_func()#time_sensitive(timed_func, 10)
+        ret = time_sensitive(timed_func, 10)
         if ret is not None:
             break
     if ret is None:
         exit(1)
-    assembled_model, compressed_assembled_model, actual_ops, vocab, program, a, b = ret
+    assembled_model, compressed_assembled_model, actual_ops, vocab, program = ret
     print(len(actual_ops))
 
-print_prog(program)
+
     #craft_model, actual_ops = program_craft_generator(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_range=numeric_range, numeric_inputs_possible=numeric_inputs_possible)
-#%%
 
-    
-print_prog(program)
 
-#%%
+
+
 if args.idty: # init embedding to be noisy identiy?
     compressed_assembled_model.params['compressed_transformer']['w_emb'] = jnp.eye(*compressed_assembled_model.params['compressed_transformer']['w_emb'].shape)
     compressed_assembled_model.params['compressed_transformer']['w_emb'] += jax.random.normal(jax.random.PRNGKey(0), compressed_assembled_model.params['compressed_transformer']['w_emb'].shape) / 10
@@ -178,13 +157,13 @@ def init_all_params(params):
 if args.trn_all:
     compressed_assembled_model.params = init_all_params(compressed_assembled_model.params)
 
-else:
-    for key, val in compressed_assembled_model.params.items():
-        for comp, weight in val.items():
-            if 'compressed_transformer' in key + comp:
-                if comp != 'w_emb':
-                    print(key + ' ' + comp)
-                    assert (weight == assembled_model.params[key.replace('compressed_transformer', 'transformer')][comp]).all()
+
+for key, val in compressed_assembled_model.params.items():
+    for comp, weight in val.items():
+        if 'compressed_transformer' in key + comp:
+            if comp != 'w_emb':
+                print(key + ' ' + comp)
+                assert (weight == assembled_model.params[key.replace('compressed_transformer', 'transformer')][comp]).all()
 
 # # normal
 # encoded_tokens = assembled_model.encode_input(formatted_input)
@@ -202,16 +181,14 @@ else:
 
 
 class VocabDataset:
-    def __init__(self, vocab, max_seq_len, encoder_fn, length=25000) -> None:
+    def __init__(self, vocab, max_seq_len, encoder_fn) -> None:
         self.vocab = vocab
-        self.inputs = list(product(*[vocab]*(max_seq_len-1)))
+        self.inputs = list(product(*[vocab]*max_seq_len))
         self.encoder_fn = encoder_fn
-        self.length = length
     def __len__(self):
-        #return len(self.inputs)
-        return self.length
+        return len(self.inputs)
     def __getitem__(self, idx):
-        formatted_input = [COMPILER_BOS] + list(self.inputs[idx%len(self.inputs)])
+        formatted_input = [COMPILER_BOS] + list(self.inputs[idx])
         encoded_tokens =  self.encoder_fn(formatted_input)
         return formatted_input, np.array(encoded_tokens)
     def collate_fn(data):
@@ -256,14 +233,20 @@ def make_validation_teacher_call(teacher, teacher_forward):
         return target_outs, target_ids, decoded
     return fun
 
+train_teacher_call = None
 
-train_vocab_dataloader = DataLoader(VocabDataset(vocab, max_seq_len, assembled_model.encode_input), batch_size=args.vocab_batch_size, collate_fn=VocabDataset.collate_fn, shuffle=True, num_workers=1, prefetch_factor=2)
-#train_teacher_call = make_teacher_call(assembled_model, assembled_model.forward)
+dataset = None
+if args.generator == 'Vocabulary':
+    
+    train_dataloader = DataLoader(VocabDataset(vocab, max_seq_len, assembled_model.encode_input), batch_size=args.batch_size, collate_fn=VocabDataset.collate_fn, shuffle=True, num_workers=1, prefetch_factor=2)
+    train_teacher_call = make_teacher_call(assembled_model, assembled_model.forward)
+elif args.generator == 'Random':
+    train_dataloader = DataLoader(RandomDataset(max_seq_len, len(assembled_model.residual_labels)), batch_size=args.batch_size, collate_fn=RandomDataset.collate_fn, num_workers=1, prefetch_factor=2)
+    train_teacher_call = make_teacher_call(assembled_model, assembled_model.forward_no_emb)
 
-train_random_dataloader = DataLoader(RandomDataset(max_seq_len, len(assembled_model.residual_labels)), batch_size=args.batch_size, collate_fn=RandomDataset.collate_fn, num_workers=1, prefetch_factor=2)
-train_teacher_call = make_teacher_call(assembled_model, assembled_model.forward_no_emb)
-
-
+validation_dataloader = train_dataloader
+if args.generator == 'Random':
+    validation_dataloader =  DataLoader(VocabDataset(vocab, max_seq_len, assembled_model.encode_input), batch_size=32, collate_fn=VocabDataset.collate_fn, shuffle=True, num_workers=1, prefetch_factor=2)
 validation_teacher_call = make_validation_teacher_call(assembled_model, assembled_model.forward)
 
 
@@ -322,7 +305,7 @@ def create_learning_rate_fn(warmup_epochs, num_epochs, base_learning_rate, steps
 
 LR_fn = None
 if args.sched == 'cosine': # cosine anealing scheduler
-    LR_fn = create_learning_rate_fn(1, args.EPOCHS, args.LR, len(train_random_dataloader))    
+    LR_fn = create_learning_rate_fn(1, args.EPOCHS, args.LR, len(train_dataloader))    
 elif args.sched == 'custom': # custom scheduler
     #  ensure you uncomment the line in the train loop to use
     LR_fn = lambda x: cs.LR
@@ -355,7 +338,11 @@ if not args.trn_all:
 #%% ============== init train state ===============================
 
 
-forward_fn = compressed_assembled_model.forward_no_emb
+forward_fn = None
+if args.generator == 'Vocabulary':
+    forward_fn = compressed_assembled_model.forward
+elif args.generator == 'Random':
+    forward_fn = compressed_assembled_model.forward_no_emb
 
 # Initialize training state
 state = train_state.TrainState.create(
@@ -364,28 +351,35 @@ state = train_state.TrainState.create(
 
 
 def calculate_loss(params, batch):
-    encoded_tokens, targets, target_ids, encoded_vocab, vocab_target_ids = batch
+    encoded_tokens, targets, target_ids = batch
     output = state.apply_fn(params, encoded_tokens)
     compressed_outs = jnp.stack(output.transformer_output.layer_outputs, axis=1).squeeze()
-    vocab_output = state.apply_fn(params, encoded_vocab)
 
-    #loss = 0.0
+    loss = 0.0
+    # L2 Loss
+    if args.loss == 'L2':
+        loss = jnp.mean((targets - compressed_outs)** 2) 
 
-    loss = jnp.mean((targets - compressed_outs)** 2) 
-
+    # L1 Loss
+    elif args.loss == 'L1':
+        loss = jnp.mean(jnp.abs(targets - compressed_outs))
+    
+    elif args.loss == 'SoftMax':
+        loss = optax.softmax_cross_entropy(compressed_outs, targets).mean()
 
     # Additional logit error term
-    logits = compressed_assembled_model.residual_to_logits(vocab_output)
-    loss += optax.softmax_cross_entropy_with_integer_labels(logits, vocab_target_ids).mean() * args.factor
+    if args.add_soft:
+        logits = compressed_assembled_model.residual_to_logits(output)
+        if args.mult:
+            loss *= optax.softmax_cross_entropy_with_integer_labels(logits, target_ids).mean() ** args.mpow
+        else:
+            loss += optax.softmax_cross_entropy_with_integer_labels(logits, target_ids).mean() * args.factor
     
     return loss
 
-def train_step(state, encoded_tokens, encoded_vocab):
-    extra_encoded_tokens = assembled_model.forward_emb(assembled_model.params, encoded_vocab)
-    #encoded_tokens = jnp.concatenate([encoded_tokens, extra_enoded_tokens], axis=0)
+def train_step(state, encoded_tokens):
     target_outs, target_ids =  train_teacher_call(encoded_tokens) 
-    _, vocab_target_ids =  train_teacher_call(extra_encoded_tokens) 
-    batch = (encoded_tokens, target_outs, target_ids, extra_encoded_tokens, vocab_target_ids)
+    batch = (encoded_tokens, target_outs, target_ids)
     loss_fn = lambda params: calculate_loss(params, batch)
     loss, grads = jax.value_and_grad(loss_fn)(state.params)
     state = state.apply_gradients(grads=grads)
@@ -394,44 +388,29 @@ def train_step(state, encoded_tokens, encoded_vocab):
 train_step = jax.jit(train_step)
 
 
-def show_outs(encoded_tokens, global_idx):
-    fig = show_emb(state.params, show=False)
-    logger.add_figure('emb', fig, global_step=global_idx)
-    c_output = state.apply_fn(state.params, encoded_tokens)
-    compressed_outs = c_output.transformer_output.layer_outputs
-    fig = show_images([x[0, :,:].T for x in compressed_outs], show=False)
-    logger.add_figure('outs', fig, global_step=global_idx)
-    output = jax.jit(assembled_model.forward_no_emb)(assembled_model.params, encoded_tokens)
-    outs = output.transformer_output.layer_outputs
-    fig = show_images([x[0, :,:].T for x in outs], show=False)
-    logger.add_figure('outs_uncompressed', fig, global_step=global_idx)
-    fig = show_images([(x-y)[0, :,:].T for x,y in zip(compressed_outs, outs)], show=False)
-    #fig = fig.colorbar(fig._localaxes[0])#np.stack([(x-y)[0, :,:].T for x,y in zip(compressed_outs, outs)]))
-    logger.add_figure('outs_d', fig, global_step=global_idx)
 
 
 #%% ======================= Train loop =====================================
 
+show_emb(state.params)
 
 from torch.utils.tensorboard import SummaryWriter
-log_dir = os.path.join('.clogs', str(vars(args)).replace('\'', '')[1:-1][:100])
+log_dir = os.path.join('.clogs', str(vars(args)).replace('\'', '')[1:-1])
 #log_dir = os.path.join('.clogs', f'LR{args.LR} init')
 logger = SummaryWriter(log_dir=log_dir)
 
-        
+avg_acc = 0.0
+avg_loss = 0.0
 global_idx = 0
-
 for epoch in range(args.EPOCHS):
-    with tqdm(total=len(train_random_dataloader), unit='batch') as tepoch:
+    with tqdm(total=len(train_dataloader), unit='batch') as tepoch:
         total_loss = 0.0
-        vocab_iter = iter(train_vocab_dataloader)
-        show_outs(next(iter(train_random_dataloader))[1], global_idx)
-        for idx, batch in enumerate(train_random_dataloader):
-            (formatted_vocab, encoded_vocab) = next(vocab_iter)
-            (formatted_input, encoded_tokens)  = batch 
+        for idx, batch in enumerate(train_dataloader):
+
+            (formatted_input, encoded_tokens) = batch 
 
 
-            state, loss = train_step(state, encoded_tokens, encoded_vocab)
+            state, loss = train_step(state, encoded_tokens)
             
             
             tepoch.set_postfix({'Batch': idx, 'Train Loss': loss})
@@ -446,27 +425,32 @@ for epoch in range(args.EPOCHS):
             logger.add_scalar('LR', np.array(LR_fn(state.step)).item(), global_step=global_idx)
             
 
-        avg_loss = total_loss / len(train_random_dataloader)
+        
+        avg_loss = (total_loss / len(train_dataloader)).item()
         tepoch.set_postfix({'Batch': idx, 'Avg Loss': avg_loss})
-        logger.add_scalar('avg loss', avg_loss.item(), global_step=epoch)
+        logger.add_scalar('avg loss', avg_loss, global_step=epoch)
         
         # ======================= Debug Info =====================================
         fig = show_emb(state.params, show=False)
         logger.add_figure('emb', fig, global_step=global_idx)
-        
+        output = state.apply_fn(state.params, encoded_tokens)
+        compressed_outs = output.transformer_output.layer_outputs
+        fig = show_images([x[0, :,:].T for x in compressed_outs], show=False)
+        logger.add_figure('outs', fig, global_step=global_idx)
 
         
+        
     
-    VAL_SAMPLES = 10
+    VAL_SAMPLES = min(10, len(validation_dataloader))
     with tqdm(total=VAL_SAMPLES, unit='batch') as tepoch:
-        it = iter(train_vocab_dataloader)
+        it = iter(validation_dataloader)
         avg_acc = 0.0
         for idx in range(VAL_SAMPLES):        
             batch = next(it)
             (formatted_input, encoded_tokens) = batch
             target_outs, target_ids, decoded = validation_teacher_call(encoded_tokens)
-            c_output = jax.jit(compressed_assembled_model.forward)(state.params, encoded_tokens)
-            pred_decoded = compressed_assembled_model.decode_all_outputs(c_output)
+            output = jax.jit(compressed_assembled_model.forward)(state.params, encoded_tokens)
+            pred_decoded = compressed_assembled_model.decode_all_outputs(output)
             acc = np.equal(pred_decoded , decoded).mean()
             avg_acc += acc
             logger.add_scalar('acc', acc, global_step=epoch * VAL_SAMPLES + idx)
@@ -478,104 +462,9 @@ for epoch in range(args.EPOCHS):
 
 show_emb(state.params)
 
-#logger.add_hparams({'loss': args.loss, 'add_soft': args.add_soft, 'mult': args.mult, 'generator':args.generator}, {'avg_acc': avg_acc, 'avg_loss': avg_loss})
-logger.add_hparams(dict(vars(args)), {'avg_acc': avg_acc, 'avg_loss': avg_loss})
 
-#%%
-
-global_idx = 0
-
-# compare outputs for some samples
-for idx, batch in tqdm(enumerate(train_dataloader)):
-    (formatted_input, encoded_tokens) = batch 
-    show_outs(encoded_tokens, global_idx)
-    global_idx += 1
-    if global_idx == 20:
-        break
+logger.add_hparams({'loss': args.loss, 'add_soft': args.add_soft, 'mult': args.mult, 'generator':args.generator}, {'avg_acc': avg_acc, 'avg_loss': avg_loss})
 
 
-#%%
-plt.imshow(np.array(state.params['compressed_transformer']['w_emb']))
-plt.imshow(np.array(state.params['compressed_transformer']['w_emb']).T @ np.array(state.params['compressed_transformer']['w_emb']))
-
-#%%
-
-
-
-#%%
-it = iter(dataset)
-
-formatted_input, encoded_tokens, outs, targ_decoded, target_ids = next(it)
-
-c_output = state.apply_fn(state.params, encoded_tokens)
-decoded = compressed_assembled_model.decode_output(c_output)
-#print(f"targ: {targ_decoded}, pred: {decoded}")
-#assert (targ_decoded == decoded).all()
-
-
-# %%
-
-# Set the embedding to the identity to disable it
-# state.params['compressed_transformer']['w_emb'] = jnp.eye(*state.params['compressed_transformer']['w_emb'].shape)
-
-
-def compress_params(params):
-    # we first need to find the compression matrix
-    w = params['compressed_transformer']['w_emb'].T
-    compressed_params = dict()
-    for key in params.keys():
-        if 'compressed_transformer/' in key:
-            p = params[key]['w']
-            key = key.replace( 'compressed_transformer/', '')
-            print(key)
-            print(p.shape)
-            if not (key.endswith('linear') or key.endswith('linear_2')):
-                compressed_params[key] = np.array((p.T @ w).T)
-            else:
-                compressed_params[key] = np.array((p @ w))
-            print(compressed_params[key].shape)
-    return compressed_params
-
-compressed = compress_params(state.params)
-# %%
-
-from data.dataloaders import ProgramEncoder
-from collections import defaultdict
-
-prog_enc = ProgramEncoder(max(ops_range))
-encoded_ops = ProgramEncoder.encode_ops(actual_ops)
-tokenised_program = prog_enc.tokenise_program(encoded_ops)
-
-
-def encode_jax_params(params):
-    collected_by_block = defaultdict(lambda: dict())
-    for key, val in params.items():
-        layer_no, layer_type, param_name = key.split('/')
-        collected_by_block[layer_no + layer_type][param_name] = val
-    
-    model_params = []
-    for key, val in collected_by_block.items():
-        if 'attn' in layer_type:
-            model_params.append({'MHA': val})
-        elif 'mlp' in layer_type:
-            model_params.append({'MLP': val})
-        else:
-            raise NotImplementedError()
-    return model_params
-
-encoded_params = encode_jax_params(compressed)
-
-
-
-
-#%%
-
-
-
-#%%
-
-
-
-#%%
 
 

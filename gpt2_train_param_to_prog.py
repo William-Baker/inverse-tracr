@@ -84,16 +84,16 @@ from argparse import Namespace
 
 # GPT Large Train config
 args = Namespace(
-    batch_size=256,# 256 for medium
+    batch_size=128,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 20,
     LEARNING_RATE=1e-5,
     input_dropout_prob = 0.40,
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'TINY', # 'LARGE'
-    trail_name='slow 680k dataset nat',
-    task='Natural' # 'Stock', 'Compressed', 'Natural'
+    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
+    trail_name='Accuracy_rerun',
+    task='Stock' # 'Stock', 'Compressed', 'Natural'
 )
 
 # # GPT Large Cont fine tune Train config
@@ -130,7 +130,7 @@ elif args.task == 'Natural':
     dataset_path = 'cp_dataset_train_all.zip'
 
 
-
+#%%
 class TrainerModule:
 
     def __init__(self, model, model_name, exmp_batch, max_iters, dataset, lr=1e-3, warmup=100, seed=42):
@@ -222,6 +222,29 @@ class TrainerModule:
     
     def get_accuracy_function(self):
         def accuracy(logits, labels, loss_mask):
+            # logits.shape = (BS, Timesteps, sum(seg_sizes))  - since onehot encoded
+            # labels.shape = (BS, Timesteps, segements)               - since ordinal encoded
+            # loss_mask.shape = (BS, Timesteps)            - mask over the timesteps to use
+            
+            # We have predictions
+            #                                    ---> BS batches
+            #     Batch 1     |   Batch 2      |  Batch BS |  ^
+            #       PAD       |     PAD        |           |  |  Timesteps
+            #  00000010000000 |     PAD        |           |  v
+            #  00000000001000 | 0000010000000  |           |
+            #       ...             ...
+            # <------------->
+            #   sum(seg_sizes)
+            #
+            # Example where BS = 2, timesteps = 3, seg sizes = 3, first timestep in second batch is padded
+            # logits = np.array([[[0, 1, 0],[0, 1, 0], [0, 0, 1]], 
+            #                     [[0, 0, 0],[1, 0, 0],[0, 1, 0]]])
+            # labels = np.expand_dims(np.array([[1, 1, 2],
+            #                                   [0, 0, 1]]), axis=2)
+            # loss_mask = np.array([[1, 1, 1],
+            #                     [0, 1, 1]])
+            # seg_sizes = [3]
+            
             def logit_classes_jnp(logits):
                 classes = []
                 logits = jnp.array(logits)
@@ -232,19 +255,61 @@ class TrainerModule:
                     ptr += seg_size
                 classes = jnp.stack(classes, axis=2)
                 return classes
-            classes = logit_classes_jnp(logits)
+            classes = logit_classes_jnp(logits) # (BS, Timesteps, segements)
             
-            time_steps = labels.shape[1]
-
+            # (BS, Timesteps, segements)
             repeated_loss_mask = jnp.repeat(loss_mask[:, :, jnp.newaxis], classes.shape[2], axis=2)
 
-            relevant_classes = classes[:, :time_steps, :] * repeated_loss_mask
-            relevant_labels = labels[:, :time_steps, :] * repeated_loss_mask
+            relevant_classes = classes * repeated_loss_mask
+            relevant_labels = labels * repeated_loss_mask
             relevant_labels += 1 - repeated_loss_mask # ensure the masked out values are different
-            acc = relevant_classes == relevant_labels
-            acc = acc.sum() / (loss_mask.sum() * relevant_labels.shape[2])
-            return acc
+            acc_times_timesteps_ish = relevant_classes == relevant_labels
+            acc_times_timesteps_ish = acc_times_timesteps_ish.sum(axis=[1,2])
+            acc_batch = acc_times_timesteps_ish /  repeated_loss_mask.sum(axis=[1,2])
+            #acc = acc_batch.mean()
+            return acc_batch
         return accuracy
+    
+    # def get_accuracy_100_function(self):
+    #     def accuracy_100(logits, labels, loss_mask):
+    #         # logits.shape = (BS, Timesteps, sum(seg_sizes))  - since onehot encoded
+    #         # labels.shape = (BS, Timesteps, 1)               - since ordinal encoded
+    #         # loss_mask.shape = (BS, Timesteps, 1)            - mask over the timesteps to use
+            
+    #         # We have predictions
+    #         #                                    ---> BS batches
+    #         #     Batch 1     |   Batch 2      |  Batch BS |  ^
+    #         #       PAD       |     PAD        |           |  |  Timesteps
+    #         #  00000010000000 |     PAD        |           |  v
+    #         #  00000000001000 | 0000010000000  |           |
+    #         #       ...             ...
+    #         # <------------->
+    #         #   sum(seg_sizes)
+            
+            
+    #         def logit_classes_jnp(logits):
+    #             classes = []
+    #             logits = jnp.array(logits)
+                
+    #             ptr = 0
+    #             for i, seg_size in enumerate(self.seg_sizes):
+    #                 classes.append(logits[:, :, ptr:ptr + seg_size].argmax(axis=2))
+    #                 ptr += seg_size
+    #             classes = jnp.stack(classes, axis=2)
+    #             return classes
+    #         classes = logit_classes_jnp(logits)
+            
+
+    #         repeated_loss_mask = jnp.repeat(loss_mask[:, :, jnp.newaxis], classes.shape[2], axis=2)
+
+    #         relevant_classes = classes * repeated_loss_mask
+    #         relevant_labels = labels * repeated_loss_mask
+    #         relevant_labels += 1 - repeated_loss_mask # ensure the masked out values are different
+    #         acc = relevant_classes == relevant_labels
+    #         acc = acc.sum(axis)
+    #         acc = acc.sum() / (loss_mask.sum() * relevant_labels.shape[2])
+    #         return acc
+    #     return accuracy_100
 
     def get_loss_function(self):
         # Function for calculating loss and accuracy for a batch
@@ -374,7 +439,7 @@ class TrainerModule:
                     
 
                     # ----------- metrics -------------
-                    loss, accuracy = loss.item(), accuracy.item()
+                    loss, accuracy = loss.item(), np.array(accuracy)
                     loss_sum += loss
                     acc_sum += accuracy
 
@@ -382,7 +447,12 @@ class TrainerModule:
                     # ----------- TF metrics ----------
                     global_step = idx * args.batch_size + (epoch - 1) * DATALOADER_LENGTH * args.batch_size
                     self.logger.add_scalar('train_hf/loss', loss, global_step=global_step)
-                    self.logger.add_scalar('train_hf/accuracy', accuracy, global_step=global_step)
+                    self.logger.add_scalar('train_hf/accuracy', accuracy.mean(), global_step=global_step)
+                    self.logger.add_scalar('train_hf/accuracy90', (accuracy > 0.9).mean(), global_step=global_step)
+                    self.logger.add_scalar('train_hf/accuracy80', (accuracy > 0.8).mean(), global_step=global_step)
+                    self.logger.add_scalar('train_hf/accuracy70', (accuracy > 0.7).mean(), global_step=global_step)
+                    self.logger.add_scalar('train_hf/accuracy60', (accuracy > 0.6).mean(), global_step=global_step)
+                    self.logger.add_scalar('train_hf/accuracy50', (accuracy > 0.5).mean(), global_step=global_step)
                     
                     
                     # ------------ Low freq metrics --------------
@@ -393,7 +463,12 @@ class TrainerModule:
                     # ------------ Evaluation Step ---------------
                     if validation_loader is not None and (idx + 1) % VALIDATION_INTERVAL == 0:
                         eval_acc, eval_loss = self.eval_model(validation_loader)
-                        trainer.logger.add_scalar('val/accuracy', eval_acc, global_step=global_step)
+                        self.logger.add_scalar('val/accuracy', eval_acc.mean(), global_step=global_step)
+                        self.logger.add_scalar('val/accuracy90', (eval_acc > 0.9).mean(), global_step=global_step)
+                        self.logger.add_scalar('val/accuracy80', (eval_acc > 0.8).mean(), global_step=global_step)
+                        self.logger.add_scalar('val/accuracy70', (eval_acc > 0.7).mean(), global_step=global_step)
+                        self.logger.add_scalar('val/accuracy60', (eval_acc > 0.6).mean(), global_step=global_step)
+                        self.logger.add_scalar('val/accuracy50', (eval_acc > 0.5).mean(), global_step=global_step)
                         trainer.logger.add_scalar('val/loss', eval_loss, global_step=global_step)
                         if eval_loss < best_eval_loss:
                             best_eval_loss = eval_loss
@@ -421,18 +496,18 @@ class TrainerModule:
 
     def eval_model(self, data_loader):
         # Test model on all data points of a data loader and return avg accuracy
-        acc_sum, loss_sum, count = 0.0, 0.0, 0
-        for batch in data_loader:
+        loss_sum, count = 0.0, 0
+        acc_list = []        
+        for batch in tqdm(data_loader, desc='eval model'):
             loss, acc, self.rng = self.eval_step(self.state, self.rng, batch)
 
             bs = batch[0].shape[0]
-            loss, acc = loss.item(), acc.item()
-            acc_sum += acc * bs
+            loss = loss.item()
+            acc_list += list(acc)
             loss_sum += loss * bs
             count += bs
-        eval_acc = acc_sum / count
         eval_loss = loss_sum / count
-        return eval_acc, eval_loss
+        return np.array(acc_list), eval_loss
     
     def eval_programs(self, step=0):
         for program_lam, lam_names, name, numeric_vars in example_program_dataset:
@@ -724,6 +799,30 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 
 # trainer.eval_programs()
 # trainer.load_model(log_dir=f"XXX{args.model} cont LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}")
+
+trainer.load_model(log_dir=f"PARAM_GPT2_MEDIUM_v2 LR 0.0001 bs: 128 nembed: 1024 n_layer: 24 n_head: 16")
+
+
+#%%
+
+test_val = jax.jit(trainer.eval_model(test_dataloader))
+
+
+#%%
+
+import plotly.express as px
+import pandas as pd
+df = pd.DataFrame(data = test_val[0], columns=['validation_accuracy'])
+# fig = px.histogram(df, x="total_bill", y="tip", color="sex", marginal="rug",
+#                    hover_data=df.columns)
+# fig.show()
+
+fig = px.ecdf(df)
+
+#%%
+jax.profiler.start_trace("jax-profile")
+train_val = trainer.eval_model(test_dataloader)#train_dataloader))
+jax.profiler.stop_trace()
 
 #%%
 
