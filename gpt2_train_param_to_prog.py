@@ -89,11 +89,12 @@ args = Namespace(
     max_epochs = 40,
     LEARNING_RATE=1e-5,
     input_dropout_prob = 0.05,
+    in_noise = 10, # inverse factor of the standard deviation of the noise to add
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'LARGE', #'MEDIUM', # 'LARGE'
+    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
     trail_name='Accuracy_NumVar',
-    task='Stock' # 'Stock', 'Compressed', 'Natural'
+    task='Compressed' # 'Stock', 'Compressed', 'Natural'
 )
 
 # # GPT Large Cont fine tune Train config
@@ -556,11 +557,24 @@ class TrainerModule:
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
 
 
+def add_noise_to_params(params, frac_of_std=10):
+    def tree_map(f, d):
+        return dict(zip(d.keys(), [f(x) for x in d.values()]))
+    def add_noise(x):
+        multiplier = max(np.std(x) * frac_of_std, 0.00000001)
+        noise = np.random.normal(loc=0, scale = 1/multiplier, size=x.shape)
+        x = x + noise
+        return x
+    return tree_map(add_noise, params)
+
+
+
 class WrappedDataset(StoreReader):
-    def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int, first=None, last=None) -> None:
+    def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int, first=None, last=None, in_noise=0) -> None:
         super().__init__(dir, first, last)
         self.max_prog_len = max_prog_len
         self.max_timesteps = max_time_step_reduction_sample
+        self.in_noise = in_noise
     
     def __getitem__(self, idx):
         # first rejection sample under the max timestep
@@ -571,6 +585,8 @@ class WrappedDataset(StoreReader):
             x,y = super().__getitem__(circular_index)
             if args.task in ['Compressed', 'Natural']: # we left these samples parameters unencoded
                 x = compress_params(x)
+                if self.in_noise > 0:
+                    x = add_noise_to_params(x, self.in_noise)
                 x = encode_jax_params(x)
             x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.max_prog_len, x=x, y=y, TIMESTEPS=TIMESTEPS, ARCH_LABELS=ARCH)
             x_shape = x.shape[0]
@@ -790,7 +806,7 @@ elif args.model == 'GPTNEO':
 
 
 trainer = TrainerModule(model, 
-                        f'{args.trail_name} {args.model} {args.config} TASK: {args.task} LR: {args.LEARNING_RATE} InpDrop: {args.input_dropout_prob} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
+                        f'{args.trail_name} {args.model} {args.config} TASK: {args.task} LR: {args.LEARNING_RATE} InNoise: {args.in_noise} InpDrop: {args.input_dropout_prob} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
