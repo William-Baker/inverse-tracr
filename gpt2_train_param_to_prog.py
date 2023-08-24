@@ -87,14 +87,14 @@ args = Namespace(
     batch_size=128,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
-    LEARNING_RATE=1e-5,
-    input_dropout_prob = 0.05,
-    in_noise = 10, # inverse factor of the standard deviation of the noise to add
+    LEARNING_RATE=4e-6,
+    input_dropout_prob = 0.3,
+    in_noise = 0.40, # inverse fraction of the standard deviation of the noise to add
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-    trail_name='Accuracy_NumVar',
-    task='Compressed' # 'Stock', 'Compressed', 'Natural'
+    config = 'LARGE', #'MEDIUM', # 'LARGE'
+    trail_name='Accuracy_NumVar_v2',
+    task='Stock' # 'Stock', 'Compressed', 'Natural'
 )
 
 # # GPT Large Cont fine tune Train config
@@ -501,7 +501,7 @@ class TrainerModule:
         # Test model on all data points of a data loader and return avg accuracy
         loss_sum, count = 0.0, 0
         acc_list = []        
-        for batch in tqdm(data_loader, desc='eval model'):
+        for batch in data_loader:
             loss, acc, self.rng = self.eval_step(self.state, self.rng, batch)
 
             bs = batch[0].shape[0]
@@ -557,7 +557,7 @@ class TrainerModule:
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
 
 
-def add_noise_to_params(params, frac_of_std=10):
+def add_noise_to_params(params, frac_of_std=0.1):
     def tree_map(f, d):
         return dict(zip(d.keys(), [f(x) for x in d.values()]))
     def add_noise(x):
