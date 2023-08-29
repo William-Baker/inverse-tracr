@@ -16,6 +16,7 @@ ap.add_argument("-vmax", "--vocab_max", required=False, help="upper bound of voc
 ap.add_argument("-nmin", "--number_min", required=False, help="lower bound of numeric range size", type=int, default=6)
 ap.add_argument("-nmax", "--number_max", required=False, help="upper bound of numeric range size", type=int, default=6)
 ap.add_argument("-num", "--numeric_inputs", required=False, help="whether to generate samples with numeric inputs", type=bool, default=False)
+ap.add_argument("-pth", "--output_path", required=False, help="whether to generate samples with numeric inputs", type=bool, default=False)
 
 
 args = ap.parse_args()
@@ -27,6 +28,6 @@ dataset = TorchParameterProgramDataset(15, no_samples = args.samples, generator_
                                        numeric_range=(args.number_min, args.number_max),
                                        numeric_inputs_possible=args.numeric_inputs
                                     )
-pth = '.data/iTracr_dataset_v2_test/'
-sw = StreamWriter(pth, dataset, id_N=(args.id_number, args.proc_num), start_offset=args.offset)
+#pth = '.data/iTracr_dataset_v2_test/'
+sw = StreamWriter(args.pth, dataset, id_N=(args.id_number, args.proc_num), start_offset=args.offset)
 sw.write_samples(num_threads=0)

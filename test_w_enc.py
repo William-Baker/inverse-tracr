@@ -28,30 +28,30 @@
 
 #%%
 
-from zipfile import ZipFile, ZIP_DEFLATED
-import cloudpickle
-from tqdm import tqdm
-from jax import tree_map
-import numpy as np
+# from zipfile import ZipFile, ZIP_DEFLATED
+# import cloudpickle
+# from tqdm import tqdm
+# from jax import tree_map
+# import numpy as np
 
-zip = ZipFile(file='cp_dataset_train_w.zip', mode='r', compression=ZIP_DEFLATED, compresslevel=9)
-out = ZipFile(file='cp_dataset_train_w_out.zip', mode='a', compression=ZIP_DEFLATED, compresslevel=9)
-in_files = set(sorted(zip.namelist()))
-out_files = set(sorted(out.namelist()))
-files = list(in_files - out_files)
+# zip = ZipFile(file='cp_dataset_train_w.zip', mode='r', compression=ZIP_DEFLATED, compresslevel=9)
+# out = ZipFile(file='cp_dataset_train_w_out.zip', mode='a', compression=ZIP_DEFLATED, compresslevel=9)
+# in_files = set(sorted(zip.namelist()))
+# out_files = set(sorted(out.namelist()))
+# files = list(in_files - out_files)
 
-new_params = None
-for idx in tqdm(range(len(files))):
-    try:
-        x = zip.read(files[idx])
-        x,y = cloudpickle.loads(x)
-        new_params = tree_map(lambda x: np.array(x), x)
-        b = cloudpickle.dumps((new_params,y))
-        out.writestr(files[idx], b)
-    except:
-        pass
-zip.close()
-out.close()
+# new_params = None
+# for idx in tqdm(range(len(files))):
+#     try:
+#         x = zip.read(files[idx])
+#         x,y = cloudpickle.loads(x)
+#         new_params = tree_map(lambda x: np.array(x), x)
+#         b = cloudpickle.dumps((new_params,y))
+#         out.writestr(files[idx], b)
+#     except:
+#         pass
+# zip.close()
+# out.close()
 
 #%%
 
@@ -81,6 +81,39 @@ out.close()
 #         pass
 # zip.close()
 # out.close()
+
+
+#%% ================= make file names sequential ======================================
+
+from zipfile import ZipFile, ZIP_DEFLATED
+import cloudpickle
+from tqdm import tqdm
+from jax import tree_map
+import numpy as np
+from io import BytesIO
+
+inp = ZipFile(file='.data/iTracr_dataset_v2_train.zip', mode='r', compression=ZIP_DEFLATED, compresslevel=9)
+out = ZipFile(file='.data/iTracr_dataset_v2_train_sequential_pickle.zip', mode='a', compression=ZIP_DEFLATED, compresslevel=9)
+in_files = sorted(inp.namelist())
+out_files = [str(x).zfill(8) + '.pkl' for x in range(len(in_files))]
+
+new_params = None
+for in_file, out_file in tqdm(list(zip(in_files, out_files))):
+    try:
+        x = inp.read(in_file)
+        loaded = np.load(BytesIO(x), allow_pickle=True)
+        x,y = loaded['x'].squeeze(), loaded['y'].squeeze()
+        assert len(x.shape) > 0
+        b = cloudpickle.dumps((x,y))
+        out.writestr(out_file, b)
+    except:
+        pass
+inp.close()
+out.close()
+
+
+
+
 
 #%%
 

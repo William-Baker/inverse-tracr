@@ -1,5 +1,5 @@
 #%%
-from data.parallelzipfilebetter import ParallelZipFile as ZipFile
+from data.parallelzipfile import ParallelZipFile as ZipFile
 import cloudpickle
 
 class ZipStreamReader:

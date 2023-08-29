@@ -80,7 +80,7 @@ class SparseConverter:
             
     
 
-from data.parallelzipfilebetter import ParallelZipFile as ZipFile
+from data.parallelzipfile import ParallelZipFile as ZipFile
 #from zipfile import ZipFile
 from io import BytesIO
 class ZipStreamReader:

@@ -41,50 +41,62 @@ class ZipInfo:
         """Directories in a zip file should end with '/'."""
         return self.filename.endswith("/")
 
+def get_end_rec_data(filename):
+    from zipfile import ZipFile, _EndRecData, _ECD_SIGNATURE, _ECD_ENTRIES_TOTAL, _ECD_OFFSET, _ECD_COMMENT_SIZE 
+    zip = ZipFile(file=filename, mode='r')
 
-def _read_eocd_mmap(m: mmap.mmap) -> Dict[str, ZipInfo]:
+    endrec = _EndRecData(zip.fp)
+    signature, num_files, directory_offset, comment_length = endrec[_ECD_SIGNATURE], endrec[_ECD_ENTRIES_TOTAL], endrec[_ECD_OFFSET], endrec[_ECD_COMMENT_SIZE ]
+    return signature, num_files, directory_offset, comment_length
+
+def _read_eocd_mmap(m: mmap.mmap, filename:str) -> Dict[str, ZipInfo]:
     # Read end-of-central-directory (EOCD) from mmaped zipfile.
 
-    # TODO Can zip64 EOCDs be larger?
-    max_eocd_size = 22 + 65536
-    end = m[-max_eocd_size:]
+    # # TODO Can zip64 EOCDs be larger?
+    # max_eocd_size = 22 + 65536
+    # end = m[-max_eocd_size:]
 
-    # Scan backwards until EOCD signature is found
-    # TODO this could fail if a comment contains the EOCD signature.
-    # Should employ sanity check to verify that an actual EOCD was found.
-    offset32 = end.rfind(b"\x50\x4b\x05\x06")
-    assert offset32 >= 0
-    eocd = struct.unpack("<IHHHHIIH", end[offset32 : offset32 + 22])
-    (
-        signature,
-        num_disks,
-        num_disks2,
-        num_files,
-        num_files2,
-        directory_size,
-        directory_offset,
-        comment_length,
-    ) = eocd
-    assert signature == 0x06054B50
+    # # Scan backwards until EOCD signature is found
+    # # TODO this could fail if a comment contains the EOCD signature.
+    # # Should employ sanity check to verify that an actual EOCD was found.
+    # offset32 = end.rfind(b"\x50\x4b\x05\x06")
+    # assert offset32 >= 0
+    # eocd = struct.unpack("<IHHHHIIH", end[offset32 : offset32 + 22])
+    # (
+    #     signature,
+    #     num_disks,
+    #     num_disks2,
+    #     num_files,
+    #     num_files2,
+    #     directory_size,
+    #     directory_offset,
+    #     comment_length,
+    # ) = eocd
+    # assert signature == 0x06054B50
 
-    # If format is zip64, there should also be a zip64 EOCD header
-    if directory_offset == 0xFFFFFFFF:
-        offset64 = end.rfind(b"\x50\x4b\x06\x06")
-        assert offset64 >= 0
-        eocd = struct.unpack("<IQHHII4Q", end[offset64 : offset64 + 56])
-        (
-            signature,
-            eocd_size,
-            version,
-            min_version,
-            num_disks,
-            num_disks2,
-            num_files,
-            num_files2,
-            directory_size,
-            directory_offset,
-        ) = eocd
-        assert signature == 0x06064B50
+    # # If format is zip64, there should also be a zip64 EOCD header
+    # if directory_offset == 0xFFFFFFFF:
+    #     offset64 = end.rfind(b"\x50\x4b\x06\x06")
+    #     assert offset64 >= 0
+    #     eocd = struct.unpack("<IQHHII4Q", end[offset64 : offset64 + 56])
+    #     (
+    #         signature,
+    #         eocd_size,
+    #         version,
+    #         min_version,
+    #         num_disks,
+    #         num_disks2,
+    #         num_files,
+    #         num_files2,
+    #         directory_size,
+    #         directory_offset,
+    #     ) = eocd
+    #     assert signature == 0x06064B50
+
+    signature, num_files, directory_offset, comment_length = get_end_rec_data(filename)
+    
+
+
 
     # Read central directory headers which hold information about stored files
     files: Dict[str, ZipInfo] = {}
@@ -178,7 +190,7 @@ class ParallelZipFile:
         m = mmap.mmap(f.fileno(), length=0, access=mmap.ACCESS_READ)
 
         if files is None:
-            files = _read_eocd_mmap(m)
+            files = _read_eocd_mmap(m, file)
 
         self.filename: str = file
         self.files = files
