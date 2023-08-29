@@ -78,9 +78,6 @@ def export_params(params, max_ops, actual_ops, trn_all, run_id):
 
     for i in range(2000):
         try:
-            # zip = ZipFile(file=target_db_path+'.zip', mode='a')
-            # zip.writestr(run_id + '.pkl', dumps(sample))
-            # zip.close()
             makedirs(target_db_path, exist_ok=True)
             with open(target_db_path + "/" + run_id + '.pkl', 'wb') as f:
                 cloudpickle.dump(sample, f)
