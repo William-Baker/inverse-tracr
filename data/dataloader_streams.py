@@ -31,10 +31,18 @@ class StreamWriter:
             np.savez(self.dir + str(idx).zfill(8), x=x, y=y)
     
     def __write_serial__(self):
+        makedirs(self.dir, exist_ok=True)
         it = iter(self.dataset)
         for idx in tqdm(range(self.startidx, self.samples_to_write + self.startidx), desc=f'Writing samples:'):
-            x, y = next(it)#self.dataset.__getitem__(idx)
-            np.savez(self.dir + str(idx).zfill(8), x=x, y=y)
+            x, y = next(it)
+            # np.savez(self.dir + str(idx).zfill(8), x=x, y=y)
+            for i in range(2000):
+                try:
+                    with open(self.dir + "/" +  str(idx).zfill(8)+ '.pkl', 'wb') as f:
+                        cloudpickle.dump((x,y), f)
+                    
+                except:
+                    print("failed to save to zip archive")
 
 
     def write_samples(self, num_threads=1):
@@ -56,29 +64,6 @@ class StreamReader:
 
 
 import pickle
-
-class SparseConverter:
-    def __init__(self, dir:str, out_dir:str) -> None:
-        self.dir = dir
-        self.out_dir = out_dir
-        self.files = sorted(listdir(dir))
-        makedirs(self.out_dir, exist_ok=True)
-    def __len__(self):
-        return len(self.files)
-    def __getitem__(self, idx):
-        try:
-            loaded = np.load(self.dir + self.files[idx], allow_pickle=True)
-            x,y = loaded['x'].squeeze(), loaded['y'].squeeze()
-            # x,y = scipy.sparse.csc_matrix(x), scipy.sparse.csc_matrix(y)
-            # scipy.sparse.save_npz(self.dir + self.files[idx], x=x, y=y)
-            # return idx
-            with open(self.out_dir + str(idx).zfill(8) + '.pickle', 'wb') as handle:
-                pickle.dump((x,y), handle)#, protocol=pickle.HIGHEST_PROTOCOL)
-        except Exception as E:
-            pass
-
-            
-    
 
 from data.parallelzipfile import ParallelZipFile as ZipFile
 #from zipfile import ZipFile

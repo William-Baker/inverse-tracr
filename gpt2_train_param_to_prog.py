@@ -5,6 +5,7 @@
 
 # =========== To run - use the following commands first ==========
 # conda activate /rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
+# conda activate /rds/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
 # source venv/bin/activate
 # jupyter lab --no-browser --ip=* --port=8081
 
@@ -30,7 +31,7 @@
 # ImportError: libcupti.so.11.7: cannot open shared object file: No such file or directory
 # export PATH=$PATH:/home/wb326/miniconda3/envs/venv/lib
 # export PATH=$PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
-# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
+# source venv/bin/activate
 
 # list all running python processes in case GPU memory not deallocated:
 # ps -a | grep python
