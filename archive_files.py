@@ -18,15 +18,15 @@ def transfer_to_archive(source_dir: str):
     for file in tqdm(transfer_files):
         try:
             zip.write(os.path.join(source_dir, file), file)
-            os.remove(os.path.join(source_dir, file)) # TODO REMOVE
+            # os.remove(os.path.join(source_dir, file)) # TODO REMOVE
         except:
             pass
     zip.close()
-    # for file in transfer_files:
-    #     try:
-    #         os.remove(os.path.join(source_dir, file))
-    #     except Exception as E:
-    #         pass
+    for file in transfer_files:
+        try:
+            os.remove(os.path.join(source_dir, file))
+        except Exception as E:
+            pass
 
 while True:
     print("Archiving samples...")

@@ -186,3 +186,4 @@ envs/
 test_*.err
 test_*.out
 .logs2/
+.logs_std_com_nat

@@ -116,10 +116,10 @@ CHECKPOINT_PATH = ".logs/"
 
 dataset_path = None
 if args.task == 'Stock':
-    from data.dataloader_streams import ZipStreamReader as StoreReader
+    from data.dataloader_streams import ZipPickleStreamReader as StoreReader
     from data.parameter_encoder import CRAFT_TIMESTEPS as TIMESTEPS
     from data.parameter_encoder import CRAFT_ARCH as ARCH
-    dataset_path = '.data/iTracr_dataset_v2_train.zip'
+    dataset_path = '.data/train_zip3.zip'
 elif args.task == 'Compressed':
     from data.dataloader_streams import ZipPickleStreamReader as StoreReader
     from data.parameter_encoder import JAX_TIMESTEPS as TIMESTEPS

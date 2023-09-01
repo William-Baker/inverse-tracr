@@ -13,3 +13,5 @@ conda create --prefix ./envs
 conda install -c "nvidia/label/cuda-11.7.0" cuda-cupti
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/wb326/rds/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
 # if your LD_LIB_PATH is not persistent, you can add the export LD_... command to the end of your venv/bin/activate script
+
+# conda install -c conda-forge xz
