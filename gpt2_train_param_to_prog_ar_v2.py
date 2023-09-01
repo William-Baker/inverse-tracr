@@ -5,6 +5,7 @@
 
 # =========== To run - use the following commands first ==========
 # conda activate /rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
+# conda activate /rds/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
 # source venv/bin/activate
 # jupyter lab --no-browser --ip=* --port=8081
 
@@ -30,7 +31,7 @@
 # ImportError: libcupti.so.11.7: cannot open shared object file: No such file or directory
 # export PATH=$PATH:/home/wb326/miniconda3/envs/venv/lib
 # export PATH=$PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
-# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
+# source venv/bin/activate
 
 # list all running python processes in case GPU memory not deallocated:
 # ps -a | grep python
@@ -87,30 +88,30 @@ args = Namespace(
     batch_size=128,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
-    LEARNING_RATE=1e-4, #4e-6,
-    input_dropout_prob = 0.05, #0.3,
-    in_noise = 0, #0.40, # inverse fraction of the standard deviation of the noise to add
+    LEARNING_RATE=4e-6,
+    input_dropout_prob = 0.3,
+    in_noise = 0.40, # inverse fraction of the standard deviation of the noise to add
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'TINY', #'MEDIUM', # 'LARGE'
-    trail_name='test_ar',
+    config = 'LARGE', #'MEDIUM', # 'LARGE'
+    trail_name='Accuracy_NumVar_v2',
     task='Stock' # 'Stock', 'Compressed', 'Natural'
+    autoregressive=True,
 )
 
+# # GPT Large Cont fine tune Train config
 # args = Namespace(
-#     batch_size=4,# 256 for medium
+#     batch_size=128, 
 #     PROG_LEN = 15,
-#     max_epochs = 40,
-#     LEARNING_RATE=1e-4, #4e-6,
-#     input_dropout_prob = 0.05, #0.3,
-#     in_noise = 0, #0.40, # inverse fraction of the standard deviation of the noise to add
+#     max_epochs = 20, # 20
+#     LEARNING_RATE=1e-4,
+#     input_dropout_prob = 0.05,
 #     max_timesteps = 40,
 #     model = 'GPT2',
-#     config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-#     trail_name='test_ar',
-#     task='Stock' # 'Stock', 'Compressed', 'Natural'
+#     config = 'LARGE', #'MEDIUM', # 'LARGE'
+#     trail_name='train_w large ',
+#     task='Compressed' # 'Stock', 'Compressed', 'Natural'
 # )
-
 
 CHECKPOINT_PATH = ".logs/"
 
@@ -135,7 +136,7 @@ elif args.task == 'Natural':
 #%%
 class TrainerModule:
 
-    def __init__(self, model, model_name, exmp_batch, max_iters, dataset, max_output_length: int, lr=1e-3, warmup=100, seed=42):
+    def __init__(self, model, model_name, exmp_batch, max_iters, dataset, lr=1e-3, warmup=100, seed=42):
         """
         Inputs:
             model_name - Name of the model. Used for saving and checkpointing
@@ -159,7 +160,6 @@ class TrainerModule:
         self.create_functions()
         self.init_model(exmp_batch)
         self.src_dataset = src_dataset
-        self.max_output_length = max_output_length
 
     
     def init_model(self, exmp_batch):
@@ -314,98 +314,29 @@ class TrainerModule:
     #         return acc
     #     return accuracy_100
 
-    # def get_loss_function(self):
-    #     # Function for calculating loss and accuracy for a batch
-    #     def calculate_loss(params, rng, batch, train):
-    #         # Input data has shape (batch_size, time_steps, features)
-    #         # Labels has shape (batch_size, time_steps, 5)
-    #         inp_data, labels, loss_mask, attention_mask, pos_id = batch
-    #         #time_steps = inp_data.shape[1]
-    #         time_steps = labels.shape[1]
-    #         rng, dropout_apply_rng = random.split(rng)
-    #         logits = self.model.apply({'params': params}, inp_data, attention_mask=attention_mask, train=train, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
-    #         ptr = 0
-    #         loss = 0
-    #         for i, seg_size in enumerate(self.seg_sizes):
-    #             loss += optax.softmax_cross_entropy_with_integer_labels(logits[:, :time_steps, ptr:ptr + seg_size], labels[:, :time_steps, i]) * loss_mask
-    #             ptr += seg_size
-
-    #         loss = loss.mean()
-    #         acc = self.accuracy_fn(logits, labels, loss_mask)
-    #         return loss, (acc, rng)
-    #     return calculate_loss
-    
-    def get_model_call(self):
-        def model_call(params, rng, batch, train):
+    def get_loss_function(self):
+        # Function for calculating loss and accuracy for a batch
+        def calculate_loss(params, rng, batch, train):
             # Input data has shape (batch_size, time_steps, features)
             # Labels has shape (batch_size, time_steps, 5)
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
             #time_steps = inp_data.shape[1]
-            batch_size, time_steps, features = inp_data.shape
-            out_features = sum(self.seg_sizes)
-            assert features > out_features # since we add the ouptut predictions to the input when running auto regressively the input must have at least as many features as the output
-            
+            time_steps = labels.shape[1]
             rng, dropout_apply_rng = random.split(rng)
-            ar_logits, ar_masks = [], []
-            ar_inputs = inp_data
-            for ar_timestep in range(self.max_output_length):
-                #print(ar_timestep)
-                logits = self.model.apply({'params': params}, ar_inputs, attention_mask=attention_mask, train=train, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
-                
-                # output timesteps of form:
-                # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
-                # vvvvv  | ------------------ INPUT_DATA ---------------- | PROG_START | ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- | PROG_END (1 only if final step) |
-                ar_mask = [0] * (time_steps - self.max_output_length - 2) +     [1]    + [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))]
-                ar_mask = jnp.array(ar_mask)
-                repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
-                masked_logits = logits * repeated_ar_mask
-                masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
-                ar_inputs += masked_logits
-                
-                ar_masks.append(ar_mask)
-                ar_logits.append(logits)
-            
+            logits = self.model.apply({'params': params}, inp_data, attention_mask=attention_mask, train=train, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
+            ptr = 0
             loss = 0
-            ar_losses = []
-            for ar_timestep in range(self.max_output_length):
-                ptr = 0
-                # ouptut features of form:
-                # <RASP_OP>, <ARG1>, <ARG2>, <ARG3>, <RETURN>
-                # compute loss for each of the 5 target tokens
-                segment_losses = []
-                for i, seg_size in enumerate(self.seg_sizes):
-                    # output timesteps vs loss mask:
-                    # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
-                    # 0000000000000000000000000000000,     1  ,   1   , ...,            1            ,   1
-                    logits = ar_logits[ar_timestep]
-                    ar_loss = optax.softmax_cross_entropy_with_integer_labels(logits[:,:, ptr:ptr + seg_size], labels[:, :time_steps, i]) * loss_mask
-                    #repeated_ar_mask = jnp.repeat(ar_masks[ar_timestep][:, jnp.newaxis], features, axis=1)
-                    ar_loss = ar_loss * ar_masks[ar_timestep] # mask to only keep the timesteps we're predicting upto
-                    loss += ar_loss
-                    ptr += seg_size
-                    segment_losses.append(ar_loss)
-                ar_losses.append(segment_losses)
-            return loss, ar_logits, ar_losses
-        return model_call
-    
-    
-    def get_loss_function(self):
-        
-        
-        # Function for calculating loss and accuracy for a batch
-        def calculate_loss(params, rng, batch, train):
-            inp_data, labels, loss_mask, attention_mask, pos_id = batch
-            loss, ar_logits, _ = self.model_call(params, rng, batch, train)
+            for i, seg_size in enumerate(self.seg_sizes):
+                loss += optax.softmax_cross_entropy_with_integer_labels(logits[:, :time_steps, ptr:ptr + seg_size], labels[:, :time_steps, i]) * loss_mask
+                ptr += seg_size
 
             loss = loss.mean()
-            acc = self.accuracy_fn(ar_logits[-1], labels, loss_mask)
+            acc = self.accuracy_fn(logits, labels, loss_mask)
             return loss, (acc, rng)
         return calculate_loss
     
     def create_functions(self):
         # Create jitted train and eval functions
-        self.model_call = self.get_model_call()
-        
         calculate_loss = self.get_loss_function()
 
 
@@ -418,7 +349,6 @@ class TrainerModule:
             state = state.apply_gradients(grads=grads)
             return state, rng, loss, acc
         self.train_step = jax.jit(train_step)
-        #self.train_step = train_step
 
 
 
@@ -429,18 +359,27 @@ class TrainerModule:
             return loss, acc, rng
         self.eval_step = jax.jit(eval_step)
 
-        #jitted_model_call = jax.jit(self.model_call)
-        def verbose_step(state, batch, step, rng):
+
+        def verbose_step(state, batch, step):
             # labels = (batch_size, max_time_steps, ordinal_features)
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
-            loss, ar_logits, ar_losses = self.model_call(state.params, rng=rng, batch=batch, train=False)
-            output_logits = ar_logits[-1]
+            #rng, dropout_apply_rng = random.split(rng)
+
+            # logits = (batch_size, time_steps, features)
+            logits = self.model.apply({'params': state.params}, inp_data, attention_mask=attention_mask, position_ids=pos_id, train=False)#, rngs={'dropout': dropout_apply_rng})
+            
+     
+            ptr = 0
+            loss = []
+            for i, seg_size in enumerate(self.seg_sizes):
+                loss.append(np.array(optax.softmax_cross_entropy_with_integer_labels(logits[:, :, ptr:ptr + seg_size], labels[:, :, i]) * loss_mask))
+                ptr += seg_size
 
             # loss = (batch_size, time_steps, features)
-            # loss = np.stack(loss, axis=2)
-            # assert (loss.shape[0] == labels.shape[0]) and (loss.shape[2] == labels.shape[2])
+            loss = np.stack(loss, axis=2)
+            assert (loss.shape[0] == labels.shape[0]) and (loss.shape[2] == labels.shape[2])
            
-            acc = self.accuracy_fn(output_logits, labels, loss_mask)
+            acc = self.accuracy_fn(logits, labels, loss_mask)
 
             def logit_classes_jnp(logits):
                 classes = []
@@ -452,23 +391,20 @@ class TrainerModule:
                     ptr += seg_size
                 classes = jnp.stack(classes, axis=2)
                 return classes
+            classes = logit_classes_jnp(logits)
             
-            for ar_timestep in range(len(ar_logits)):
-                classes = logit_classes_jnp(ar_logits[ar_timestep])
-                
-                max_prog_len = self.dataset.prog_len
-                loss = np.stack(ar_losses[ar_timestep], axis=2)
-                assert (loss.shape[0] == labels.shape[0]) and (loss.shape[2] == labels.shape[2])
-                heat_img = plot_orginal_heatmaps(labels[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :])
-                #heat_img = plot_orginal_heatmaps(labels, classes * jnp.expand_dims(loss_mask, axis=2).repeat(classes.shape[-1], axis=2), self.dataset, loss=loss)
+            max_prog_len = self.dataset.prog_len
+            heat_img = plot_orginal_heatmaps(labels[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :])
+            #heat_img = plot_orginal_heatmaps(labels, classes * jnp.expand_dims(loss_mask, axis=2).repeat(classes.shape[-1], axis=2), self.dataset, loss=loss)
 
-                self.logger.add_image(f"verbose/heatmap/{ar_timestep}", heat_img, global_step=step, dataformats='HWC')
+            self.logger.add_image("verbose/heatmap", heat_img, global_step=step, dataformats='HWC')
 
-            self.logger.add_histogram("verbose/output", np.array(output_logits), global_step=step)
+            self.logger.add_histogram("verbose/output", np.array(logits), global_step=step)
 
             self.logger.add_scalar("verbose/acc", acc.mean().item(), global_step=step)
 
 
+        #self.verbose_step = jax.jit(verbose_step)
         self.verbose_step = verbose_step
 
         self.accuracy_fn = self.get_accuracy_function()
@@ -525,8 +461,7 @@ class TrainerModule:
                     
                     # ------------ Low freq metrics --------------
                     if (idx + 1) % LOGGING_INTERVAL == 0:
-                        #if (idx) % LOGGING_INTERVAL == 0:
-                        self.verbose_step(state=self.state, batch=batch, step=global_step, rng=self.rng)
+                        self.verbose_step(state=self.state, batch=batch, step=global_step)
                     
 
                     # ------------ Evaluation Step ---------------
@@ -877,8 +812,7 @@ trainer = TrainerModule(model,
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
-                        lr=args.LEARNING_RATE,
-                        max_output_length=args.PROG_LEN)
+                        lr=args.LEARNING_RATE)
 _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n{model_config}")
 
 #%%
@@ -895,7 +829,7 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 #%%
 
 for epoch_idx in range(1, args.max_epochs+1):
-    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=5000)
+    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=2 )
 
 
 #%%

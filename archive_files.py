@@ -1,4 +1,7 @@
 # from utils.export_compressed_params import transfer_to_archive
+#srun -t 12:0:0 --nodes 1 --cpus-per-task 3 -p icelake --ntasks 1 -A KRUEGER-SL3-CPU --pty bash
+# source venv/bin/activate
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
 import time
 from collections import defaultdict
 from zipfile import ZipFile
