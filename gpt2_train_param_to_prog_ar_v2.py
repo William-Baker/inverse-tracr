@@ -81,6 +81,7 @@ from data.encoded_dataloaders import encode_rasp_program
 from models import GPT2, GPT2Config, GPTNeo, GPTJ
 from transformers.models.gptj.configuration_gptj import GPTJConfig
 from argparse import Namespace
+from data.dataloaders import ProgramEncoder
 
 
 # GPT Large Train config
@@ -93,9 +94,9 @@ args = Namespace(
     in_noise = 0.40, # inverse fraction of the standard deviation of the noise to add
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'LARGE', #'MEDIUM', # 'LARGE'
+    config = 'TINY', #'MEDIUM', # 'LARGE'
     trail_name='Accuracy_NumVar_v2',
-    task='Stock' # 'Stock', 'Compressed', 'Natural'
+    task='Stock', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )
 
@@ -335,11 +336,51 @@ class TrainerModule:
             return loss, (acc, rng)
         return calculate_loss
     
+    def get_ar_loss_function(self):
+        # Function for calculating loss and accuracy for a batch
+        def calculate_loss(params, rng, batch, train):
+            # Input data has shape (batch_size, time_steps, features)
+            # Labels has shape (batch_size, time_steps, 5)
+            inp_data, labels, loss_mask, attention_mask, pos_id = batch
+            #time_steps = inp_data.shape[1]
+            batch_size, time_steps, features = inp_data.shape
+            out_features = sum(self.seg_sizes)
+            
+            rng, dropout_apply_rng = random.split(rng)
+            # logits = self.model.apply({'params': params}, inp_data, attention_mask=attention_mask, train=train, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
+            ar_masks = []
+            ar_inputs = inp_data
+            logits = None
+            for ar_timestep in range(self.max_output_length):
+                #print(ar_timestep)
+                logits = self.model.apply({'params': params}, ar_inputs, attention_mask=attention_mask, train=train, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
+                
+                # output timesteps of form:
+                # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
+                # vvvvv  | ------------------ INPUT_DATA ---------------- | PROG_START | ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- | PROG_END (1 only if final step) |
+                ar_mask = [0] * (time_steps - self.max_output_length - 2) +     [1]    + [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))]
+                ar_mask = jnp.array(ar_mask)
+                repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
+                masked_logits = logits * repeated_ar_mask
+                masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
+                ar_inputs += masked_logits
+                
+            ptr = 0
+            loss = 0
+            for i, seg_size in enumerate(self.seg_sizes):
+                loss += optax.softmax_cross_entropy_with_integer_labels(logits[:, :time_steps, ptr:ptr + seg_size], labels[:, :time_steps, i]) * loss_mask
+                ptr += seg_size
+
+            loss = loss.mean()
+            acc = self.accuracy_fn(logits, labels, loss_mask)
+            return loss, (acc, rng)
+        return calculate_loss
+    
     def create_functions(self):
         # Create jitted train and eval functions
         calculate_loss = self.get_loss_function()
 
-
+        ar_loss = self.get_ar_loss_function()
 
         # Training function
         def train_step(state, rng, batch):
@@ -355,7 +396,7 @@ class TrainerModule:
 
         # Evaluation function
         def eval_step(state, rng, batch):
-            loss, (acc, rng) = calculate_loss(state.params, rng, batch, train=False)
+            loss, (acc, rng) = ar_loss(state.params, rng, batch, train=False)
             return loss, acc, rng
         self.eval_step = jax.jit(eval_step)
 
@@ -569,14 +610,16 @@ def add_noise_to_params(params, frac_of_std=0.1):
         return x
     return tree_map(add_noise, params)
 
-
+#%%
 
 class WrappedDataset(StoreReader):
-    def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int, first=None, last=None, in_noise=0) -> None:
+    def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int, first=None, last=None, in_noise=0, autoregressive=False) -> None:
         super().__init__(dir, first, last)
         self.max_prog_len = max_prog_len
         self.max_timesteps = max_time_step_reduction_sample
         self.in_noise = in_noise
+        self.autoregressive = autoregressive
+        self.prog_enc = ProgramEncoder(max_prog_len)
     
     def __getitem__(self, idx):
         # first rejection sample under the max timestep
@@ -585,6 +628,7 @@ class WrappedDataset(StoreReader):
         while x_shape > self.max_timesteps:
             circular_index = (idx + offset) % self.__len__()
             x,y = super().__getitem__(circular_index)
+            this_program_length = y.shape[0] - 2
             if args.task in ['Compressed', 'Natural']: # we left these samples parameters unencoded
                 x = compress_params(x)
                 if self.in_noise > 0:
@@ -593,7 +637,46 @@ class WrappedDataset(StoreReader):
             x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.max_prog_len, x=x, y=y, TIMESTEPS=TIMESTEPS, ARCH_LABELS=ARCH)
             x_shape = x.shape[0]
             offset += 1
-        return np.array(x),np.array(y),np.array(loss_mask),np.array(attention_mask)
+            
+            if self.autoregressive:
+                autoregressive_timestep = np.random.randint(1, this_program_length)
+                #autoregressive_timestep = 0#this_program_length-2
+                autoregressive_target_mask = np.ones((autoregressive_timestep+2), dtype=np.int32)
+                autoregressive_input_mask = np.ones((autoregressive_timestep+1), dtype=np.int32)
+                if autoregressive_timestep == this_program_length-1:
+                    autoregressive_target_mask = np.ones((this_program_length+2), dtype=np.int32)
+                autoregressive_target_mask = np.concatenate((autoregressive_target_mask, np.zeros(self.max_prog_len+2 - autoregressive_target_mask.shape[0], dtype=np.int32)))
+                autoregressive_input_mask = np.concatenate((autoregressive_input_mask, np.zeros(self.max_prog_len+2 - autoregressive_input_mask.shape[0], dtype=np.int32)))
+                
+                repeated_target_mask = np.repeat(autoregressive_target_mask[:, np.newaxis], y.shape[1], axis=1)
+                autoregressive_targets = y * repeated_target_mask # subset of the sample targets upto AR_TIMESTEP
+                loss_mask = loss_mask * autoregressive_target_mask # mask the loss to the new timesteps
+                
+                # subset of the sample targets upto AR_TIMESTEP - 1
+                autoregressive_inputs = y * np.repeat(autoregressive_input_mask[:, np.newaxis], y.shape[1], axis=1) 
+                
+                # We'll add the AR_INPUTS to the input
+                autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
+                y = autoregressive_targets
+                
+            else:
+                autoregressive_inputs = np.array(0)
+        return np.array(x),np.array(y),np.array(loss_mask),np.array(attention_mask), autoregressive_inputs
+
+# #%%
+# dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.9, autoregressive=True)
+# it = iter(dataset)
+# #%%
+# x, y, loss_mask, attention_mask, autoregressive_mask = next(it)
+# y, loss_mask, autoregressive_mask
+# # print(y * np.repeat(loss_mask[:, np.newaxis], y.shape[1], axis=1))
+# # print(y * np.repeat(autoregressive_mask[:, np.newaxis], y.shape[1], axis=1))
+
+# #%%
+# from data.dataloaders import ProgramEncoder
+# prog_enc = ProgramEncoder(args.PROG_LEN)
+# onehot = prog_enc.tokens_to_onehot(y, ignore_padding=True)
+
 
 #%%
 def make_collate_fn(PROG_LEN):
@@ -632,6 +715,7 @@ def make_collate_fn(PROG_LEN):
         targets = [torch.tensor(d[1], device='cpu') for d in data]
         loss_masks = [torch.tensor(d[2], device='cpu') for d in data]
         attention_masks = [torch.tensor(d[3], device='cpu') for d in data]
+        autoregressive_inputs = [torch.tensor(d[4], device='cpu') for d in data]
         inputs = pad_sequence(inputs, batch_first=True)
         attention_masks = pad_sequence(attention_masks, batch_first=True)
         
@@ -652,12 +736,22 @@ def make_collate_fn(PROG_LEN):
         targets = torch.concatenate((padding, targets), axis=1)
         loss_masks = torch.concatenate((padding[:, :, 0], loss_masks), axis=1)
         
-
+        if autoregressive_inputs[0].shape != torch.Size([]): # if not we're running autoregressively
+            autoregressive_inputs =  torch.stack(autoregressive_inputs) # Batch, timesteps, features
+            _, ar_timesteps, ar_features = autoregressive_inputs.shape
+            inputs = inputs[:, :-ar_timesteps, :] # cut off the old program reserved timesteps
+            
+            # pad the AR input features to the input feature size
+            autoregressive_inputs = torch.concatenate([autoregressive_inputs, torch.zeros((bs, ar_timesteps, parameter_features-ar_features))], axis=2)
+            
+            # concat the timesteps together
+            inputs = torch.concatenate([inputs, autoregressive_inputs], axis=1)
+        
         return np.array(inputs), np.array(targets).astype(int), np.array(loss_masks), np.array(attention_masks), pos_ids
     return collate_fn
 
 
-dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.9)
+dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.9, autoregressive=True)
 test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.1)
 
 next(iter(dataset))

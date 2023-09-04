@@ -88,14 +88,15 @@ class ProgramEncoder:
         encoded[-1, 0] = self.op_encoder[END_TOKEN]
         return encoded
     
-    def tokens_to_onehot(self, encoded):
+    def tokens_to_onehot(self, encoded, ignore_padding=False):
         one_hot = np.zeros((encoded.shape[0], self.OP_VOCAB_SIZE + 4 * self.VAR_VOCAB_SIZE))
         for t in range(encoded.shape[0]):
             ptr = 0
             # Loop through each operation which cotains list of 5 integer id's for each token
             for i in range(len(self.segment_sizes)):
                 id = encoded[t, i]
-                one_hot[t, ptr + id] = 1
+                if not (ignore_padding and id == 0):
+                    one_hot[t, ptr + id] = 1
                 ptr += self.segment_sizes[i]
         return one_hot
     
