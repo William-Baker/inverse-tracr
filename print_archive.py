@@ -56,8 +56,8 @@ class ZipStreamReader:
 
 #df = ZipStreamReader('cp_dataset_train_all.zip')
 
-#df = ZipStreamReader('.data/iTracr_dataset_v2_train.zip')
-df = ZipStreamReader('.data/fixed.zip')
+df = ZipStreamReader('.data/iTracr_dataset_v2_train.zip')
+#df = ZipStreamReader('.data/fixed.zip')
 print(len(df))
 
 #%%
