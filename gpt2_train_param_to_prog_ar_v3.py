@@ -97,7 +97,7 @@ args = Namespace(
     in_noise = 0.30, # inverse fraction of the standard deviation of the noise to add
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
+    config = 'TINY', #'MEDIUM', # 'LARGE'
     trail_name='arv2',
     task='Stock', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
@@ -713,23 +713,23 @@ class WrappedDataset(StoreReader):
                 # autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
                 # y = autoregressive_targets
                 
-                autoregressive_inputs = y[:-1, :] # cut off prog_end
+                autoregressive_inputs = y[:-1, :] # cut off final token, worst case it's prog_end, most likley its zeros
                  
                  # add a blank timestep at the start
-                autoregressive_inputs = np.concatenate((np.zeros((1, autoregressive_inputs.shape[1])), autoregressive_inputs))
+                autoregressive_inputs = np.concatenate((np.zeros((1, autoregressive_inputs.shape[1]), dtype=np.int32), autoregressive_inputs), axis=0)
                 autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
             else:
                 autoregressive_inputs = np.array(0)
         return np.array(x),np.array(y),np.array(loss_mask),np.array(attention_mask), autoregressive_inputs
 
-# #%%
-# dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.9, autoregressive=True)
-# it = iter(dataset)
-# #%%
-# x, y, loss_mask, attention_mask, autoregressive_mask = next(it)
-# y, loss_mask, autoregressive_mask
-# # print(y * np.repeat(loss_mask[:, np.newaxis], y.shape[1], axis=1))
-# # print(y * np.repeat(autoregressive_mask[:, np.newaxis], y.shape[1], axis=1))
+#%%
+dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.9, autoregressive=True)
+it = iter(dataset)
+#%%
+x, y, loss_mask, attention_mask, autoregressive_mask = next(it)
+y, loss_mask, autoregressive_mask
+# print(y * np.repeat(loss_mask[:, np.newaxis], y.shape[1], axis=1))
+# print(y * np.repeat(autoregressive_mask[:, np.newaxis], y.shape[1], axis=1))
 
 # #%%
 # from data.dataloaders import ProgramEncoder
