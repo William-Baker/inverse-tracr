@@ -38,6 +38,20 @@
 # list all running python processes in case GPU memory not deallocated:
 # ps -a | grep python
 
+# input  target
+# W1     0
+# W2     0
+# W3     0
+# PAD    PAD
+# ...    ...
+# START  START
+# START  R1
+# R1     R2
+# R2     R3
+# R3     R4
+# R4     END
+# END    0 
+
 
 import os
 import jax
@@ -50,7 +64,7 @@ import jax
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 #os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 # from jax import config
 # config.update("jax_disable_jit", True)
@@ -97,8 +111,8 @@ args = Namespace(
     in_noise = 0.30, # inverse fraction of the standard deviation of the noise to add
     max_timesteps = 40,
     model = 'GPT2',
-    config = 'TINY', #'MEDIUM', # 'LARGE'
-    trail_name='arv2',
+    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
+    trail_name='arv3',
     task='Stock', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )
@@ -361,12 +375,19 @@ class TrainerModule:
                 
                 # output timesteps of form:
                 # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
-                # vvvvv  | ------------------ INPUT_DATA ---------------- | PROG_START | ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- | PROG_END (1 only if final step) |
-                ar_mask = [0] * (time_steps - self.max_output_length - 2) +     [1]    + [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))]
+                # vvvvv  | ------------------ INPUT_DATA ---------------- |  ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- |         PROG_END (1 only if final step)        | Zero for missing prog_start token
+                ar_mask = [0] * (time_steps - self.max_output_length - 2) +  [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))] + [0]
                 ar_mask = jnp.array(ar_mask)
                 repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
                 masked_logits = logits * repeated_ar_mask
-                masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
+                
+                masked_logits = masked_logits[:, :-1, :] # cut off the final token, there is a 1 timestep shift between predictions and inputs
+                
+                # Add to the start to shift
+                masked_logits = jnp.concatenate([jnp.zeros((batch_size, 1, out_features)), masked_logits], axis=1)
+                
+                # pad the start of the logits in the area with our parameter tokens
+                masked_logits = jnp.concatenate([jnp.zeros((batch_size, time_steps, features-out_features)), masked_logits], axis=2)
                 ar_inputs += masked_logits
                 
             ptr = 0
@@ -397,7 +418,7 @@ class TrainerModule:
                 ptr += seg_size
             
             loss = jnp.stack(loss, axis=2)
-            return loss, logits
+            return loss, logits, None
         
         def verbose_jitted_ar_full(state, batch):
             # labels = (batch_size, max_time_steps, ordinal_features)
@@ -405,23 +426,36 @@ class TrainerModule:
             out_features = sum(self.seg_sizes)
             batch_size, time_steps, features = inp_data.shape
             #rng, dropout_apply_rng = random.split(rng)
-
+            c_logits = []
+            c_inputs = []
+            m_logits = []
             ar_inputs = inp_data
             logits = None
             for ar_timestep in range(self.max_output_length):
                 #print(ar_timestep)
                 logits = self.model.apply({'params': state.params}, ar_inputs, attention_mask=attention_mask, train=False, position_ids=pos_id)
-                
+
                 # output timesteps of form:
                 # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
-                # vvvvv  | ------------------ INPUT_DATA ---------------- | PROG_START | ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- | PROG_END (1 only if final step) |
-                ar_mask = [0] * (time_steps - self.max_output_length - 2) +     [1]    + [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))]
+                # vvvvv  | ------------------ INPUT_DATA ---------------- |  ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- |         PROG_END (1 only if final step)        | Zero for missing prog_start token
+                ar_mask = [0] * (time_steps - self.max_output_length - 2) +  [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))] + [0]
                 ar_mask = jnp.array(ar_mask)
                 repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
                 masked_logits = logits * repeated_ar_mask
-                masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
+                
+                masked_logits = masked_logits[:, :-1, :] # cut off the final token, there is a 1 timestep shift between predictions and inputs
+                
+                # Add to the start to shift
+                masked_logits = jnp.concatenate([jnp.zeros((batch_size, 1, out_features)), masked_logits], axis=1)
+                
+                # pad the start of the logits in the area with our parameter tokens
+                masked_logits = jnp.concatenate([jnp.zeros((batch_size, time_steps, features-out_features)), masked_logits], axis=2)
                 ar_inputs += masked_logits
-     
+                
+                c_logits.append(logits)
+                c_inputs.append(ar_inputs)
+                m_logits.append(ar_mask)
+   
             ptr = 0
             loss = []
             for i, seg_size in enumerate(self.seg_sizes):
@@ -429,7 +463,7 @@ class TrainerModule:
                 ptr += seg_size
             
             loss = jnp.stack(loss, axis=2)
-            return loss, logits
+            return loss, logits, (c_logits, c_inputs, m_logits)
             
         return verbose_jitted_ar_step, verbose_jitted_ar_full
     
@@ -462,8 +496,18 @@ class TrainerModule:
         
         def verbose_step(verbose_fn, state, batch, step, ext: str = ""):
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
-            loss, logits = verbose_fn(state, batch)
+            loss, logits, ar_inputs = verbose_fn(state, batch)
             loss = np.array(loss)
+            
+            if ar_inputs is not None:
+                c_logits, c_inputs, m_inputs = ar_inputs
+                for i in range(len(c_inputs)):
+                    print(f"\n\n\n\n\ntimestep {i}\n")
+                    print(self.dataset.decode_pred(c_logits[i], 0))
+                    print("\n")
+                    print(self.dataset.decode_pred(m_inputs[i][:, :, :c_logits[i].shape[2]], 0))
+                    print("\n")
+                    print(self.dataset.decode_pred(c_inputs[i][:, :, :c_logits[i].shape[2]], 0))
 
             # loss = (batch_size, time_steps, features)
             
@@ -483,10 +527,16 @@ class TrainerModule:
                 return classes
             classes = logit_classes_jnp(logits)
             
+            # if ar_inputs is not None:
+            #     ar_classes = logit_classes_jnp(ar_inputs[-logits.shape[0]:, -logits.shape[1]:, -logits.shape[2]:])
+            
             max_prog_len = self.dataset.prog_len
             for batch_id in range(min(5, labels.shape[0])):
                 heat_img = plot_orginal_heatmaps(labels[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :], BATCH_ID = batch_id)
                 self.logger.add_image(f"verbose{ext}/heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
+                # if ar_inputs is not None:
+                #     heat_img = plot_orginal_heatmaps(ar_classes[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :], BATCH_ID = batch_id)
+                #     self.logger.add_image(f"verbose{ext}/input_heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
 
             self.logger.add_histogram(f"verbose{ext}/output", np.array(logits), global_step=step)
 
@@ -519,9 +569,9 @@ class TrainerModule:
                     #     jax.profiler.start_trace("jax-profile")
                     # elif idx == 49:
                     #     jax.profiler.stop_trace()
-                    # if idx == 50:
+                    # if idx == 100:
                     #     jax.profiler.start_trace("jax-profile")
-                    # elif idx == 100:
+                    # elif idx == 150:
                     #     jax.profiler.stop_trace()
                     # if idx == 101:
                     #     jax.profiler.start_trace("jax-profile")
@@ -551,7 +601,7 @@ class TrainerModule:
                     
                     
                     # ------------ Low freq metrics --------------
-                    if (idx + 1) % LOGGING_INTERVAL == 0:
+                    if (idx) % LOGGING_INTERVAL == 0:
                         print("Verbose Iterations")
                         self.verbose_ar_step(state=self.state, batch=batch, step=global_step, ext="_train")
                         if validation_loader is not None:
@@ -713,24 +763,48 @@ class WrappedDataset(StoreReader):
                 # autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
                 # y = autoregressive_targets
                 
-                autoregressive_inputs = y[:-1, :] # cut off final token, worst case it's prog_end, most likley its zeros
-                 
+                #autoregressive_inputs = y[:-1, :] # cut off final token, worst case it's prog_end, most likley its zeros
+                autoregressive_inputs = y
+                y = y[1:, :] # cut off the program start token
+                y = np.concatenate((y, np.zeros((1, y.shape[1]), dtype=np.int32)), axis=0)
+                # print(autoregressive_inputs)
+                # print(y)
+                
                  # add a blank timestep at the start
-                autoregressive_inputs = np.concatenate((np.zeros((1, autoregressive_inputs.shape[1]), dtype=np.int32), autoregressive_inputs), axis=0)
+                #autoregressive_inputs = np.concatenate((np.zeros((1, autoregressive_inputs.shape[1]), dtype=np.int32), autoregressive_inputs), axis=0)
+                #autoregressive_inputs = np.concatenate((autoregressive_inputs[0, :], autoregressive_inputs), axis=0)
                 autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
             else:
-                autoregressive_inputs = np.array(0)
+                # autoregressive_inputs = np.array(0)
+                autoregressive_inputs = np.concatenate((y[0:1, :], np.zeros((y.shape[0]-1, y.shape[1]), dtype=np.int32)), axis=0)
+                y = y[1:, :] # cut off the program start token
+                y = np.concatenate((y, np.zeros((1, y.shape[1]), dtype=np.int32)), axis=0)
+                
+                # print(autoregressive_inputs)
+                # print(y)
+                autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
+                
         return np.array(x),np.array(y),np.array(loss_mask),np.array(attention_mask), autoregressive_inputs
 
 #%%
-dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.9, autoregressive=True)
+# dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.9, autoregressive=True)
+# it = iter(dataset)
+# #%%
+# x, y, loss_mask, attention_mask, autoregressive_mask = next(it)
+# y, loss_mask, autoregressive_mask
+
+# #%%
+
+dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.1, autoregressive=False)
 it = iter(dataset)
 #%%
 x, y, loss_mask, attention_mask, autoregressive_mask = next(it)
 y, loss_mask, autoregressive_mask
-# print(y * np.repeat(loss_mask[:, np.newaxis], y.shape[1], axis=1))
-# print(y * np.repeat(autoregressive_mask[:, np.newaxis], y.shape[1], axis=1))
 
+print(autoregressive_mask[-17, :])
+print(autoregressive_mask[-16, :])
+print(autoregressive_mask[-15, :])
+print(y)
 # #%%
 # from data.dataloaders import ProgramEncoder
 # prog_enc = ProgramEncoder(args.PROG_LEN)
@@ -810,9 +884,9 @@ def make_collate_fn(PROG_LEN):
     return collate_fn
 
 
-# dataset contains 4.1 million samples, 1% of this is 40k samples, which should be enough to judge the performance of the model
-dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.99, autoregressive=True)
-test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.01 )
+# dataset contains 4.1 million samples, 0.3% of this is 15k samples, which should be enough to judge the performance of the model
+dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.997, autoregressive=True)
+test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.003 )
 
 next(iter(dataset))
 next(iter(test_dataset))
@@ -993,7 +1067,7 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 #%%
 
 for epoch_idx in range(1, args.max_epochs+1):
-    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=2, LOGS_PER_EPOCH=20 )
+    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=8, LOGS_PER_EPOCH=40 )
 
 
 #%%

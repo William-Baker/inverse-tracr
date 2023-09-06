@@ -314,7 +314,7 @@ class FlaxGPT2Block(nn.Module):
 
         if self.config.add_cross_attention:
             self.crossattention = FlaxGPT2Attention(
-                config=self.config, dtype=self.dtype, causal=False, is_cross_attention=True
+                config=self.config, dtype=self.dtype, causal=True, is_cross_attention=True
             )
             self.ln_cross_attn = nn.LayerNorm(epsilon=self.config.layer_norm_epsilon, dtype=self.dtype)
 
