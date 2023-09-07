@@ -94,7 +94,7 @@ from dill import dump, load
 from jaxlib.xla_extension import XlaRuntimeError
 from data.dataset import example_program_dataset
 from data.encoded_dataloaders import encode_rasp_program
-from models import GPT2, GPT2Config, GPTNeo, GPTJ, GPTNeoSimplified
+from models import GPT2, GPT2Config, GPTNeo, GPTJ
 from transformers.models.gptj.configuration_gptj import GPTJConfig
 from argparse import Namespace
 from data.dataloaders import ProgramEncoder
