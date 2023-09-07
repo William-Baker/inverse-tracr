@@ -94,7 +94,7 @@ from dill import dump, load
 from jaxlib.xla_extension import XlaRuntimeError
 from data.dataset import example_program_dataset
 from data.encoded_dataloaders import encode_rasp_program
-from models import GPT2, GPT2Config, GPTNeo, GPTJ
+from models import GPT2, GPT2Config, GPTNeo, GPTJ, GPTNeoSimplified
 from transformers.models.gptj.configuration_gptj import GPTJConfig
 from argparse import Namespace
 from data.dataloaders import ProgramEncoder
@@ -102,6 +102,22 @@ from functools import partial
 
 
 # GPT Large Train config
+# args = Namespace(
+#     batch_size=384,# 256 for medium
+#     PROG_LEN = 15,
+#     max_epochs = 40,
+#     LEARNING_RATE=1e-5,
+#     input_dropout_prob = 0.2,
+#     in_noise = 0.30, # inverse fraction of the standard deviation of the noise to add
+#     max_timesteps = 40,
+#     model = 'GPT2',
+#     config = 'TINY', #'MEDIUM', # 'LARGE'
+#     trail_name='arv3_test',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
+#     autoregressive=True,
+# )
+
+
 args = Namespace(
     batch_size=384,# 256 for medium
     PROG_LEN = 15,
@@ -110,12 +126,13 @@ args = Namespace(
     input_dropout_prob = 0.2,
     in_noise = 0.30, # inverse fraction of the standard deviation of the noise to add
     max_timesteps = 40,
-    model = 'GPT2',
-    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-    trail_name='arv3',
+    model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
+    config = 'pythia_125m', #'MEDIUM', # 'LARGE'
+    trail_name='arv3_cheating',
     task='Stock', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )
+
 
 # # GPT Large Cont fine tune Train config
 # args = Namespace(
@@ -360,17 +377,14 @@ class TrainerModule:
             # Input data has shape (batch_size, time_steps, features)
             # Labels has shape (batch_size, time_steps, 5)
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
-            #time_steps = inp_data.shape[1]
             batch_size, time_steps, features = inp_data.shape
             out_features = sum(self.seg_sizes)
             
             rng, dropout_apply_rng = random.split(rng)
-            # logits = self.model.apply({'params': params}, inp_data, attention_mask=attention_mask, train=train, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
-            
+                
             ar_inputs = inp_data
             logits = None
             for ar_timestep in range(self.max_output_length):
-                #print(ar_timestep)
                 logits = self.model.apply({'params': params}, ar_inputs, attention_mask=attention_mask, train=train, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
                 
                 # output timesteps of form:
@@ -387,8 +401,8 @@ class TrainerModule:
                 masked_logits = jnp.concatenate([jnp.zeros((batch_size, 1, out_features)), masked_logits], axis=1)
                 
                 # pad the start of the logits in the area with our parameter tokens
-                masked_logits = jnp.concatenate([jnp.zeros((batch_size, time_steps, features-out_features)), masked_logits], axis=2)
-                ar_inputs += masked_logits
+                masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
+                ar_inputs = inp_data + masked_logits
                 
             ptr = 0
             loss = 0
@@ -418,21 +432,18 @@ class TrainerModule:
                 ptr += seg_size
             
             loss = jnp.stack(loss, axis=2)
-            return loss, logits, None
+            return loss, logits, inp_data
         
         def verbose_jitted_ar_full(state, batch):
+            # Input data has shape (batch_size, time_steps, features)
             # labels = (batch_size, max_time_steps, ordinal_features)
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
             out_features = sum(self.seg_sizes)
             batch_size, time_steps, features = inp_data.shape
-            #rng, dropout_apply_rng = random.split(rng)
-            c_logits = []
-            c_inputs = []
-            m_logits = []
+            
             ar_inputs = inp_data
             logits = None
             for ar_timestep in range(self.max_output_length):
-                #print(ar_timestep)
                 logits = self.model.apply({'params': state.params}, ar_inputs, attention_mask=attention_mask, train=False, position_ids=pos_id)
 
                 # output timesteps of form:
@@ -449,12 +460,8 @@ class TrainerModule:
                 masked_logits = jnp.concatenate([jnp.zeros((batch_size, 1, out_features)), masked_logits], axis=1)
                 
                 # pad the start of the logits in the area with our parameter tokens
-                masked_logits = jnp.concatenate([jnp.zeros((batch_size, time_steps, features-out_features)), masked_logits], axis=2)
-                ar_inputs += masked_logits
-                
-                c_logits.append(logits)
-                c_inputs.append(ar_inputs)
-                m_logits.append(ar_mask)
+                masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
+                ar_inputs = inp_data + masked_logits
    
             ptr = 0
             loss = []
@@ -463,7 +470,7 @@ class TrainerModule:
                 ptr += seg_size
             
             loss = jnp.stack(loss, axis=2)
-            return loss, logits, (c_logits, c_inputs, m_logits)
+            return loss, logits, ar_inputs
             
         return verbose_jitted_ar_step, verbose_jitted_ar_full
     
@@ -499,15 +506,17 @@ class TrainerModule:
             loss, logits, ar_inputs = verbose_fn(state, batch)
             loss = np.array(loss)
             
-            if ar_inputs is not None:
-                c_logits, c_inputs, m_inputs = ar_inputs
-                for i in range(len(c_inputs)):
-                    print(f"\n\n\n\n\ntimestep {i}\n")
-                    print(self.dataset.decode_pred(c_logits[i], 0))
-                    print("\n")
-                    print(self.dataset.decode_pred(m_inputs[i][:, :, :c_logits[i].shape[2]], 0))
-                    print("\n")
-                    print(self.dataset.decode_pred(c_inputs[i][:, :, :c_logits[i].shape[2]], 0))
+            # if ar_inputs is not None:
+            #     c_logits, c_inputs, m_logits = ar_inputs
+            #     for i in range(len(c_inputs)):
+            #         print(f"\n\n\n\n\ntimestep {i}\n")
+            #         print(self.dataset.decode_pred(c_logits[i], 0))
+            #         print("\n")
+            #         print(self.dataset.decode_pred(m_logits[i][:, :, :c_logits[i].shape[2]], 0))
+            #         # print(m_logits[i].shape)
+            #         # print(m_logits[i])
+            #         print("\n")
+            #         print(self.dataset.decode_pred(c_inputs[i][:, :, :c_logits[i].shape[2]], 0))
 
             # loss = (batch_size, time_steps, features)
             
@@ -527,16 +536,16 @@ class TrainerModule:
                 return classes
             classes = logit_classes_jnp(logits)
             
-            # if ar_inputs is not None:
-            #     ar_classes = logit_classes_jnp(ar_inputs[-logits.shape[0]:, -logits.shape[1]:, -logits.shape[2]:])
+            if ar_inputs is not None:
+                ar_classes = logit_classes_jnp(ar_inputs[:, -logits.shape[1]:, :logits.shape[2]])
             
             max_prog_len = self.dataset.prog_len
             for batch_id in range(min(5, labels.shape[0])):
                 heat_img = plot_orginal_heatmaps(labels[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :], BATCH_ID = batch_id)
                 self.logger.add_image(f"verbose{ext}/heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
-                # if ar_inputs is not None:
-                #     heat_img = plot_orginal_heatmaps(ar_classes[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :], BATCH_ID = batch_id)
-                #     self.logger.add_image(f"verbose{ext}/input_heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
+                if ar_inputs is not None:
+                    heat_img = plot_orginal_heatmaps(ar_classes[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :], BATCH_ID = batch_id)
+                    self.logger.add_image(f"verbose{ext}/input_heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
 
             self.logger.add_histogram(f"verbose{ext}/output", np.array(logits), global_step=step)
 
@@ -783,6 +792,7 @@ class WrappedDataset(StoreReader):
                 # print(autoregressive_inputs)
                 # print(y)
                 autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
+              
                 
         return np.array(x),np.array(y),np.array(loss_mask),np.array(attention_mask), autoregressive_inputs
 
@@ -879,6 +889,14 @@ def make_collate_fn(PROG_LEN):
             
             # concat the timesteps together
             inputs = torch.concatenate([inputs, autoregressive_inputs], axis=1)
+        
+        #assert (inputs * attention_masks) == inputs # verify that we're not masking out important data
+        print((inputs.shape, attention_masks.shape))
+        inputs, targets, loss_masks, attention_masks = np.zeros(inputs.shape), np.zeros(targets.shape), np.ones(loss_masks.shape), np.ones(attention_masks.shape)        
+        indices = np.random.randint(0, targets.shape[2], size=bs)
+        arr = np.arange(0, bs)
+        inputs[arr, -1, indices] = 1
+        targets[arr, 0, indices] = 1   
         
         return np.array(inputs), np.array(targets).astype(int), np.array(loss_masks), np.array(attention_masks), pos_ids
     return collate_fn

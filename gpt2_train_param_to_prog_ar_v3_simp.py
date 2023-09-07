@@ -2,9 +2,11 @@
 # srun -t 20:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
 # srun -t 00:10:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:2 --partition=pascal -A MLMI-WB326-SL2-GPU --pty bash
 # srun -t 2:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
+# sintr -t 1:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --qos INTR
 
 # =========== To run - use the following commands first ==========
 # conda activate /rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
+# conda activate /rds/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
 # source venv/bin/activate
 # jupyter lab --no-browser --ip=* --port=8081
 
@@ -31,9 +33,24 @@
 # export PATH=$PATH:/home/wb326/miniconda3/envs/venv/lib
 # export PATH=$PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
 # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
+# source venv/bin/activate
 
 # list all running python processes in case GPU memory not deallocated:
 # ps -a | grep python
+
+# input  target
+# W1     0
+# W2     0
+# W3     0
+# PAD    PAD
+# ...    ...
+# START  START
+# START  R1
+# R1     R2
+# R2     R3
+# R3     R4
+# R4     END
+# END    0 
 
 
 import os
@@ -47,7 +64,7 @@ import jax
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 #os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 # from jax import config
 # config.update("jax_disable_jit", True)
@@ -77,25 +94,45 @@ from dill import dump, load
 from jaxlib.xla_extension import XlaRuntimeError
 from data.dataset import example_program_dataset
 from data.encoded_dataloaders import encode_rasp_program
-from models import GPT2, GPT2Config, GPTNeo, GPTJ
+from models import GPT2, GPT2Config, GPTNeo, GPTJ, GPTNeoSimplified
 from transformers.models.gptj.configuration_gptj import GPTJConfig
 from argparse import Namespace
+from data.dataloaders import ProgramEncoder
+from functools import partial
 
 
 # GPT Large Train config
+# args = Namespace(
+#     batch_size=384,# 256 for medium
+#     PROG_LEN = 15,
+#     max_epochs = 40,
+#     LEARNING_RATE=1e-5,
+#     input_dropout_prob = 0.2,
+#     in_noise = 0.30, # inverse fraction of the standard deviation of the noise to add
+#     max_timesteps = 40,
+#     model = 'GPT2',
+#     config = 'TINY', #'MEDIUM', # 'LARGE'
+#     trail_name='arv3_test',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
+#     autoregressive=True,
+# )
+
+
 args = Namespace(
-    batch_size=128,# 256 for medium
+    batch_size=384,# 256 for medium
     PROG_LEN = 15,
-    max_epochs = 3,#40,
-    LEARNING_RATE=1e-4, #4e-6,
-    input_dropout_prob = 0.05, #0.3,
-    in_noise = 0, #0.40, # inverse fraction of the standard deviation of the noise to add
+    max_epochs = 40,
+    LEARNING_RATE=1e-5,
+    input_dropout_prob = 0.2,
+    in_noise = 0.30, # inverse fraction of the standard deviation of the noise to add
     max_timesteps = 40,
-    model = 'GPT2',
-    config = 'TINY', #'MEDIUM', # 'LARGE'
-    trail_name='test_ar',
-    task='Stock' # 'Stock', 'Compressed', 'Natural'
+    model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
+    config = 'pythia_125m', #'MEDIUM', # 'LARGE'
+    trail_name='arv3_cheating',
+    task='Stock', # 'Stock', 'Compressed', 'Natural'
+    autoregressive=True,
 )
+
 
 # # GPT Large Cont fine tune Train config
 # args = Namespace(
@@ -118,7 +155,7 @@ if args.task == 'Stock':
     from data.dataloader_streams import ZipPickleStreamReader as StoreReader
     from data.parameter_encoder import CRAFT_TIMESTEPS as TIMESTEPS
     from data.parameter_encoder import CRAFT_ARCH as ARCH
-    dataset_path = '.data/train_zip3.zip'
+    dataset_path = '.data/iTracr_dataset_v2_train.zip'
 elif args.task == 'Compressed':
     from data.dataloader_streams import ZipPickleStreamReader as StoreReader
     from data.parameter_encoder import JAX_TIMESTEPS as TIMESTEPS
@@ -313,177 +350,179 @@ class TrainerModule:
     #         return acc
     #     return accuracy_100
 
-    # def get_loss_function(self):
-    #     # Function for calculating loss and accuracy for a batch
-    #     def calculate_loss(params, rng, batch, train):
-    #         # Input data has shape (batch_size, time_steps, features)
-    #         # Labels has shape (batch_size, time_steps, 5)
-    #         inp_data, labels, loss_mask, attention_mask, pos_id = batch
-    #         #time_steps = inp_data.shape[1]
-    #         time_steps = labels.shape[1]
-    #         rng, dropout_apply_rng = random.split(rng)
-    #         logits = self.model.apply({'params': params}, inp_data, attention_mask=attention_mask, train=train, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
-    #         ptr = 0
-    #         loss = 0
-    #         for i, seg_size in enumerate(self.seg_sizes):
-    #             loss += optax.softmax_cross_entropy_with_integer_labels(logits[:, :time_steps, ptr:ptr + seg_size], labels[:, :time_steps, i]) * loss_mask
-    #             ptr += seg_size
-
-    #         loss = loss.mean()
-    #         acc = self.accuracy_fn(logits, labels, loss_mask)
-    #         return loss, (acc, rng)
-    #     return calculate_loss
-    
-    # def get_model_call(self):
-    #     def model_call(params, rng, batch, train):
-    #         # Input data has shape (batch_size, time_steps, features)
-    #         # Labels has shape (batch_size, time_steps, 5)
-    #         inp_data, labels, loss_mask, attention_mask, pos_id = batch
-    #         #time_steps = inp_data.shape[1]
-    #         batch_size, time_steps, features = inp_data.shape
-    #         out_features = sum(self.seg_sizes)
-    #         assert features > out_features # since we add the ouptut predictions to the input when running auto regressively the input must have at least as many features as the output
-            
-    #         rng, dropout_apply_rng = random.split(rng)
-    #         ar_logits, ar_masks = [], []
-    #         ar_inputs = inp_data
-    #         for ar_timestep in range(self.max_output_length):
-    #             #print(ar_timestep)
-    #             logits = self.model.apply({'params': params}, ar_inputs, attention_mask=attention_mask, train=train, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
-                
-    #             # output timesteps of form:
-    #             # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
-    #             # vvvvv  | ------------------ INPUT_DATA ---------------- | PROG_START | ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- | PROG_END (1 only if final step) |
-    #             ar_mask = [0] * (time_steps - self.max_output_length - 2) +     [1]    + [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))]
-    #             ar_mask = jnp.array(ar_mask)
-    #             repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
-    #             masked_logits = logits * repeated_ar_mask
-    #             masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
-    #             ar_inputs += masked_logits
-                
-    #             ar_masks.append(ar_mask)
-    #             ar_logits.append(logits)
-            
-    #         loss = 0
-    #         ar_losses = []
-    #         for ar_timestep in range(self.max_output_length):
-    #             ptr = 0
-    #             # ouptut features of form:
-    #             # <RASP_OP>, <ARG1>, <ARG2>, <ARG3>, <RETURN>
-    #             # compute loss for each of the 5 target tokens
-    #             for i, seg_size in enumerate(self.seg_sizes):
-    #                 # output timesteps vs loss mask:
-    #                 # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
-    #                 # 0000000000000000000000000000000,     1  ,   1   , ...,            1            ,   1
-    #                 logits = ar_logits[ar_timestep]
-    #                 ar_loss = optax.softmax_cross_entropy_with_integer_labels(logits[:,:, ptr:ptr + seg_size], labels[:, :time_steps, i]) * loss_mask
-    #                 #repeated_ar_mask = jnp.repeat(ar_masks[ar_timestep][:, jnp.newaxis], features, axis=1)
-    #                 ar_loss = ar_loss * ar_masks[ar_timestep] # mask to only keep the timesteps we're predicting upto
-    #                 loss += ar_loss
-    #                 ptr += seg_size
-    #                 ar_losses.append(ar_loss)
-    #         return loss, ar_logits, ar_losses
-    #     return model_call
-    
-    
     def get_loss_function(self):
-        
-        
         # Function for calculating loss and accuracy for a batch
         def calculate_loss(params, rng, batch, train):
-            inp_data, labels, loss_mask, attention_mask, pos_id = batch
-            # loss, ar_logits, _ = self.model_call(params, rng, batch, train)
             # Input data has shape (batch_size, time_steps, features)
             # Labels has shape (batch_size, time_steps, 5)
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
             #time_steps = inp_data.shape[1]
+            time_steps = labels.shape[1]
+            rng, dropout_apply_rng = random.split(rng)
+            logits = self.model.apply({'params': params}, inp_data, attention_mask=attention_mask, train=train, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
+            ptr = 0
+            loss = 0
+            for i, seg_size in enumerate(self.seg_sizes):
+                loss += optax.softmax_cross_entropy_with_integer_labels(logits[:, :time_steps, ptr:ptr + seg_size], labels[:, :time_steps, i]) * loss_mask
+                ptr += seg_size
+
+            loss = loss.mean()
+            acc = self.accuracy_fn(logits, labels, loss_mask)
+            return loss, (acc, rng)
+        return calculate_loss
+    
+    def get_ar_loss_function(self):
+        # Function for calculating loss and accuracy for a batch
+        def calculate_loss(params, rng, batch, train):
+            # Input data has shape (batch_size, time_steps, features)
+            # Labels has shape (batch_size, time_steps, 5)
+            inp_data, labels, loss_mask, attention_mask, pos_id = batch
             batch_size, time_steps, features = inp_data.shape
             out_features = sum(self.seg_sizes)
-            assert features > out_features # since we add the ouptut predictions to the input when running auto regressively the input must have at least as many features as the output
             
             rng, dropout_apply_rng = random.split(rng)
-            ar_logits, ar_masks = [], []
+                
             ar_inputs = inp_data
+            logits = None
             for ar_timestep in range(self.max_output_length):
-                #print(ar_timestep)
                 logits = self.model.apply({'params': params}, ar_inputs, attention_mask=attention_mask, train=train, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
                 
                 # output timesteps of form:
                 # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
-                # vvvvv  | ------------------ INPUT_DATA ---------------- | PROG_START | ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- | PROG_END (1 only if final step) |
-                ar_mask = [0] * (time_steps - self.max_output_length - 2) +     [1]    + [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))]
+                # vvvvv  | ------------------ INPUT_DATA ---------------- |  ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- |         PROG_END (1 only if final step)        | Zero for missing prog_start token
+                ar_mask = [0] * (time_steps - self.max_output_length - 2) +  [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))] + [0]
                 ar_mask = jnp.array(ar_mask)
                 repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
                 masked_logits = logits * repeated_ar_mask
-                masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
-                ar_inputs += masked_logits
                 
-                ar_masks.append(ar_mask)
-                ar_logits.append(logits)
-            
+                masked_logits = masked_logits[:, :-1, :] # cut off the final token, there is a 1 timestep shift between predictions and inputs
+                
+                # Add to the start to shift
+                masked_logits = jnp.concatenate([jnp.zeros((batch_size, 1, out_features)), masked_logits], axis=1)
+                
+                # pad the start of the logits in the area with our parameter tokens
+                masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
+                ar_inputs = inp_data + masked_logits
+                
+            ptr = 0
             loss = 0
-            ar_losses = []
-            for ar_timestep in range(self.max_output_length):
-                ptr = 0
-                # ouptut features of form:
-                # <RASP_OP>, <ARG1>, <ARG2>, <ARG3>, <RETURN>
-                # compute loss for each of the 5 target tokens
-                for i, seg_size in enumerate(self.seg_sizes):
-                    # output timesteps vs loss mask:
-                    # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
-                    # 0000000000000000000000000000000,     1  ,   1   , ...,            1            ,   1
-                    logits = ar_logits[ar_timestep]
-                    ar_loss = optax.softmax_cross_entropy_with_integer_labels(logits[:,:, ptr:ptr + seg_size], labels[:, :time_steps, i]) * loss_mask
-                    #repeated_ar_mask = jnp.repeat(ar_masks[ar_timestep][:, jnp.newaxis], features, axis=1)
-                    ar_loss = ar_loss * ar_masks[ar_timestep] # mask to only keep the timesteps we're predicting upto
-                    loss += ar_loss
-                    ptr += seg_size
-                    ar_losses.append(ar_loss)
+            for i, seg_size in enumerate(self.seg_sizes):
+                loss += optax.softmax_cross_entropy_with_integer_labels(logits[:, :time_steps, ptr:ptr + seg_size], labels[:, :time_steps, i]) * loss_mask
+                ptr += seg_size
+
             loss = loss.mean()
-            acc = self.accuracy_fn(ar_logits[-1], labels, loss_mask)
-            return loss, (acc, rng, ar_logits, ar_losses)
+            acc = self.accuracy_fn(logits, labels, loss_mask)
+            return loss, (acc, rng)
         return calculate_loss
+    
+    def get_verbose_fns(self):
+        def verbose_jitted_ar_step(state, batch):
+            # labels = (batch_size, max_time_steps, ordinal_features)
+            inp_data, labels, loss_mask, attention_mask, pos_id = batch
+            #rng, dropout_apply_rng = random.split(rng)
+
+            # logits = (batch_size, time_steps, features)
+            logits = self.model.apply({'params': state.params}, inp_data, attention_mask=attention_mask, position_ids=pos_id, train=False)#, rngs={'dropout': dropout_apply_rng})
+            
+     
+            ptr = 0
+            loss = []
+            for i, seg_size in enumerate(self.seg_sizes):
+                loss.append(optax.softmax_cross_entropy_with_integer_labels(logits[:, :, ptr:ptr + seg_size], labels[:, :, i]) * loss_mask)
+                ptr += seg_size
+            
+            loss = jnp.stack(loss, axis=2)
+            return loss, logits, inp_data
+        
+        def verbose_jitted_ar_full(state, batch):
+            # Input data has shape (batch_size, time_steps, features)
+            # labels = (batch_size, max_time_steps, ordinal_features)
+            inp_data, labels, loss_mask, attention_mask, pos_id = batch
+            out_features = sum(self.seg_sizes)
+            batch_size, time_steps, features = inp_data.shape
+            
+            ar_inputs = inp_data
+            logits = None
+            for ar_timestep in range(self.max_output_length):
+                logits = self.model.apply({'params': state.params}, ar_inputs, attention_mask=attention_mask, train=False, position_ids=pos_id)
+
+                # output timesteps of form:
+                # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
+                # vvvvv  | ------------------ INPUT_DATA ---------------- |  ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- |         PROG_END (1 only if final step)        | Zero for missing prog_start token
+                ar_mask = [0] * (time_steps - self.max_output_length - 2) +  [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))] + [0]
+                ar_mask = jnp.array(ar_mask)
+                repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
+                masked_logits = logits * repeated_ar_mask
+                
+                masked_logits = masked_logits[:, :-1, :] # cut off the final token, there is a 1 timestep shift between predictions and inputs
+                
+                # Add to the start to shift
+                masked_logits = jnp.concatenate([jnp.zeros((batch_size, 1, out_features)), masked_logits], axis=1)
+                
+                # pad the start of the logits in the area with our parameter tokens
+                masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
+                ar_inputs = inp_data + masked_logits
+   
+            ptr = 0
+            loss = []
+            for i, seg_size in enumerate(self.seg_sizes):
+                loss.append(optax.softmax_cross_entropy_with_integer_labels(logits[:, :, ptr:ptr + seg_size], labels[:, :, i]) * loss_mask)
+                ptr += seg_size
+            
+            loss = jnp.stack(loss, axis=2)
+            return loss, logits, ar_inputs
+            
+        return verbose_jitted_ar_step, verbose_jitted_ar_full
     
     def create_functions(self):
         # Create jitted train and eval functions
-        #self.model_call = self.get_model_call()
-        
         calculate_loss = self.get_loss_function()
 
-
+        ar_loss = self.get_ar_loss_function()
 
         # Training function
         def train_step(state, rng, batch):
             loss_fn = lambda params: calculate_loss(params, rng, batch, train=True)
             ret, grads = jax.value_and_grad(loss_fn, has_aux=True)(state.params)
-            loss, acc, rng, _, _ = ret[0], *ret[1]
+            loss, acc, rng = ret[0], *ret[1]
             state = state.apply_gradients(grads=grads)
             return state, rng, loss, acc
         self.train_step = jax.jit(train_step)
-        #self.train_step = train_step
 
 
 
 
         # Evaluation function
         def eval_step(state, rng, batch):
-            loss, (acc, rng, _, _) = calculate_loss(state.params, rng, batch, train=False)
+            loss, (acc, rng) = ar_loss(state.params, rng, batch, train=False)
             return loss, acc, rng
         self.eval_step = jax.jit(eval_step)
 
-        # jitted_model_call = jax.jit(self.model_call)
-        def verbose_step(state, batch, step, rng):
-            # labels = (batch_size, max_time_steps, ordinal_features)
+        
+        verbose_jitted_ar_step, verbose_jitted_ar_full = [jax.jit(x) for x in self.get_verbose_fns()]
+        
+        def verbose_step(verbose_fn, state, batch, step, ext: str = ""):
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
-            # loss, ar_logits, ar_losses = jitted_model_call(state.params, rng=rng, batch=batch, train=False)
-            loss, (acc, rng, ar_logits, ar_losses) = jax.jit(calculate_loss(state.params, rng, batch, train=False))
-            output_logits = ar_logits[-1]
+            loss, logits, ar_inputs = verbose_fn(state, batch)
+            loss = np.array(loss)
+            
+            # if ar_inputs is not None:
+            #     c_logits, c_inputs, m_logits = ar_inputs
+            #     for i in range(len(c_inputs)):
+            #         print(f"\n\n\n\n\ntimestep {i}\n")
+            #         print(self.dataset.decode_pred(c_logits[i], 0))
+            #         print("\n")
+            #         print(self.dataset.decode_pred(m_logits[i][:, :, :c_logits[i].shape[2]], 0))
+            #         # print(m_logits[i].shape)
+            #         # print(m_logits[i])
+            #         print("\n")
+            #         print(self.dataset.decode_pred(c_inputs[i][:, :, :c_logits[i].shape[2]], 0))
 
             # loss = (batch_size, time_steps, features)
-            loss = np.stack(loss, axis=2)
+            
             assert (loss.shape[0] == labels.shape[0]) and (loss.shape[2] == labels.shape[2])
            
-            acc = self.accuracy_fn(output_logits, labels, loss_mask)
+            acc = self.accuracy_fn(logits, labels, loss_mask)
 
             def logit_classes_jnp(logits):
                 classes = []
@@ -495,22 +534,28 @@ class TrainerModule:
                     ptr += seg_size
                 classes = jnp.stack(classes, axis=2)
                 return classes
+            classes = logit_classes_jnp(logits)
             
-            for ar_timestep in range(len(ar_logits)):
-                classes = logit_classes_jnp(ar_logits[ar_timestep])
-                
-                max_prog_len = self.dataset.prog_len
-                heat_img = plot_orginal_heatmaps(labels[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=ar_losses[ar_timestep][:, -max_prog_len-2:, :])
-                #heat_img = plot_orginal_heatmaps(labels, classes * jnp.expand_dims(loss_mask, axis=2).repeat(classes.shape[-1], axis=2), self.dataset, loss=loss)
+            if ar_inputs is not None:
+                ar_classes = logit_classes_jnp(ar_inputs[:, -logits.shape[1]:, :logits.shape[2]])
+            
+            max_prog_len = self.dataset.prog_len
+            for batch_id in range(min(5, labels.shape[0])):
+                heat_img = plot_orginal_heatmaps(labels[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :], BATCH_ID = batch_id)
+                self.logger.add_image(f"verbose{ext}/heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
+                if ar_inputs is not None:
+                    heat_img = plot_orginal_heatmaps(ar_classes[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :], BATCH_ID = batch_id)
+                    self.logger.add_image(f"verbose{ext}/input_heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
 
-                self.logger.add_image(f"verbose/heatmap/{ar_timestep}", heat_img, global_step=step, dataformats='HWC')
+            self.logger.add_histogram(f"verbose{ext}/output", np.array(logits), global_step=step)
 
-            self.logger.add_histogram("verbose/output", np.array(output_logits), global_step=step)
-
-            self.logger.add_scalar("verbose/acc", acc.mean().item(), global_step=step)
+            self.logger.add_scalar(f"verbose{ext}/acc", acc.mean().item(), global_step=step)
 
 
-        self.verbose_step = verbose_step
+
+        #self.verbose_step = jax.jit(verbose_step)
+        self.verbose_ar_step = partial(verbose_step, verbose_jitted_ar_step)
+        self.verbose_ar_full = partial(verbose_step, verbose_jitted_ar_full)
 
         self.accuracy_fn = self.get_accuracy_function()
 
@@ -533,9 +578,9 @@ class TrainerModule:
                     #     jax.profiler.start_trace("jax-profile")
                     # elif idx == 49:
                     #     jax.profiler.stop_trace()
-                    # if idx == 50:
+                    # if idx == 100:
                     #     jax.profiler.start_trace("jax-profile")
-                    # elif idx == 100:
+                    # elif idx == 150:
                     #     jax.profiler.stop_trace()
                     # if idx == 101:
                     #     jax.profiler.start_trace("jax-profile")
@@ -565,9 +610,12 @@ class TrainerModule:
                     
                     
                     # ------------ Low freq metrics --------------
-                    #if (idx + 1) % LOGGING_INTERVAL == 0:
                     if (idx) % LOGGING_INTERVAL == 0:
-                        self.verbose_step(state=self.state, batch=batch, step=global_step, rng=self.rng)
+                        print("Verbose Iterations")
+                        self.verbose_ar_step(state=self.state, batch=batch, step=global_step, ext="_train")
+                        if validation_loader is not None:
+                            val_batch = next(iter(validation_loader)) # we shuffle the validation set so it's fine
+                            self.verbose_ar_full(state=self.state, batch=val_batch, step=global_step, ext="_val")
                     
 
                     # ------------ Evaluation Step ---------------
@@ -609,7 +657,7 @@ class TrainerModule:
         # Test model on all data points of a data loader and return avg accuracy
         loss_sum, count = 0.0, 0
         acc_list = []        
-        for batch in data_loader:
+        for batch in tqdm(data_loader, desc='Evaluating'):
             loss, acc, self.rng = self.eval_step(self.state, self.rng, batch)
 
             bs = batch[0].shape[0]
@@ -675,14 +723,16 @@ def add_noise_to_params(params, frac_of_std=0.1):
         return x
     return tree_map(add_noise, params)
 
-
+#%%
 
 class WrappedDataset(StoreReader):
-    def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int, first=None, last=None, in_noise=0) -> None:
+    def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int, first=None, last=None, in_noise=0, autoregressive=False) -> None:
         super().__init__(dir, first, last)
         self.max_prog_len = max_prog_len
         self.max_timesteps = max_time_step_reduction_sample
         self.in_noise = in_noise
+        self.autoregressive = autoregressive
+        self.prog_enc = ProgramEncoder(max_prog_len)
     
     def __getitem__(self, idx):
         # first rejection sample under the max timestep
@@ -691,6 +741,7 @@ class WrappedDataset(StoreReader):
         while x_shape > self.max_timesteps:
             circular_index = (idx + offset) % self.__len__()
             x,y = super().__getitem__(circular_index)
+            this_program_length = y.shape[0] - 2
             if args.task in ['Compressed', 'Natural']: # we left these samples parameters unencoded
                 x = compress_params(x)
                 if self.in_noise > 0:
@@ -699,7 +750,76 @@ class WrappedDataset(StoreReader):
             x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.max_prog_len, x=x, y=y, TIMESTEPS=TIMESTEPS, ARCH_LABELS=ARCH)
             x_shape = x.shape[0]
             offset += 1
-        return np.array(x),np.array(y),np.array(loss_mask),np.array(attention_mask)
+            
+            if self.autoregressive:
+                # autoregressive_timestep = np.random.randint(1, this_program_length)
+                # #autoregressive_timestep = 0#this_program_length-2
+                # autoregressive_target_mask = np.ones((autoregressive_timestep+2), dtype=np.int32)
+                # autoregressive_input_mask = np.ones((autoregressive_timestep+1), dtype=np.int32)
+                # if autoregressive_timestep == this_program_length-1:
+                #     autoregressive_target_mask = np.ones((this_program_length+2), dtype=np.int32)
+                # autoregressive_target_mask = np.concatenate((autoregressive_target_mask, np.zeros(self.max_prog_len+2 - autoregressive_target_mask.shape[0], dtype=np.int32)))
+                # autoregressive_input_mask = np.concatenate((autoregressive_input_mask, np.zeros(self.max_prog_len+2 - autoregressive_input_mask.shape[0], dtype=np.int32)))
+                
+                # repeated_target_mask = np.repeat(autoregressive_target_mask[:, np.newaxis], y.shape[1], axis=1)
+                # autoregressive_targets = y * repeated_target_mask # subset of the sample targets upto AR_TIMESTEP
+                # loss_mask = loss_mask * autoregressive_target_mask # mask the loss to the new timesteps
+                
+                # # subset of the sample targets upto AR_TIMESTEP - 1
+                # autoregressive_inputs = y * np.repeat(autoregressive_input_mask[:, np.newaxis], y.shape[1], axis=1) 
+                
+                # # We'll add the AR_INPUTS to the input
+                # autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
+                # y = autoregressive_targets
+                
+                #autoregressive_inputs = y[:-1, :] # cut off final token, worst case it's prog_end, most likley its zeros
+                autoregressive_inputs = y
+                y = y[1:, :] # cut off the program start token
+                y = np.concatenate((y, np.zeros((1, y.shape[1]), dtype=np.int32)), axis=0)
+                # print(autoregressive_inputs)
+                # print(y)
+                
+                 # add a blank timestep at the start
+                #autoregressive_inputs = np.concatenate((np.zeros((1, autoregressive_inputs.shape[1]), dtype=np.int32), autoregressive_inputs), axis=0)
+                #autoregressive_inputs = np.concatenate((autoregressive_inputs[0, :], autoregressive_inputs), axis=0)
+                autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
+            else:
+                # autoregressive_inputs = np.array(0)
+                autoregressive_inputs = np.concatenate((y[0:1, :], np.zeros((y.shape[0]-1, y.shape[1]), dtype=np.int32)), axis=0)
+                y = y[1:, :] # cut off the program start token
+                y = np.concatenate((y, np.zeros((1, y.shape[1]), dtype=np.int32)), axis=0)
+                
+                # print(autoregressive_inputs)
+                # print(y)
+                autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
+              
+                
+        return np.array(x),np.array(y),np.array(loss_mask),np.array(attention_mask), autoregressive_inputs
+
+#%%
+# dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.9, autoregressive=True)
+# it = iter(dataset)
+# #%%
+# x, y, loss_mask, attention_mask, autoregressive_mask = next(it)
+# y, loss_mask, autoregressive_mask
+
+# #%%
+
+dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.1, autoregressive=False)
+it = iter(dataset)
+#%%
+x, y, loss_mask, attention_mask, autoregressive_mask = next(it)
+y, loss_mask, autoregressive_mask
+
+print(autoregressive_mask[-17, :])
+print(autoregressive_mask[-16, :])
+print(autoregressive_mask[-15, :])
+print(y)
+# #%%
+# from data.dataloaders import ProgramEncoder
+# prog_enc = ProgramEncoder(args.PROG_LEN)
+# onehot = prog_enc.tokens_to_onehot(y, ignore_padding=True)
+
 
 #%%
 def make_collate_fn(PROG_LEN):
@@ -738,6 +858,7 @@ def make_collate_fn(PROG_LEN):
         targets = [torch.tensor(d[1], device='cpu') for d in data]
         loss_masks = [torch.tensor(d[2], device='cpu') for d in data]
         attention_masks = [torch.tensor(d[3], device='cpu') for d in data]
+        autoregressive_inputs = [torch.tensor(d[4], device='cpu') for d in data]
         inputs = pad_sequence(inputs, batch_first=True)
         attention_masks = pad_sequence(attention_masks, batch_first=True)
         
@@ -758,18 +879,43 @@ def make_collate_fn(PROG_LEN):
         targets = torch.concatenate((padding, targets), axis=1)
         loss_masks = torch.concatenate((padding[:, :, 0], loss_masks), axis=1)
         
-
+        if autoregressive_inputs[0].shape != torch.Size([]): # if not we're running autoregressively
+            autoregressive_inputs =  torch.stack(autoregressive_inputs) # Batch, timesteps, features
+            _, ar_timesteps, ar_features = autoregressive_inputs.shape
+            inputs = inputs[:, :-ar_timesteps, :] # cut off the old program reserved timesteps
+            
+            # pad the AR input features to the input feature size
+            autoregressive_inputs = torch.concatenate([autoregressive_inputs, torch.zeros((bs, ar_timesteps, parameter_features-ar_features))], axis=2)
+            
+            # concat the timesteps together
+            inputs = torch.concatenate([inputs, autoregressive_inputs], axis=1)
+        
+        #assert (inputs * attention_masks) == inputs # verify that we're not masking out important data
+        print((inputs.shape, attention_masks.shape))
+        inputs, targets, loss_masks, attention_masks = np.zeros(inputs.shape), np.zeros(targets.shape), np.ones(loss_masks.shape), np.ones(attention_masks.shape)        
+        indices = np.random.randint(0, targets.shape[2], size=bs)
+        arr = np.arange(0, bs)
+        inputs[arr, -1, indices] = 1
+        targets[arr, 0, indices] = 1   
+        
         return np.array(inputs), np.array(targets).astype(int), np.array(loss_masks), np.array(attention_masks), pos_ids
     return collate_fn
 
 
-dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.9)
-test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.1)
+# dataset contains 4.1 million samples, 0.3% of this is 15k samples, which should be enough to judge the performance of the model
+dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.997, autoregressive=True)
+test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.003 )
 
 next(iter(dataset))
 next(iter(test_dataset))
 
+# sr = StoreReader(dataset_path,  first=0.9)
+# for x in tqdm():
+#     pass
 
+# sr = StoreReader(dataset_path,  first=0.9)
+# for x in tqdm(np.random.randint(0, len(sr), len(sr))):
+#     sr.__getitem__(x)
 
 print(f"Dataset contains: {len(dataset)} samples" )
 
@@ -784,6 +930,9 @@ num_train_iters = len(train_dataloader) * args.max_epochs
 
 next(iter(train_dataloader))
 next(iter(test_dataloader))
+
+# for x in tqdm(train_dataloader):
+#     pass
 
 #%%
 
@@ -936,7 +1085,7 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 #%%
 
 for epoch_idx in range(1, args.max_epochs+1):
-    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=2 )
+    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=8, LOGS_PER_EPOCH=40 )
 
 
 #%%
