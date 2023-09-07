@@ -765,11 +765,11 @@ def make_collate_fn(PROG_LEN):
         
         assert ((np.array(inputs) * np.repeat(np.array(attention_masks)[:, :, np.newaxis], inputs.shape[2], axis=2)) == np.array(inputs)).all() # verify that we're not masking out important data
         
-        # inputs, targets, loss_masks, attention_masks = np.zeros(inputs.shape), np.zeros(targets.shape), np.ones(loss_masks.shape), np.ones(attention_masks.shape)        
-        # indices = np.random.randint(0, targets.shape[2], size=bs)
-        # arr = np.arange(0, bs)
-        # inputs[arr, -1, indices] = 1
-        # targets[arr, 0, indices] = 1   
+        inputs, targets, loss_masks, attention_masks = np.zeros(inputs.shape), np.zeros(targets.shape), np.ones(loss_masks.shape), np.ones(attention_masks.shape)        
+        indices = np.random.randint(0, targets.shape[2], size=bs)
+        arr = np.arange(0, bs)
+        inputs[arr, -1, indices] = 1
+        targets[arr, 0, indices] = 1   
         
         return np.array(inputs), np.array(targets).astype(int), np.array(loss_masks), np.array(attention_masks), pos_ids
     return collate_fn
