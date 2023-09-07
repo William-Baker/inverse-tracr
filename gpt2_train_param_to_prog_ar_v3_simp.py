@@ -64,7 +64,7 @@ import jax
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
 #os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
-# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 #os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 # from jax import config
 # config.update("jax_disable_jit", True)
@@ -119,7 +119,7 @@ from functools import partial
 
 
 args = Namespace(
-    batch_size=384,# 256 for medium
+    batch_size=16,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
     LEARNING_RATE=1e-5,
@@ -890,8 +890,8 @@ def make_collate_fn(PROG_LEN):
             # concat the timesteps together
             inputs = torch.concatenate([inputs, autoregressive_inputs], axis=1)
         
-        #assert (inputs * attention_masks) == inputs # verify that we're not masking out important data
-        print((inputs.shape, attention_masks.shape))
+        assert ((np.array(inputs) * np.repeat(np.array(attention_masks)[:, :, np.newaxis], inputs.shape[2], axis=2)) == np.array(inputs)).all() # verify that we're not masking out important data
+        #print((inputs.shape, attention_masks.shape))
         inputs, targets, loss_masks, attention_masks = np.zeros(inputs.shape), np.zeros(targets.shape), np.ones(loss_masks.shape), np.ones(attention_masks.shape)        
         indices = np.random.randint(0, targets.shape[2], size=bs)
         arr = np.arange(0, bs)
@@ -1059,7 +1059,7 @@ elif args.model == 'GPTNEO':
     # model_config.attention_dropout = 0.2
 
 
-    model = GPTNeo(num_classes=sum(src_dataset.get_segment_sizes()), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
+    model = GPTNeoSimplified(num_classes=sum(src_dataset.get_segment_sizes()), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
 
 trainer = TrainerModule(model, 
@@ -1090,3 +1090,51 @@ for epoch_idx in range(1, args.max_epochs+1):
 
 #%%
 
+time_steps = 30
+out_features = 4
+features = 8
+max_output_length = 15
+ar_timestep = 2
+batch_size = 3
+
+inp_data = jnp.array(np.zeros((batch_size, time_steps, features)))
+
+logits = jnp.array(np.random.rand(batch_size, time_steps, out_features))
+
+# output timesteps of form:
+# ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
+# vvvvv  | ------------------ INPUT_DATA ---------------- |  ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- |         PROG_END (1 only if final step)        | Zero for missing prog_start token
+ar_mask = [0] * (time_steps - max_output_length - 2) +  [1] * (ar_timestep+1) + [0] * (max_output_length - ar_timestep - 1) + [int(ar_timestep==(max_output_length-1))] + [0]
+
+ar_mask = jnp.array(ar_mask)
+repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
+masked_logits = logits * repeated_ar_mask
+
+masked_logits = masked_logits[:, :-1, :] # cut off the final token, there is a 1 timestep shift between predictions and inputs
+
+# Add to the start to shift
+masked_logits = jnp.concatenate([jnp.zeros((batch_size, 1, out_features)), masked_logits], axis=1)
+
+# pad the start of the logits in the area with our parameter tokens
+masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
+ar_inputs = inp_data + masked_logits
+
+print(ar_inputs[0])
+
+
+#%%
+bs = 3
+inputs = np.zeros((bs, 3, 5))
+targets = np.zeros((bs, 3, 4))
+
+indices = np.random.randint(0, targets.shape[2], size=bs)
+arr = np.arange(0, bs)
+inputs[arr, -1, indices] = 1
+targets[arr, 0, indices] = 1
+
+print(indices)
+print(inputs)
+print(targets)
+
+
+#%%
