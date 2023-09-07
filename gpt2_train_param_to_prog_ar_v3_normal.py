@@ -90,13 +90,13 @@ args = Namespace(
     batch_size=512,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
-    LEARNING_RATE=1e-6,
+    LEARNING_RATE=2e-6,
     input_dropout_prob = 0.2,
     in_noise = 0.30, # inverse fraction of the standard deviation of the noise to add
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='arv3_normal',
+    trail_name='arv3_normal_2',
     task='Stock', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )
@@ -958,7 +958,7 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 #%%
 
 for epoch_idx in range(1, args.max_epochs+1):
-    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=8, LOGS_PER_EPOCH=40 )
+    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=8, LOGS_PER_EPOCH=8 )
 
 
 #%%
