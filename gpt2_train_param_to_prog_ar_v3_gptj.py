@@ -890,8 +890,8 @@ def make_collate_fn(PROG_LEN):
             # concat the timesteps together
             inputs = torch.concatenate([inputs, autoregressive_inputs], axis=1)
         
-        #assert (inputs * attention_masks) == inputs # verify that we're not masking out important data
-        print((inputs.shape, attention_masks.shape))
+        assert ((np.array(inputs) * np.repeat(np.array(attention_masks)[:, :, np.newaxis], inputs.shape[2], axis=2)) == np.array(inputs)).all() # verify that we're not masking out important data
+        
         inputs, targets, loss_masks, attention_masks = np.zeros(inputs.shape), np.zeros(targets.shape), np.ones(loss_masks.shape), np.ones(attention_masks.shape)        
         indices = np.random.randint(0, targets.shape[2], size=bs)
         arr = np.arange(0, bs)
