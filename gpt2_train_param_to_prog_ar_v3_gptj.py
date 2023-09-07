@@ -119,7 +119,7 @@ from functools import partial
 
 
 args = Namespace(
-    batch_size=512,# 256 for medium
+    batch_size=64,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
     LEARNING_RATE=1e-5,
@@ -610,7 +610,7 @@ class TrainerModule:
                     
                     
                     # ------------ Low freq metrics --------------
-                    if (idx) % LOGGING_INTERVAL == 0:
+                    if (idx + 1) % LOGGING_INTERVAL == 0:
                         print("Verbose Iterations")
                         self.verbose_ar_step(state=self.state, batch=batch, step=global_step, ext="_train")
                         if validation_loader is not None:

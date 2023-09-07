@@ -90,13 +90,13 @@ args = Namespace(
     batch_size=512,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
-    LEARNING_RATE=1e-5,
+    LEARNING_RATE=1e-6,
     input_dropout_prob = 0.2,
     in_noise = 0.30, # inverse fraction of the standard deviation of the noise to add
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='arv3_cheating',
+    trail_name='arv3_normal',
     task='Stock', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )

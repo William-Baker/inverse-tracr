@@ -1,62 +1,45 @@
 #%%
-# srun -t 20:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
-# srun -t 00:10:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:2 --partition=pascal -A MLMI-WB326-SL2-GPU --pty bash
-# srun -t 2:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
+# srun -t  2:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --pty bash
+# sintr -t 1:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --qos INTR
 
 # =========== To run - use the following commands first ==========
-# conda activate /rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
-# conda activate /rds/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/envs
 # source venv/bin/activate
-# jupyter lab --no-browser --ip=* --port=8081
 
-# module load cuda/11.8 cudnn/8.9_cuda-11.8
-# module load cuda/12.1 cudnn/8.9_cuda-12.1
+# you may need this if not running on ampere partition
+# module load cuda/11.8 cudnn/8.9_cuda-11.8 
 
-# watch -n 0.1 nvidia-smi
-# jax-smi -i 0.1
+# If .so file is not found run this
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
 
-# ??
-# module load rhel8/default-gpu
-# module load rhel8/default-amp    
-
-# srun --jobid $JOBID --pty bash
-# squeue -u wb326
-# showq -u wb326
-# qstat -u wb326
-# scancel <jobid>
 
 # On local
-# ssh -L 8081:gpu-e-14:8081 wb326@login-cpu.hpc.cam.ac.uk
+# ssh -L 8089:127.0.0.1:8089 wb326@login.hpc.cam.ac.uk
+# On remote session that starts
+ #tensorboard --logdir "/home/wb326/rds/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/.logs" --port 8089 --samples_per_plugin=images=10000
 
-# ImportError: libcupti.so.11.7: cannot open shared object file: No such file or directory
-# export PATH=$PATH:/home/wb326/miniconda3/envs/venv/lib
-# export PATH=$PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
-# source venv/bin/activate
-
-# list all running python processes in case GPU memory not deallocated:
-# ps -a | grep python
+# Causal Masking setup
+# input  target
+# W1     0
+# W2     0
+# W3     0
+# PAD    PAD
+# ...    ...
+# START  START
+# START  R1
+# R1     R2
+# R2     R3
+# R3     R4
+# R4     END
+# END    0 
 
 
 import os
 import jax
 
-# print(jax.local_devices())
 
-# jax.distributed.initialize()
-# print(f"connected to {jax.local_device_count()} compute devices")
-# input()
 #os.environ["CUDA_VISIBLE_DEVICES"]=""
-#os.environ["XLA_FLAGS"]="--xla_dump_to=xla_dump.txt"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
-#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
-# from jax import config
-# config.update("jax_disable_jit", True)
-
-# from jax_smi import initialise_tracking
-# initialise_tracking()
-
-# pip install nvidia-cublas-cu11      nvidia-cublas-cu12      nvidia-cuda-cupti-cu11  nvidia-cuda-cupti-cu12  nvidia-cuda-nvcc-cu12   nvidia-cuda-nvrtc-cu11  nvidia-cuda-runtime-cu11nvidia-cuda-runtime-cu12nvidia-cudnn-cu11       nvidia-cudnn-cu12       nvidia-cufft-cu11       nvidia-cufft-cu12       nvidia-curand-cu11      nvidia-cusolver-cu11    nvidia-cusolver-cu12    nvidia-cusparse-cu11    nvidia-cusparse-cu12    nvidia-nccl-cu11        nvidia-nvjitlink-cu12   nvidia-nvtx-cu11        
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 
 from jax import random
 import jax.numpy as jnp
@@ -71,16 +54,18 @@ torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from data.parameter_program_dataloader import TorchParameterProgramDataset
 from data.plot_true_v_pred import plot_orginal_heatmaps, figure_to_array
+from data.dataset import example_program_dataset
+from data.encoded_dataloaders import encode_rasp_program
 from utils.export_compressed_params import compress_params, encode_jax_params
 from utils.jax_helpers import JaxMemUsage
 JaxMemUsage.launch(interval=0.01)
 from dill import dump, load
 from jaxlib.xla_extension import XlaRuntimeError
-from data.dataset import example_program_dataset
-from data.encoded_dataloaders import encode_rasp_program
 from models import GPT2, GPT2Config, GPTNeo, GPTJ
 from transformers.models.gptj.configuration_gptj import GPTJConfig
 from argparse import Namespace
+from data.dataloaders import ProgramEncoder
+from functools import partial
 
 
 # GPT Large Train config
