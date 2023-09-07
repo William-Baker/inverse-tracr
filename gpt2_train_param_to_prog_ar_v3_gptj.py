@@ -992,7 +992,7 @@ elif args.model == 'GPTJ':
             n_embd =              config_json['hidden_size'],
             n_layer =             config_json['num_layers'],
             n_head =              config_json['num_attention_heads'],
-            rotary_dim =          64,
+            rotary_dim =          None, # 64,
             n_inner =             None,
             activation_function = "gelu_new",
             resid_pdrop =         config_json['hidden_dropout'],
