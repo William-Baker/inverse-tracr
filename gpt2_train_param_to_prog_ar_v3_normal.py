@@ -88,7 +88,7 @@ from functools import partial
 
 
 args = Namespace(
-    batch_size=64,# 256 for medium
+    batch_size=512,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
     LEARNING_RATE=1e-7,
