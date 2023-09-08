@@ -97,7 +97,7 @@ args = Namespace(
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='arv3_normal_3_slow',
+    trail_name='arv3_normal_4_slow',
     task='Stock', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )
