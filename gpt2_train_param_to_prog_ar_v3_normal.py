@@ -350,7 +350,7 @@ class TrainerModule:
                 ptr += seg_size
             
             loss = jnp.stack(loss, axis=2)
-            return loss, logits, inp_data
+            return loss, logits, inp_data, None
         
         def verbose_jitted_ar_full(state, batch):
             # Input data has shape (batch_size, time_steps, features)
@@ -360,6 +360,7 @@ class TrainerModule:
             batch_size, time_steps, features = inp_data.shape
             
             ar_inputs = inp_data
+            ar_input_log = []
             logits = None
             for ar_timestep in range(self.max_output_length):
                 logits = self.model.apply({'params': state.params}, ar_inputs, attention_mask=attention_mask, train=False, position_ids=pos_id)
@@ -379,7 +380,11 @@ class TrainerModule:
                 
                 # pad the start of the logits in the area with our parameter tokens
                 masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
+                
+                ar_input_log.append(ar_inputs)
+                
                 ar_inputs = inp_data + masked_logits
+                
    
             ptr = 0
             loss = []
@@ -388,7 +393,7 @@ class TrainerModule:
                 ptr += seg_size
             
             loss = jnp.stack(loss, axis=2)
-            return loss, logits, ar_inputs
+            return loss, logits, ar_inputs, ar_input_log
             
         return verbose_jitted_ar_step, verbose_jitted_ar_full
     
@@ -421,7 +426,7 @@ class TrainerModule:
         
         def verbose_step(verbose_fn, state, batch, step, ext: str = ""):
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
-            loss, logits, ar_inputs = verbose_fn(state, batch)
+            loss, logits, ar_inputs, ar_input_log = verbose_fn(state, batch)
             loss = np.array(loss)
             
             # if ar_inputs is not None:
@@ -470,6 +475,11 @@ class TrainerModule:
                 heat_img = plot_orginal_heatmaps_ar(labels, classes, self.dataset, inputs=ar_classes, loss=loss , BATCH_ID = batch_id)
                 self.logger.add_image(f"verbose{ext}/input_heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
                       
+            if ar_input_log is not None:
+                for i in range(len(ar_input_log)):
+                    ar_classes_i = logit_classes_jnp(ar_input_log[i][:, :, :logits.shape[2]])
+                    heat_img = plot_orginal_heatmaps_ar(labels, classes, self.dataset, inputs=ar_classes, loss=loss , BATCH_ID = batch_id)
+                    self.logger.add_image(f"verbose{ext}/input_heatmap_{i}", heat_img, global_step=step+batch_id, dataformats='HWC')
             
 
             self.logger.add_histogram(f"verbose{ext}/output", np.array(logits), global_step=step)
