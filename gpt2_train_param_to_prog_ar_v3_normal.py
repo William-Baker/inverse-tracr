@@ -88,12 +88,13 @@ from functools import partial
 
 
 args = Namespace(
-    batch_size=512,# 256 for medium
+    batch_size=64,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
-    LEARNING_RATE=1e-8,
-    input_dropout_prob = 0.2,
-    in_noise = 0.30, # inverse fraction of the standard deviation of the noise to add
+    LEARNING_RATE=1e-7,
+    input_dropout_prob = 0.0,#2,
+    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+    ar_input_noise=0.2, # absolute max value of noise
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
@@ -634,13 +635,14 @@ def add_noise_to_params(params, frac_of_std=0.1):
 #%%
 
 class WrappedDataset(StoreReader):
-    def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int, first=None, last=None, in_noise=0, autoregressive=False) -> None:
+    def __init__(self, dir: str, max_prog_len: int, max_time_step_reduction_sample: int, first=None, last=None, parameter_noise=0, autoregressive=False, ar_input_noise=0.0) -> None:
         super().__init__(dir, first, last)
         self.max_prog_len = max_prog_len
         self.max_timesteps = max_time_step_reduction_sample
-        self.in_noise = in_noise
+        self.parameter_noise = parameter_noise
         self.autoregressive = autoregressive
         self.prog_enc = ProgramEncoder(max_prog_len)
+        self.ar_input_noise = ar_input_noise
     
     def __getitem__(self, idx):
         # first rejection sample under the max timestep
@@ -651,8 +653,8 @@ class WrappedDataset(StoreReader):
             x,y = super().__getitem__(circular_index)
             if args.task in ['Compressed', 'Natural']: # we left these samples parameters unencoded
                 x = compress_params(x)
-                if self.in_noise > 0:
-                    x = add_noise_to_params(x, self.in_noise)
+                if self.parameter_noise > 0:
+                    x = add_noise_to_params(x, self.parameter_noise)
                 x = encode_jax_params(x)
             x,y,loss_mask,attention_mask = TorchParameterProgramDataset.post_process_step(self.max_prog_len, x=x, y=y, TIMESTEPS=TIMESTEPS, ARCH_LABELS=ARCH)
             x_shape = x.shape[0]
@@ -666,7 +668,10 @@ class WrappedDataset(StoreReader):
             y = y[1:, :] # cut off the program start token
             y = np.concatenate((y, np.zeros((1, y.shape[1]), dtype=np.int32)), axis=0)
             autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
-              
+            
+            if self.parameter_noise > 0:
+                noise = np.random.normal(loc=0, scale = self.parameter_noise, size=autoregressive_inputs.shape)
+                x = autoregressive_inputs + noise
                 
         return np.array(x),np.array(y),np.array(loss_mask),np.array(attention_mask), autoregressive_inputs
 
@@ -937,7 +942,7 @@ elif args.model == 'GPTNEO':
 
 
 trainer = TrainerModule(model, 
-                        f'{args.trail_name} {args.model} {args.config} TASK: {args.task} LR: {args.LEARNING_RATE} InNoise: {args.in_noise} InpDrop: {args.input_dropout_prob} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
+                        f'{args.trail_name} {args.model} {args.config} TASK: {args.task} LR: {args.LEARNING_RATE} ParamNoise: {args.parameter_noise} InpDrop: {args.input_dropout_prob} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
