@@ -315,7 +315,7 @@ class TrainerModule:
                                 jnp.zeros((time_steps - self.max_output_length - 2, out_features)),
                                 jnp.ones((ar_timestep+1+ (1 if ar_timestep==(self.max_output_length-1) else 0), out_features)),
                                 jnp.zeros(((0 if ar_timestep==(self.max_output_length-1) else 1) + 1, out_features))],
-                            axis=1)
+                            axis=0)
                 #repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
                 masked_logits = logits * repeated_ar_mask
                 
