@@ -309,9 +309,14 @@ class TrainerModule:
                 # output timesteps of form:
                 # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
                 # vvvvv  | ------------------ INPUT_DATA ---------------- |  ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- |         PROG_END (1 only if final step)        | Zero for missing prog_start token
-                ar_mask = [0] * (time_steps - self.max_output_length - 2) +  [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))] + [0]
-                ar_mask = jnp.array(ar_mask)
-                repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
+                # ar_mask = [0] * (time_steps - self.max_output_length - 2) +  [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))] + [0]
+                # ar_mask = jnp.array(ar_mask)
+                repeated_ar_mask = jnp.concatenate([
+                                jnp.zeros((time_steps - self.max_output_length - 2, out_features)),
+                                jnp.ones((ar_timestep+1+ (1 if ar_timestep==(self.max_output_length-1) else 0), out_features)),
+                                jnp.zeros(((0 if ar_timestep==(self.max_output_length-1) else 1) + 1, out_features))],
+                            axis=1)
+                #repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
                 masked_logits = logits * repeated_ar_mask
                 
                 masked_logits = masked_logits[:, :-1, :] # cut off the final token, there is a 1 timestep shift between predictions and inputs
@@ -368,9 +373,14 @@ class TrainerModule:
                 # output timesteps of form:
                 # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
                 # vvvvv  | ------------------ INPUT_DATA ---------------- |  ---- PREDICTIONS ---- | --------------------- UNSEEN_PREDS ------------- |         PROG_END (1 only if final step)        | Zero for missing prog_start token
-                ar_mask = [0] * (time_steps - self.max_output_length - 2) +  [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))] + [0]
-                ar_mask = jnp.array(ar_mask)
-                repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
+                # ar_mask = [0] * (time_steps - self.max_output_length - 2) +  [1] * (ar_timestep+1) + [0] * (self.max_output_length - ar_timestep - 1) + [int(ar_timestep==(self.max_output_length-1))] + [0]
+                # ar_mask = jnp.array(ar_mask)
+                repeated_ar_mask = jnp.concatenate([
+                                jnp.zeros((time_steps - self.max_output_length - 2, out_features)),
+                                jnp.ones((ar_timestep+1+ (1 if ar_timestep==(self.max_output_length-1) else 0), out_features)),
+                                jnp.zeros(((0 if ar_timestep==(self.max_output_length-1) else 1) + 1, out_features))],
+                            axis=1)
+                #repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
                 masked_logits = logits * repeated_ar_mask
                 
                 masked_logits = masked_logits[:, :-1, :] # cut off the final token, there is a 1 timestep shift between predictions and inputs
