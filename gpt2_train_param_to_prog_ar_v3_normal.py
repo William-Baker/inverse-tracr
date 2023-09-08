@@ -983,7 +983,7 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 # trainer.eval_programs()
 # trainer.load_model(log_dir=f"XXX{args.model} cont LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}")
 
-# trainer.load_model(log_dir=f"arv3_normal_4_slow GPTNEO pythia_125m TASK: Stock LR: 1e-07 ParamNoise: 0.0 InpDrop: 0.0 bs: 64 nembed: 768 n_layer: 12 n_head: 12")
+trainer.load_model(log_dir=f"arv3_normal_4_slow GPTNEO pythia_125m TASK: Stock LR: 1e-07 ParamNoise: 0.0 InpDrop: 0.0 bs: 64 nembed: 768 n_layer: 12 n_head: 12")
 
 # trainer.load_model(log_dir=f"PARAM_NumVar_GPT2_LARGE cont LR 1e-06 bs: 256 nembed: 1280 n_layer: 36 n_head: 20")
 # test_val_acc, test_val_loss = trainer.eval_model(test_dataloader)
