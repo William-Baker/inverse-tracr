@@ -55,7 +55,7 @@ import torch, flax
 torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
 from data.parameter_program_dataloader import TorchParameterProgramDataset
-from data.plot_true_v_pred import plot_orginal_heatmaps, figure_to_array
+from data.plot_true_v_pred import plot_orginal_heatmaps, figure_to_array, plot_orginal_heatmaps_ar
 from data.dataset import example_program_dataset
 from data.encoded_dataloaders import encode_rasp_program
 from utils.export_compressed_params import compress_params, encode_jax_params
@@ -455,15 +455,22 @@ class TrainerModule:
             classes = logit_classes_jnp(logits)
             
             if ar_inputs is not None:
-                ar_classes = logit_classes_jnp(ar_inputs[:, -logits.shape[1]:, :logits.shape[2]])
+                ar_classes = logit_classes_jnp(ar_inputs[:, :, :logits.shape[2]])
+                
             
             max_prog_len = self.dataset.prog_len
             for batch_id in range(min(5, labels.shape[0])):
                 heat_img = plot_orginal_heatmaps(labels[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :], BATCH_ID = batch_id)
                 self.logger.add_image(f"verbose{ext}/heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
-                if ar_inputs is not None:
-                    heat_img = plot_orginal_heatmaps(ar_classes[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :], BATCH_ID = batch_id)
-                    self.logger.add_image(f"verbose{ext}/input_heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
+                # if ar_inputs is not None:
+                #     heat_img = plot_orginal_heatmaps(ar_classes[:, -max_prog_len-2:, :], classes[:, -max_prog_len-2:, :], self.dataset, loss=loss[:, -max_prog_len-2:, :], BATCH_ID = batch_id)
+                #     self.logger.add_image(f"verbose{ext}/input_heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
+            
+            if ar_inputs is not None:
+                heat_img = plot_orginal_heatmaps_ar(labels, classes, self.dataset, inputs=ar_classes, loss=loss , BATCH_ID = batch_id)
+                self.logger.add_image(f"verbose{ext}/input_heatmap", heat_img, global_step=step+batch_id, dataformats='HWC')
+                      
+            
 
             self.logger.add_histogram(f"verbose{ext}/output", np.array(logits), global_step=step)
 
