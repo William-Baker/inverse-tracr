@@ -15,7 +15,7 @@
 # On local
 # ssh -L 8089:127.0.0.1:8089 wb326@login.hpc.cam.ac.uk
 # On remote session that starts
- #tensorboard --logdir "/home/wb326/rds/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/.logs" --port 8089 --samples_per_plugin=images=10000
+# tensorboard --logdir "/home/wb326/rds/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/.logs" --port 8089 --samples_per_plugin=images=10000
 
 # Causal Masking setup
 # input  target

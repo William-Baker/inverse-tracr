@@ -342,9 +342,9 @@ class GPTNeoSimplified(nn.Module):
     dtype: jnp.dtype = jnp.float32
     
     def setup(self):
-        self.input_dropout = nn.Dropout(self.input_dropout_prob)
+        #self.input_dropout = nn.Dropout(self.input_dropout_prob)
         #self.input_layer = nn.Dense(self.gpt_config.n_embd)
-        self.input_pos_encoder = PositionalEncoding(self.gpt_config.n_embd)
+        #self.input_pos_encoder = PositionalEncoding(self.gpt_config.n_embd)
         self.h = FlaxGPTNeoBlockCollection(self.gpt_config)
         
         self.output_net = [
@@ -352,10 +352,10 @@ class GPTNeoSimplified(nn.Module):
         ]
     
     def __call__(self, x, attention_mask=None, train=True, position_ids=None):
-        x = self.input_dropout(x, deterministic=not train)
-        x = jnp.pad(x, ((0,0), (0,0), (0, self.gpt_config.n_embd-x.shape[2])))
+        #x = self.input_dropout(x, deterministic=not train)
+        i = jnp.pad(x, ((0,0), (0,0), (0, self.gpt_config.n_embd-x.shape[2])))
         #i = self.input_layer(x)
-        i = self.input_pos_encoder(x) #i)
+        #i = self.input_pos_encoder(x) #i)
         #  # hidden_states, all_hidden_states, all_attentions, all_cross_attentions
         #i = x
         hidden_states, _, _ = self.h(i, attention_mask = attention_mask)
