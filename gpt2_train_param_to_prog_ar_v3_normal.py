@@ -314,7 +314,7 @@ class TrainerModule:
                 repeated_ar_mask = jnp.concatenate([
                                 jnp.zeros((time_steps - self.max_output_length - 2, out_features)),
                                 jnp.ones((ar_timestep+1+ (1 if ar_timestep==(self.max_output_length-1) else 0), out_features)),
-                                jnp.zeros(((0 if ar_timestep==(self.max_output_length-1) else 1) + 1, out_features))],
+                                jnp.zeros((self.max_output_length - ar_timestep - 1 + (0 if ar_timestep==(self.max_output_length-1) else 1) + 1, out_features))],
                             axis=0)
                 #repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
                 masked_logits = logits * repeated_ar_mask
@@ -326,6 +326,7 @@ class TrainerModule:
                 
                 # pad the start of the logits in the area with our parameter tokens
                 masked_logits = jnp.concatenate([masked_logits, jnp.zeros((batch_size, time_steps, features-out_features))], axis=2)
+                
                 ar_inputs = inp_data + masked_logits
                 
             ptr = 0
@@ -378,7 +379,7 @@ class TrainerModule:
                 repeated_ar_mask = jnp.concatenate([
                                 jnp.zeros((time_steps - self.max_output_length - 2, out_features)),
                                 jnp.ones((ar_timestep+1+ (1 if ar_timestep==(self.max_output_length-1) else 0), out_features)),
-                                jnp.zeros(((0 if ar_timestep==(self.max_output_length-1) else 1) + 1, out_features))],
+                                jnp.zeros((self.max_output_length - ar_timestep - 1 + (0 if ar_timestep==(self.max_output_length-1) else 1) + 1, out_features))],
                             axis=0)
                 #repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
                 masked_logits = logits * repeated_ar_mask
@@ -488,7 +489,7 @@ class TrainerModule:
             if ar_input_log is not None:
                 for i in range(len(ar_input_log)):
                     ar_classes_i = logit_classes_jnp(ar_input_log[i][:, :, :logits.shape[2]])
-                    heat_img = plot_orginal_heatmaps_ar(labels, classes, self.dataset, inputs=ar_classes, loss=loss , BATCH_ID = batch_id)
+                    heat_img = plot_orginal_heatmaps_ar(labels, classes, self.dataset, inputs=ar_classes_i, loss=loss , BATCH_ID = batch_id)
                     self.logger.add_image(f"verbose{ext}/input_heatmap_{i}", heat_img, global_step=step+batch_id, dataformats='HWC')
             
 
@@ -982,7 +983,7 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 # trainer.eval_programs()
 # trainer.load_model(log_dir=f"XXX{args.model} cont LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}")
 
-trainer.load_model(log_dir=f"arv3_normal_4_slow GPTNEO pythia_125m TASK: Stock LR: 1e-07 ParamNoise: 0.0 InpDrop: 0.0 bs: 64 nembed: 768 n_layer: 12 n_head: 12")
+# trainer.load_model(log_dir=f"arv3_normal_4_slow GPTNEO pythia_125m TASK: Stock LR: 1e-07 ParamNoise: 0.0 InpDrop: 0.0 bs: 64 nembed: 768 n_layer: 12 n_head: 12")
 
 # trainer.load_model(log_dir=f"PARAM_NumVar_GPT2_LARGE cont LR 1e-06 bs: 256 nembed: 1280 n_layer: 36 n_head: 20")
 # test_val_acc, test_val_loss = trainer.eval_model(test_dataloader)
