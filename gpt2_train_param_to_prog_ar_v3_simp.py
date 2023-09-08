@@ -88,7 +88,7 @@ from functools import partial
 
 
 args = Namespace(
-    batch_size=384,# 256 for medium
+    batch_size=128,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
     LEARNING_RATE=1e-5,
@@ -230,28 +230,30 @@ class TrainerModule:
     
     def get_accuracy_function(self):
         def accuracy(logits, labels, loss_mask):
-            # logits.shape = (BS, Timesteps, sum(seg_sizes))  - since onehot encoded
-            # labels.shape = (BS, Timesteps, segements)               - since ordinal encoded
-            # loss_mask.shape = (BS, Timesteps)            - mask over the timesteps to use
-            
-            # We have predictions
-            #                                    ---> BS batches
-            #     Batch 1     |   Batch 2      |  Batch BS |  ^
-            #       PAD       |     PAD        |           |  |  Timesteps
-            #  00000010000000 |     PAD        |           |  v
-            #  00000000001000 | 0000010000000  |           |
-            #       ...             ...
-            # <------------->
-            #   sum(seg_sizes)
-            #
-            # Example where BS = 2, timesteps = 3, seg sizes = 3, first timestep in second batch is padded
-            # logits = np.array([[[0, 1, 0],[0, 1, 0], [0, 0, 1]], 
-            #                     [[0, 0, 0],[1, 0, 0],[0, 1, 0]]])
-            # labels = np.expand_dims(np.array([[1, 1, 2],
-            #                                   [0, 0, 1]]), axis=2)
-            # loss_mask = np.array([[1, 1, 1],
-            #                     [0, 1, 1]])
-            # seg_sizes = [3]
+            """
+              logits.shape = (BS, Timesteps, sum(seg_sizes))  - since onehot encoded
+              labels.shape = (BS, Timesteps, segements)               - since ordinal encoded
+              loss_mask.shape = (BS, Timesteps)            - mask over the timesteps to use
+          
+              We have predictions
+                                                 ---> BS batches
+                  Batch 1     |   Batch 2      |  Batch BS |  ^
+                    PAD       |     PAD        |           |  |  Timesteps
+               00000010000000 |     PAD        |           |  v
+               00000000001000 | 0000010000000  |           |
+                    ...             ...
+              <------------->
+                sum(seg_sizes)
+              
+              Example where BS = 2, timesteps = 3, seg sizes = 3, first timestep in second batch is padded
+              logits = np.array([[[0, 1, 0],[0, 1, 0], [0, 0, 1]], 
+                                  [[0, 0, 0],[1, 0, 0],[0, 1, 0]]])
+              labels = np.expand_dims(np.array([[1, 1, 2],
+                                                [0, 0, 1]]), axis=2)
+              loss_mask = np.array([[1, 1, 1],
+                                  [0, 1, 1]])
+              seg_sizes = [3]
+            """
             
             def logit_classes_jnp(logits):
                 classes = []
@@ -274,50 +276,11 @@ class TrainerModule:
             acc_times_timesteps_ish = relevant_classes == relevant_labels
             acc_times_timesteps_ish = acc_times_timesteps_ish.sum(axis=[1,2])
             acc_batch = acc_times_timesteps_ish /  repeated_loss_mask.sum(axis=[1,2])
-            #acc = acc_batch.mean()
             return acc_batch
         return accuracy
     
-    # def get_accuracy_100_function(self):
-    #     def accuracy_100(logits, labels, loss_mask):
-    #         # logits.shape = (BS, Timesteps, sum(seg_sizes))  - since onehot encoded
-    #         # labels.shape = (BS, Timesteps, 1)               - since ordinal encoded
-    #         # loss_mask.shape = (BS, Timesteps, 1)            - mask over the timesteps to use
-            
-    #         # We have predictions
-    #         #                                    ---> BS batches
-    #         #     Batch 1     |   Batch 2      |  Batch BS |  ^
-    #         #       PAD       |     PAD        |           |  |  Timesteps
-    #         #  00000010000000 |     PAD        |           |  v
-    #         #  00000000001000 | 0000010000000  |           |
-    #         #       ...             ...
-    #         # <------------->
-    #         #   sum(seg_sizes)
-            
-            
-    #         def logit_classes_jnp(logits):
-    #             classes = []
-    #             logits = jnp.array(logits)
-                
-    #             ptr = 0
-    #             for i, seg_size in enumerate(self.seg_sizes):
-    #                 classes.append(logits[:, :, ptr:ptr + seg_size].argmax(axis=2))
-    #                 ptr += seg_size
-    #             classes = jnp.stack(classes, axis=2)
-    #             return classes
-    #         classes = logit_classes_jnp(logits)
-            
 
-    #         repeated_loss_mask = jnp.repeat(loss_mask[:, :, jnp.newaxis], classes.shape[2], axis=2)
 
-    #         relevant_classes = classes * repeated_loss_mask
-    #         relevant_labels = labels * repeated_loss_mask
-    #         relevant_labels += 1 - repeated_loss_mask # ensure the masked out values are different
-    #         acc = relevant_classes == relevant_labels
-    #         acc = acc.sum(axis)
-    #         acc = acc.sum() / (loss_mask.sum() * relevant_labels.shape[2])
-    #         return acc
-    #     return accuracy_100
 
     def get_loss_function(self):
         # Function for calculating loss and accuracy for a batch
@@ -388,7 +351,6 @@ class TrainerModule:
         def verbose_jitted_ar_step(state, batch):
             # labels = (batch_size, max_time_steps, ordinal_features)
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
-            #rng, dropout_apply_rng = random.split(rng)
 
             # logits = (batch_size, time_steps, features)
             logits = self.model.apply({'params': state.params}, inp_data, attention_mask=attention_mask, position_ids=pos_id, train=False)#, rngs={'dropout': dropout_apply_rng})
@@ -521,8 +483,6 @@ class TrainerModule:
             self.logger.add_scalar(f"verbose{ext}/acc", acc.mean().item(), global_step=step)
 
 
-
-        #self.verbose_step = jax.jit(verbose_step)
         self.verbose_ar_step = partial(verbose_step, verbose_jitted_ar_step)
         self.verbose_ar_full = partial(verbose_step, verbose_jitted_ar_full)
 
@@ -543,15 +503,8 @@ class TrainerModule:
             acc_sum, loss_sum, count = 0.0, 0.0, 0
             for idx, batch in enumerate(train_loader):
                 try:
-                    # if idx == 1:
-                    #     jax.profiler.start_trace("jax-profile")
-                    # elif idx == 49:
-                    #     jax.profiler.stop_trace()
+
                     # if idx == 100:
-                    #     jax.profiler.start_trace("jax-profile")
-                    # elif idx == 150:
-                    #     jax.profiler.stop_trace()
-                    # if idx == 101:
                     #     jax.profiler.start_trace("jax-profile")
                     # elif idx == 150:
                     #     jax.profiler.stop_trace()
@@ -710,7 +663,6 @@ class WrappedDataset(StoreReader):
         while x_shape > self.max_timesteps:
             circular_index = (idx + offset) % self.__len__()
             x,y = super().__getitem__(circular_index)
-            this_program_length = y.shape[0] - 2
             if args.task in ['Compressed', 'Natural']: # we left these samples parameters unencoded
                 x = compress_params(x)
                 if self.in_noise > 0:
@@ -721,46 +673,13 @@ class WrappedDataset(StoreReader):
             offset += 1
             
             if self.autoregressive:
-                # autoregressive_timestep = np.random.randint(1, this_program_length)
-                # #autoregressive_timestep = 0#this_program_length-2
-                # autoregressive_target_mask = np.ones((autoregressive_timestep+2), dtype=np.int32)
-                # autoregressive_input_mask = np.ones((autoregressive_timestep+1), dtype=np.int32)
-                # if autoregressive_timestep == this_program_length-1:
-                #     autoregressive_target_mask = np.ones((this_program_length+2), dtype=np.int32)
-                # autoregressive_target_mask = np.concatenate((autoregressive_target_mask, np.zeros(self.max_prog_len+2 - autoregressive_target_mask.shape[0], dtype=np.int32)))
-                # autoregressive_input_mask = np.concatenate((autoregressive_input_mask, np.zeros(self.max_prog_len+2 - autoregressive_input_mask.shape[0], dtype=np.int32)))
-                
-                # repeated_target_mask = np.repeat(autoregressive_target_mask[:, np.newaxis], y.shape[1], axis=1)
-                # autoregressive_targets = y * repeated_target_mask # subset of the sample targets upto AR_TIMESTEP
-                # loss_mask = loss_mask * autoregressive_target_mask # mask the loss to the new timesteps
-                
-                # # subset of the sample targets upto AR_TIMESTEP - 1
-                # autoregressive_inputs = y * np.repeat(autoregressive_input_mask[:, np.newaxis], y.shape[1], axis=1) 
-                
-                # # We'll add the AR_INPUTS to the input
-                # autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
-                # y = autoregressive_targets
-                
-                #autoregressive_inputs = y[:-1, :] # cut off final token, worst case it's prog_end, most likley its zeros
                 autoregressive_inputs = y
-                y = y[1:, :] # cut off the program start token
-                y = np.concatenate((y, np.zeros((1, y.shape[1]), dtype=np.int32)), axis=0)
-                # print(autoregressive_inputs)
-                # print(y)
-                
-                 # add a blank timestep at the start
-                #autoregressive_inputs = np.concatenate((np.zeros((1, autoregressive_inputs.shape[1]), dtype=np.int32), autoregressive_inputs), axis=0)
-                #autoregressive_inputs = np.concatenate((autoregressive_inputs[0, :], autoregressive_inputs), axis=0)
-                autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
             else:
-                # autoregressive_inputs = np.array(0)
                 autoregressive_inputs = np.concatenate((y[0:1, :], np.zeros((y.shape[0]-1, y.shape[1]), dtype=np.int32)), axis=0)
-                y = y[1:, :] # cut off the program start token
-                y = np.concatenate((y, np.zeros((1, y.shape[1]), dtype=np.int32)), axis=0)
-                
-                # print(autoregressive_inputs)
-                # print(y)
-                autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
+            
+            y = y[1:, :] # cut off the program start token
+            y = np.concatenate((y, np.zeros((1, y.shape[1]), dtype=np.int32)), axis=0)
+            autoregressive_inputs = self.prog_enc.tokens_to_onehot(autoregressive_inputs, ignore_padding=True)
               
                 
         return np.array(x),np.array(y),np.array(loss_mask),np.array(attention_mask), autoregressive_inputs
@@ -862,10 +781,15 @@ def make_collate_fn(PROG_LEN):
         assert ((np.array(inputs) * np.repeat(np.array(attention_masks)[:, :, np.newaxis], inputs.shape[2], axis=2)) == np.array(inputs)).all() # verify that we're not masking out important data
         #print((inputs.shape, attention_masks.shape))
         inputs, targets, loss_masks, attention_masks = np.zeros(inputs.shape), np.zeros(targets.shape), np.ones(loss_masks.shape), np.ones(attention_masks.shape)        
-        indices = np.random.randint(0, targets.shape[2], size=bs)
-        arr = np.arange(0, bs)
-        inputs[arr, -1, indices] = 1
-        targets[arr, 0, indices] = 1   
+        # indices = np.random.randint(0, targets.shape[2], size=bs)
+        # arr = np.arange(0, bs)
+        # inputs[arr, -1, indices] = 1
+        # targets[arr, 0, indices] = 1   
+        
+        targets = np.random.randint(0, 2, size=(targets.shape)).astype(dtype=np.float32)
+        targets += 0.03 # so we dont input 0's
+        inputs[:, :, :targets.shape[2]] = np.flip(targets, axis=1)
+        # print(inputs.mean())
         
         return np.array(inputs), np.array(targets).astype(int), np.array(loss_masks), np.array(attention_masks), pos_ids
     return collate_fn

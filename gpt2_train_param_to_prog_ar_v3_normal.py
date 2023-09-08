@@ -3,6 +3,7 @@
 # sintr -t 1:00:00 --nodes=1 --ntasks-per-node=1 --ntasks=1 --gres=gpu:1 --partition=ampere -A MLMI-WB326-SL2-GPU --qos INTR
 
 # =========== To run - use the following commands first ==========
+# cd /rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr
 # source venv/bin/activate
 
 # you may need this if not running on ampere partition
@@ -90,13 +91,13 @@ args = Namespace(
     batch_size=512,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
-    LEARNING_RATE=2e-6,
+    LEARNING_RATE=1e-7,
     input_dropout_prob = 0.2,
     in_noise = 0.30, # inverse fraction of the standard deviation of the noise to add
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='arv3_normal_2',
+    trail_name='arv3_normal_3_slow',
     task='Stock', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )
