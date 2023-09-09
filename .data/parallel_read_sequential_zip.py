@@ -15,8 +15,7 @@ def read_file(entry, dir_name):
         return zip_path, f.read()
 
 
-def get_directory_contents(dir_path):
-    contents = {}
+def get_directory_contents_and_write(dir_path):
     dir_name = os.path.basename(dir_path)
     with ThreadPoolExecutor() as executor:
         futures = []
@@ -24,18 +23,14 @@ def get_directory_contents(dir_path):
             if entry.is_file():
                 future = executor.submit(read_file, entry, dir_name)
                 futures.append(future)
-                    
-        for future in tqdm(as_completed(futures), desc='unpacking results'):
-            zip_path, file_content = future.result()
-            contents[zip_path] = file_content
-            
-    return contents
+        
+        with zipfile.ZipFile(zip_name, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=4) as zf:          
+            for future in tqdm(as_completed(futures), desc='await future + write zip'):
+                zip_path, file_content = future.result()
+                # contents[zip_path] = file_content
+                zf.writestr(zip_path, file_content)
 
 
-def create_zip_from_contents(contents, zip_name):
-    with zipfile.ZipFile(zip_name, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=4) as zf:
-        for filename, file_content in tqdm(contents.items(), desc='writing zip'):
-            zf.writestr(filename, file_content)
 
 
 if __name__ == "__main__":
@@ -43,6 +38,4 @@ if __name__ == "__main__":
     zip_name = "output.zip"
     
     print("reading dir contents")
-    contents = get_directory_contents(dir_path)
-    print("writing contents to zip")
-    create_zip_from_contents(contents, zip_name)
+    contents = get_directory_contents_and_write(dir_path)
