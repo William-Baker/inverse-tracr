@@ -88,13 +88,13 @@ from functools import partial
 
 
 args = Namespace(
-    batch_size=512,# 256 for medium
+    batch_size=32,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
     LEARNING_RATE=1e-7,
     input_dropout_prob = 0.0,#2,
     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-    ar_input_noise=0.2, # absolute max value of noise
+    ar_input_noise=0.0, #0.2, # absolute max value of noise
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
@@ -321,6 +321,16 @@ class TrainerModule:
                 
                 masked_logits = masked_logits[:, :-1, :] # cut off the final token, there is a 1 timestep shift between predictions and inputs
                 
+                # ========================== Only keep the argmax of each prediction then one hot encode that again ================
+                ptr = 0
+                segments = []
+                for i, seg_size in enumerate(self.seg_sizes):
+                    indices = jnp.argmax(masked_logits[:, :, ptr:ptr + seg_size], axis=2)
+                    segments.append(jax.nn.one_hot(indices, seg_size))
+                    ptr += seg_size
+                masked_logits = jnp.concatenate(segments, axis=2)
+                # ================================================================================================================
+                
                 # Add to the start to shift
                 masked_logits = jnp.concatenate([jnp.zeros((batch_size, 1, out_features)), masked_logits], axis=1)
                 
@@ -385,7 +395,20 @@ class TrainerModule:
                 #repeated_ar_mask = jnp.repeat(ar_mask[:, jnp.newaxis], out_features, axis=1)
                 masked_logits = logits * repeated_ar_mask
                 
+                
                 masked_logits = masked_logits[:, :-1, :] # cut off the final token, there is a 1 timestep shift between predictions and inputs
+                
+                # ========================== Only keep the argmax of each prediction then one hot encode that again ================
+                ptr = 0
+                segments = []
+                for i, seg_size in enumerate(self.seg_sizes):
+                    indices = jnp.argmax(masked_logits[:, :, ptr:ptr + seg_size], axis=2)
+                    segments.append(jax.nn.one_hot(indices, seg_size))
+                    ptr += seg_size
+                masked_logits = jnp.concatenate(segments, axis=2)
+                # ================================================================================================================
+
+                
                 
                 # Add to the start to shift
                 masked_logits = jnp.concatenate([jnp.zeros((batch_size, 1, out_features)), masked_logits], axis=1)
@@ -709,7 +732,56 @@ class WrappedDataset(StoreReader):
 # x, y, loss_mask, attention_mask, autoregressive_mask = next(it)
 # y, loss_mask, autoregressive_mask
 
-# #%%
+#%%
+
+
+x = np.random.random((2, 5, sum(src_dataset.get_segment_sizes())))
+y = np.zeros_like(x)
+# z = np.zeros_like(x)
+
+
+ptr = 0
+loss = []
+for i, seg_size in enumerate(src_dataset.get_segment_sizes()):
+    indices = np.argmax(x[:, :, ptr:ptr + seg_size], axis=2)
+    # this is super ugly, but i had a brain fart on how to list coords  (0,0), (0, 1), (0,2)... (1, 0), (1, 1)...,
+    batchId_timestep_grid = np.flip(np.stack(np.meshgrid(np.arange(0, indices.shape[1]), np.arange(0, indices.shape[0])), axis=0).reshape(2, -1).T, 1)
+    writing_coords = [[batchId_timestep[0], batchId_timestep[1], index] for batchId_timestep, index in zip(batchId_timestep_grid, (indices.reshape(-1)))]
+    #y[np.arange(0, x.shape[0]), np.arange(0, x.shape[1]), indices] = 1
+    for j in writing_coords:
+        y[j[0], j[1], j[2]] = 1
+        
+    # # v old method
+    # writing_coords = [[batchId_timestep[0], batchId_timestep[1], index] for batchId_timestep, index in np.ndenumerate(indices)]
+    # for j in writing_coords:
+    #     z[j[0], j[1], j[2]] = 1
+    
+    ptr += seg_size
+
+
+#%%
+
+# x = jnp.array(np.random.random((2, 5, sum(src_dataset.get_segment_sizes()))))
+# y = np.zeros_like(x)
+# # z = jnp.zeros_like(x)
+
+
+# ptr = 0
+# segments = []
+# for i, seg_size in enumerate(src_dataset.get_segment_sizes()):
+#     indices = jnp.argmax(x[:, :, ptr:ptr + seg_size], axis=2)
+#     segments.append(jax.nn.one_hot(indices, seg_size))
+#     ptr += seg_size
+# y = jnp.concatenate(segments, axis=2)
+
+# # test
+# ptr = 0
+# for i, seg_size in enumerate(src_dataset.get_segment_sizes()):
+#     print(x[:, :, ptr:ptr + seg_size].argmax(axis=2))
+#     print(y[:, :, ptr:ptr + seg_size].argmax(axis=2))
+#     ptr += seg_size
+
+#%%
 
 dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.1, autoregressive=False)
 it = iter(dataset)
@@ -997,4 +1069,3 @@ for epoch_idx in range(1, args.max_epochs+1):
 
 
 #%%
-
