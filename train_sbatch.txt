@@ -52,4 +52,4 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inve
 echo "This is job" $SLURM_ARRAY_TASK_ID
 
 #! Command line that we want to run:
-python gpt2_train_param_to_prog_ar_v3_normal.py
+python gpt2_train_param_to_prog_ar_v3_eval_train.py

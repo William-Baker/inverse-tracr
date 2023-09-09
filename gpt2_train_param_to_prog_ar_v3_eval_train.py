@@ -341,12 +341,12 @@ class TrainerModule:
         return calculate_loss
     
     def get_verbose_fns(self):
-        def verbose_jitted_ar_step(state, batch):
+        def verbose_jitted_ar_step(state, batch, rng):
             # labels = (batch_size, max_time_steps, ordinal_features)
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
-
+            rng, dropout_apply_rng = random.split(rng)
             # logits = (batch_size, time_steps, features)
-            logits = self.model.apply({'params': state.params}, inp_data, attention_mask=attention_mask, position_ids=pos_id, train=False)#, rngs={'dropout': dropout_apply_rng})
+            logits = self.model.apply({'params': state.params}, inp_data, attention_mask=attention_mask, position_ids=pos_id, train=True, rngs={'dropout': dropout_apply_rng})
             
      
             ptr = 0
@@ -356,20 +356,21 @@ class TrainerModule:
                 ptr += seg_size
             
             loss = jnp.stack(loss, axis=2)
-            return loss, logits, inp_data, None
+            return loss, logits, inp_data, None, rng
         
-        def verbose_jitted_ar_full(state, batch):
+        def verbose_jitted_ar_full(state, batch, rng):
             # Input data has shape (batch_size, time_steps, features)
             # labels = (batch_size, max_time_steps, ordinal_features)
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
             out_features = sum(self.seg_sizes)
             batch_size, time_steps, features = inp_data.shape
+            rng, dropout_apply_rng = random.split(rng)
             
             ar_inputs = inp_data
             ar_input_log = []
             logits = None
             for ar_timestep in range(self.max_output_length):
-                logits = self.model.apply({'params': state.params}, ar_inputs, attention_mask=attention_mask, train=False, position_ids=pos_id)
+                logits = self.model.apply({'params': state.params}, ar_inputs, attention_mask=attention_mask, train=True, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
 
                 # output timesteps of form:
                 # ......... INPUT_DATA .........., <START>, pred_1, ..., pred_{max_output_length}, <END>
@@ -404,7 +405,7 @@ class TrainerModule:
                 ptr += seg_size
             
             loss = jnp.stack(loss, axis=2)
-            return loss, logits, ar_inputs, ar_input_log
+            return loss, logits, ar_inputs, ar_input_log, rng
             
         return verbose_jitted_ar_step, verbose_jitted_ar_full
     
@@ -426,7 +427,7 @@ class TrainerModule:
 
         # Evaluation function
         def eval_step(state, rng, batch):
-            loss, (acc, rng) = ar_loss(state.params, rng, batch, train=False)
+            loss, (acc, rng) = ar_loss(state.params, rng, batch, train=True)
             return loss, acc, rng
         self.eval_step = jax.jit(eval_step)
 
@@ -435,7 +436,7 @@ class TrainerModule:
         
         def verbose_step(verbose_fn, state, batch, step, ext: str = ""):
             inp_data, labels, loss_mask, attention_mask, pos_id = batch
-            loss, logits, ar_inputs, ar_input_log = verbose_fn(state, batch)
+            loss, logits, ar_inputs, ar_input_log, self.rng = verbose_fn(state, batch, self.rng)
             loss = np.array(loss)
             
             # if ar_inputs is not None:
@@ -981,7 +982,7 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 # trainer.eval_programs()
 # trainer.load_model(log_dir=f"XXX{args.model} cont LR {args.LEARNING_RATE} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}")
 
-trainer.load_model(log_dir=f"arv3_normal_4_slow GPTNEO pythia_125m TASK: Stock LR: 1e-07 ParamNoise: 0.0 InpDrop: 0.0 bs: 64 nembed: 768 n_layer: 12 n_head: 12")
+# trainer.load_model(log_dir=f"arv3_normal_4_slow GPTNEO pythia_125m TASK: Stock LR: 1e-07 ParamNoise: 0.0 InpDrop: 0.0 bs: 64 nembed: 768 n_layer: 12 n_head: 12")
 
 # trainer.load_model(log_dir=f"PARAM_NumVar_GPT2_LARGE cont LR 1e-06 bs: 256 nembed: 1280 n_layer: 36 n_head: 20")
 # test_val_acc, test_val_loss = trainer.eval_model(test_dataloader)
