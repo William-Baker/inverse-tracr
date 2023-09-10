@@ -98,8 +98,8 @@ args = Namespace(
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='arv3_2_onehot_eval_higher_lr',
-    task='Stock', # 'Stock', 'Compressed', 'Natural'
+    trail_name='ar',
+    task='Compressed', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )
 
@@ -879,10 +879,13 @@ def make_collate_fn(PROG_LEN):
         return np.array(inputs), np.array(targets).astype(int), np.array(loss_masks), np.array(attention_masks), pos_ids
     return collate_fn
 
+split_size = 0.95
+if args.task=='Stock':
+    # standard dataset contains 5 million samples, 0.3% of this is 15k samples, which should be enough to judge the performance of the model
+    split_size = 0.997
 
-# dataset contains 4.1 million samples, 0.3% of this is 15k samples, which should be enough to judge the performance of the model
-dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.997, autoregressive=True)
-test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.003 )
+dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=split_size, autoregressive=True)
+test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=1 - split_size )
 
 next(iter(dataset))
 next(iter(test_dataset))
@@ -909,8 +912,10 @@ num_train_iters = len(train_dataloader) * args.max_epochs
 next(iter(train_dataloader))
 next(iter(test_dataloader))
 
-# for x in tqdm(train_dataloader):
-#     pass
+for x in tqdm(test_dataloader):
+    pass
+for x in tqdm(train_dataloader):
+    pass
 
 #%%
 
