@@ -68,7 +68,9 @@ from transformers.models.gptj.configuration_gptj import GPTJConfig
 from argparse import Namespace
 from data.dataloaders import ProgramEncoder
 from functools import partial
-
+from flax.core.frozen_dict import unfreeze
+from jax import tree_map
+from utils.jax_helpers import zero_grads, create_mask
 
 # GPT Large Train config
 # args = Namespace(
@@ -98,7 +100,7 @@ args = Namespace(
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='ar',
+    trail_name='ar_test',
     task='Compressed', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )
@@ -665,9 +667,40 @@ class TrainerModule:
         else:
             self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=params, tx=self.state.tx)
 
+    
 
 
+    def load_pretrained(self, log_dir: str):
+        params = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(CHECKPOINT_PATH, log_dir), target=self.state.params)
+        param_names = ['input_layer', 'h', 'output_net_0', 'output_net_1', 'output_net_3']
+        assert set(list(params.keys())) == set(param_names)
+        # directly copy the output layers to the new model
+        to_keep = ['h', 'output_net_0', 'output_net_1', 'output_net_3']
+        new_params = unfreeze(self.state.params)
+        trainable = tree_map(lambda x: 'zero', new_params)
+        for p in to_keep:
+            # copy over the pretrained params
+            new_params[p] = params[p]
+            # enamble optimisation
+            trainable[p] = tree_map(lambda x: 'adam', params[p])
+        
+        # for the 'h' params (GPT model), we want to train the first X%
+        mha_layers_h = len(params['h'].keys())
+        frac_to_disable = 0.50
+        discarding_n_mha = int(frac_to_disable * mha_layers_h)
+        subset_of_h_to_disable = sorted(list(params['h'].keys()), key=lambda x: int(x))[:discarding_n_mha]
+        for p_h in subset_of_h_to_disable:
+            trainable['h'][p_h] = tree_map(lambda x: 'zero', trainable['h'][p_h])
+        
+        optimizer = self.state.tx # this is the current optimiser fn
+        optimizer = optax.multi_transform({'adam': optimizer, 'zero': zero_grads()},
+                        trainable)
 
+        self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=new_params, tx=self.state.tx)
+        
+        print(f"Successfully loaded pretrained parameters")
+        print(f"training {mha_layers_h - discarding_n_mha} of {mha_layers_h} MHA Layers")
+        return trainable
 
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
 
@@ -1066,6 +1099,8 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 # import pandas as pd
 # pd.Series(test_val_acc).to_csv('GPT_LARGE_NUMVAR.csv')
 
+if args.task in ['Compressed', 'Natural']:
+    trainer.load_pretrained('.logs/arv3_2_onehot_eval_higher_lr GPTNEO pythia_125m TASK: Stock LR: 1e-05 ParamNoise: 0.0 InpDrop: 0.0 bs: 512 nembed: 768 n_layer: 12 n_head: 12')
 
 #%%
 
@@ -1074,3 +1109,42 @@ for epoch_idx in range(1, args.max_epochs+1):
 
 
 #%%
+
+# from jax import tree_map
+# from utils.jax_helpers import zero_grads, create_mask
+
+# def load_pretrained(self, log_dir: str):
+#     params = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(CHECKPOINT_PATH, log_dir), target=self.state.params)
+#     param_names = ['input_layer', 'h', 'output_net_0', 'output_net_1', 'output_net_3']
+#     assert set(list(params.keys())) == set(param_names)
+#     # directly copy the output layers to the new model
+#     to_keep = ['h', 'output_net_0', 'output_net_1', 'output_net_3']
+#     new_params = unfreeze(self.state.params)
+#     trainable = tree_map(lambda x: 'zero', new_params)
+#     for p in to_keep:
+#         # copy over the pretrained params
+#         new_params[p] = params[p]
+#         # enamble optimisation
+#         trainable[p] = tree_map(lambda x: 'adam', params[p])
+    
+#     # for the 'h' params (GPT model), we want to train the first X%
+#     mha_layers_h = len(params['h'].keys())
+#     frac_to_disable = 0.50
+#     discarding_n_mha = int(frac_to_disable * mha_layers_h)
+#     print(mha_layers_h - discarding_n_mha)
+#     subset_of_h_to_disable = sorted(list(params['h'].keys()), key=lambda x: int(x))[:discarding_n_mha]
+#     for p_h in subset_of_h_to_disable:
+#         print(f"copying over {p_h}")
+#         trainable['h'][p_h] = tree_map(lambda x: 'zero', trainable['h'][p_h])
+    
+#     optimizer = self.state.tx # this is the current optimiser fn
+#     optimizer = optax.multi_transform({'adam': optimizer, 'zero': zero_grads()},
+#                     trainable)
+
+#     self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=new_params, tx=self.state.tx)
+#     return trainable
+
+# trainable = load_pretrained(trainer, '.logs/arv3_2_onehot_eval_higher_lr GPTNEO pythia_125m TASK: Stock LR: 1e-05 ParamNoise: 0.0 InpDrop: 0.0 bs: 512 nembed: 768 n_layer: 12 n_head: 12')
+
+
+        
