@@ -912,10 +912,10 @@ num_train_iters = len(train_dataloader) * args.max_epochs
 next(iter(train_dataloader))
 next(iter(test_dataloader))
 
-for x in tqdm(test_dataloader):
-    pass
-for x in tqdm(train_dataloader):
-    pass
+# for x in tqdm(test_dataloader):
+#     pass
+# for x in tqdm(train_dataloader):
+#     pass
 
 #%%
 
