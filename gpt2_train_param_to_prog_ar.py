@@ -100,7 +100,7 @@ args = Namespace(
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='ar_test',
+    trail_name='ar_pretrained',
     task='Compressed', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )
@@ -916,6 +916,8 @@ split_size = 0.95
 if args.task=='Stock':
     # standard dataset contains 5 million samples, 0.3% of this is 15k samples, which should be enough to judge the performance of the model
     split_size = 0.997
+elif args.task=='Compressed':
+    split_size = 0.98
 
 dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=split_size, autoregressive=True)
 test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=1 - split_size )
@@ -1104,8 +1106,10 @@ if args.task in ['Compressed', 'Natural']:
 
 #%%
 
+LOG_FREQ = 8 if args.task == 'Stock' else 3
+
 for epoch_idx in range(1, args.max_epochs+1):
-    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=8, LOGS_PER_EPOCH=8 )
+    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=LOG_FREQ, LOGS_PER_EPOCH=LOG_FREQ )
 
 
 #%%
