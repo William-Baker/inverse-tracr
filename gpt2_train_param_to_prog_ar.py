@@ -93,6 +93,24 @@ from random import sample
 #     autoregressive=True,
 # )
 
+args = Namespace(
+    batch_size=512,# 256 for medium
+    PROG_LEN = 15,
+    max_epochs = 10,
+    LEARNING_RATE=2e-6,
+    frac_to_train = 0.50,
+    input_dropout_prob = 0.0,#2,
+    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+    ar_input_noise=0.0, #0.2, # absolute max value of noise
+    max_timesteps = 40,
+    model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
+    config = 'pythia_125m', #'MEDIUM', # 'LARGE'
+    trail_name='std-lowlr',
+    task='Stock', # 'Stock', 'Compressed', 'Natural'
+    autoregressive=True,
+)
+
+
 # args = Namespace(
 #     batch_size=512,# 256 for medium
 #     PROG_LEN = 15,
@@ -111,22 +129,22 @@ from random import sample
 # )
 
 
-args = Namespace(
-    batch_size=256,# 256 for medium
-    PROG_LEN = 15,
-    max_epochs = 4,
-    LEARNING_RATE=1e-5,
-    input_dropout_prob = 0.0,#2,
-    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-    ar_input_noise=0.0, #0.2, # absolute max value of noise
-    frac_to_train = 0.50,
-    max_timesteps = 40,
-    model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
-    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-    trail_name='gpt2_med_ar',
-    task='Stock', # 'Stock', 'Compressed', 'Natural'
-    autoregressive=True,
-)
+# args = Namespace(
+#     batch_size=256,# 256 for medium
+#     PROG_LEN = 15,
+#     max_epochs = 4,
+#     LEARNING_RATE=1e-5,
+#     input_dropout_prob = 0.0,#2,
+#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+#     ar_input_noise=0.0, #0.2, # absolute max value of noise
+#     frac_to_train = 0.50,
+#     max_timesteps = 40,
+#     model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
+#     config = 'MEDIUM', #'MEDIUM', # 'LARGE'
+#     trail_name='gpt2_med_ar_cosadamw4',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
+#     autoregressive=True,
+# )
 
 
 
@@ -217,7 +235,7 @@ class TrainerModule:
         optimizer = optax.chain(
             optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
             #optax.adam(lr_schedule)
-            optax.adamw(learning_rate=config.lr, weight_decay=config.weight_decay)
+            optax.adamw(learning_rate=lr_schedule)
         )
         
         # Initialize training state
@@ -977,7 +995,7 @@ elif args.task=='Compressed':
 
 dataset_teacher_forced = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=split_size, autoregressive=True)
 dataset_generative = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=split_size, autoregressive=False)
-dataset_teacher_forced.files = sample(dataset_teacher_forced.files, 10000)
+dataset_generative.files = sample(dataset_generative.files, 10000)
 test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=1 - split_size )
 
 next(iter(dataset_teacher_forced))
