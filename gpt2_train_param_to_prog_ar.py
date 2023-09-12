@@ -74,21 +74,37 @@ from utils.jax_helpers import zero_grads, create_mask
 
 # GPT Large Train config
 
-
+# standard training pythia 125
+args = Namespace(
+    batch_size=512,# 256 for medium
+    PROG_LEN = 15,
+    max_epochs = 40,
+    LEARNING_RATE=1e-5,
+    frac_to_train = 0.50,
+    input_dropout_prob = 0.0,#2,
+    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+    ar_input_noise=0.0, #0.2, # absolute max value of noise
+    max_timesteps = 40,
+    model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
+    config = 'pythia_125m', #'MEDIUM', # 'LARGE'
+    trail_name='val_samp',
+    task='Stock', # 'Stock', 'Compressed', 'Natural'
+    autoregressive=True,
+)
 
 # args = Namespace(
 #     batch_size=512,# 256 for medium
 #     PROG_LEN = 15,
 #     max_epochs = 40,
-#     LEARNING_RATE=2e-5,
-#     frac_to_train = 0.80,
+#     LEARNING_RATE=1e-7,
+#     frac_to_train = 0.50,
 #     input_dropout_prob = 0.0,#2,
 #     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
 #     ar_input_noise=0.0, #0.2, # absolute max value of noise
 #     max_timesteps = 40,
 #     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
 #     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-#     trail_name='ar_pretrained_fixed',
+#     trail_name='pretr-smolr',
 #     task='Compressed', # 'Stock', 'Compressed', 'Natural'
 #     autoregressive=True,
 # )
@@ -111,21 +127,22 @@ from utils.jax_helpers import zero_grads, create_mask
 # )
 
 
-args = Namespace(
-    batch_size=128,# 256 for medium
-    PROG_LEN = 15,
-    max_epochs = 40,
-    LEARNING_RATE=1e-5,
-    input_dropout_prob = 0.0,#2,
-    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-    ar_input_noise=0.0, #0.2, # absolute max value of noise
-    max_timesteps = 40,
-    model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
-    config = 'LARGE', #'MEDIUM', # 'LARGE'
-    trail_name='gpt2_lar_ar',
-    task='Stock', # 'Stock', 'Compressed', 'Natural'
-    autoregressive=True,
-)
+
+# args = Namespace(
+#     batch_size=128,# 256 for medium
+#     PROG_LEN = 15,
+#     max_epochs = 40,
+#     LEARNING_RATE=1e-5,
+#     input_dropout_prob = 0.0,#2,
+#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+#     ar_input_noise=0.0, #0.2, # absolute max value of noise
+#     max_timesteps = 40,
+#     model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
+#     config = 'LARGE', #'MEDIUM', # 'LARGE'
+#     trail_name='gpt2_lar_ar',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
+#     autoregressive=True,
+# )
 
 
 
@@ -939,7 +956,7 @@ def make_collate_fn(PROG_LEN):
 split_size = 0.95
 if args.task=='Stock':
     # standard dataset contains 5 million samples, 0.3% of this is 15k samples, which should be enough to judge the performance of the model
-    split_size = 0.997
+    split_size = 0.985 #0.997
 elif args.task=='Compressed':
     split_size = 0.98
 
@@ -1134,7 +1151,7 @@ if args.task in ['Compressed', 'Natural']:
 
 #%%
 
-LOG_FREQ = 8 # if args.task == 'Stock' else 3
+LOG_FREQ = 12 # if args.task == 'Stock' else 3
 
 for epoch_idx in range(1, args.max_epochs+1):
     trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=LOG_FREQ, LOGS_PER_EPOCH=LOG_FREQ )

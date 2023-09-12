@@ -68,40 +68,66 @@ from transformers.models.gptj.configuration_gptj import GPTJConfig
 from argparse import Namespace
 from data.dataloaders import ProgramEncoder
 from functools import partial
-
+from flax.core.frozen_dict import unfreeze
+from jax import tree_map
+from utils.jax_helpers import zero_grads, create_mask
 
 # GPT Large Train config
-# args = Namespace(
-#     batch_size=384,# 256 for medium
-#     PROG_LEN = 15,
-#     max_epochs = 40,
-#     LEARNING_RATE=1e-5,
-#     input_dropout_prob = 0.2,
-#     in_noise = 0.30, # inverse fraction of the standard deviation of the noise to add
-#     max_timesteps = 40,
-#     model = 'GPT2',
-#     config = 'TINY', #'MEDIUM', # 'LARGE'
-#     trail_name='arv3_test',
-#     task='Stock', # 'Stock', 'Compressed', 'Natural'
-#     autoregressive=True,
-# )
+
 
 
 args = Namespace(
     batch_size=512,# 256 for medium
     PROG_LEN = 15,
     max_epochs = 40,
-    LEARNING_RATE=1e-5,
+    LEARNING_RATE=1e-7,
+    frac_to_train = 0.50,
     input_dropout_prob = 0.0,#2,
     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
     ar_input_noise=0.0, #0.2, # absolute max value of noise
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='arv3_2_onehot_eval_higher_lr',
-    task='Stock', # 'Stock', 'Compressed', 'Natural'
+    trail_name='pretr-smolr',
+    task='Compressed', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )
+
+
+# args = Namespace(
+#     batch_size=256,# 256 for medium
+#     PROG_LEN = 15,
+#     max_epochs = 40,
+#     LEARNING_RATE=1e-5,
+#     input_dropout_prob = 0.0,#2,
+#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+#     ar_input_noise=0.0, #0.2, # absolute max value of noise
+#     max_timesteps = 40,
+#     model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
+#     config = 'MEDIUM', #'MEDIUM', # 'LARGE'
+#     trail_name='gpt2_med_ar',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
+#     autoregressive=True,
+# )
+
+
+# args = Namespace(
+#     batch_size=128,# 256 for medium
+#     PROG_LEN = 15,
+#     max_epochs = 40,
+#     LEARNING_RATE=1e-5,
+#     input_dropout_prob = 0.0,#2,
+#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+#     ar_input_noise=0.0, #0.2, # absolute max value of noise
+#     max_timesteps = 40,
+#     model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
+#     config = 'LARGE', #'MEDIUM', # 'LARGE'
+#     trail_name='gpt2_lar_ar',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
+#     autoregressive=True,
+# )
+
+
 
 
 CHECKPOINT_PATH = ".logs/"
@@ -665,9 +691,40 @@ class TrainerModule:
         else:
             self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=params, tx=self.state.tx)
 
+    
 
 
+    def load_pretrained(self, log_dir: str):
+        params = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(CHECKPOINT_PATH, log_dir), target=self.state.params)
+        param_names = ['input_layer', 'h', 'output_net_0', 'output_net_1', 'output_net_3']
+        assert set(list(params.keys())) == set(param_names)
+        # directly copy the output layers to the new model
+        to_keep = ['h', 'output_net_0', 'output_net_1', 'output_net_3']
+        new_params = unfreeze(self.state.params)
+        trainable = tree_map(lambda x: 'adam', new_params)
+        for p in to_keep:
+            # copy over the pretrained params
+            new_params[p] = params[p]
+            # enamble optimisation
+            trainable[p] = tree_map(lambda x: 'zero', params[p])
+        
+        # for the 'h' params (GPT model), we want to train the first X%
+        mha_layers_h = len(params['h'].keys())
+        frac_to_train = args.frac_to_train
+        training_n_mha = int(frac_to_train * mha_layers_h)
+        subset_of_h_to_train = sorted(list(params['h'].keys()), key=lambda x: int(x))[:training_n_mha]
+        for p_h in subset_of_h_to_train:
+            trainable['h'][p_h] = tree_map(lambda x: 'adam', trainable['h'][p_h])
+        
+        optimizer = self.state.tx # this is the current optimiser fn
+        optimizer = optax.multi_transform({'adam': optimizer, 'zero': zero_grads()},
+                        trainable)
 
+        self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=new_params, tx=self.state.tx)
+        
+        print(f"Successfully loaded pretrained parameters")
+        print(f"training {mha_layers_h - training_n_mha} of {mha_layers_h} MHA Layers")
+        return trainable
 
 src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
 
@@ -879,10 +936,15 @@ def make_collate_fn(PROG_LEN):
         return np.array(inputs), np.array(targets).astype(int), np.array(loss_masks), np.array(attention_masks), pos_ids
     return collate_fn
 
+split_size = 0.95
+if args.task=='Stock':
+    # standard dataset contains 5 million samples, 0.3% of this is 15k samples, which should be enough to judge the performance of the model
+    split_size = 0.997
+elif args.task=='Compressed':
+    split_size = 0.98
 
-# dataset contains 4.1 million samples, 0.3% of this is 15k samples, which should be enough to judge the performance of the model
-dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=0.997, autoregressive=True)
-test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.003 )
+dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=split_size, autoregressive=True)
+test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=1 - split_size )
 
 next(iter(dataset))
 next(iter(test_dataset))
@@ -909,6 +971,8 @@ num_train_iters = len(train_dataloader) * args.max_epochs
 next(iter(train_dataloader))
 next(iter(test_dataloader))
 
+# for x in tqdm(test_dataloader):
+#     pass
 # for x in tqdm(train_dataloader):
 #     pass
 
@@ -1041,7 +1105,7 @@ elif args.model == 'GPTNEO':
 
 
 trainer = TrainerModule(model, 
-                        f'{args.trail_name} {args.model} {args.config} TASK: {args.task} LR: {args.LEARNING_RATE} ParamNoise: {args.parameter_noise} InpDrop: {args.input_dropout_prob} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
+                        f'{args.trail_name} {args.model} {args.config} TASK: {args.task} LR: {args.LEARNING_RATE} TrainFrac:{args.frac_to_train} ParamNoise: {args.parameter_noise} InpDrop: {args.input_dropout_prob} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
@@ -1061,11 +1125,60 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 # import pandas as pd
 # pd.Series(test_val_acc).to_csv('GPT_LARGE_NUMVAR.csv')
 
+if args.task in ['Compressed', 'Natural']:
+    if args.config == 'pythia_125m':
+        trainer.load_pretrained('.logs/arv3_2_onehot_eval_higher_lr GPTNEO pythia_125m TASK: Stock LR: 1e-05 ParamNoise: 0.0 InpDrop: 0.0 bs: 512 nembed: 768 n_layer: 12 n_head: 12')
+    elif 
 
 #%%
+
+# trainer.load_model(log_dir="ar_test GPTNEO pythia_125m TASK: Compressed LR: 1e-05 ParamNoise: 0.0 InpDrop: 0.0 bs: 512 nembed: 768 n_layer: 12 n_head: 12")
+
+#%%
+
+LOG_FREQ = 8 # if args.task == 'Stock' else 3
 
 for epoch_idx in range(1, args.max_epochs+1):
-    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=8, LOGS_PER_EPOCH=8 )
+    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=LOG_FREQ, LOGS_PER_EPOCH=LOG_FREQ )
 
 
 #%%
+
+# from jax import tree_map
+# from utils.jax_helpers import zero_grads, create_mask
+
+# def load_pretrained(self, log_dir: str):
+#     params = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(CHECKPOINT_PATH, log_dir), target=self.state.params)
+#     param_names = ['input_layer', 'h', 'output_net_0', 'output_net_1', 'output_net_3']
+#     assert set(list(params.keys())) == set(param_names)
+#     # directly copy the output layers to the new model
+#     to_keep = ['h', 'output_net_0', 'output_net_1', 'output_net_3']
+#     new_params = unfreeze(self.state.params)
+#     trainable = tree_map(lambda x: 'zero', new_params)
+#     for p in to_keep:
+#         # copy over the pretrained params
+#         new_params[p] = params[p]
+#         # enamble optimisation
+#         trainable[p] = tree_map(lambda x: 'adam', params[p])
+    
+#     # for the 'h' params (GPT model), we want to train the first X%
+#     mha_layers_h = len(params['h'].keys())
+#     frac_to_disable = 0.50
+#     discarding_n_mha = int(frac_to_disable * mha_layers_h)
+#     print(mha_layers_h - discarding_n_mha)
+#     subset_of_h_to_disable = sorted(list(params['h'].keys()), key=lambda x: int(x))[:discarding_n_mha]
+#     for p_h in subset_of_h_to_disable:
+#         print(f"copying over {p_h}")
+#         trainable['h'][p_h] = tree_map(lambda x: 'zero', trainable['h'][p_h])
+    
+#     optimizer = self.state.tx # this is the current optimiser fn
+#     optimizer = optax.multi_transform({'adam': optimizer, 'zero': zero_grads()},
+#                     trainable)
+
+#     self.state = train_state.TrainState.create(apply_fn=self.model.apply, params=new_params, tx=self.state.tx)
+#     return trainable
+
+# trainable = load_pretrained(trainer, '.logs/arv3_2_onehot_eval_higher_lr GPTNEO pythia_125m TASK: Stock LR: 1e-05 ParamNoise: 0.0 InpDrop: 0.0 bs: 512 nembed: 768 n_layer: 12 n_head: 12')
+
+
+        
