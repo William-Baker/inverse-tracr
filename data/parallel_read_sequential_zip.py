@@ -24,7 +24,7 @@ def get_directory_contents_and_write(dir_path, zip_name):
                 future = executor.submit(read_file, entry, dir_name)
                 futures.append(future)
         
-        with zipfile.ZipFile(zip_name, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=4) as zf:          
+        with zipfile.ZipFile(zip_name, 'a', compression=zipfile.ZIP_DEFLATED, compresslevel=4) as zf:          
             for future in tqdm(as_completed(futures), desc='await future + write zip'):
                 zip_path, file_content = future.result()
                 
