@@ -93,22 +93,22 @@ from random import sample
 #     autoregressive=True,
 # )
 
-args = Namespace(
-    batch_size=512,# 256 for medium
-    PROG_LEN = 15,
-    max_epochs = 10,
-    LEARNING_RATE=2e-6,
-    frac_to_train = 0.50,
-    input_dropout_prob = 0.0,#2,
-    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-    ar_input_noise=0.0, #0.2, # absolute max value of noise
-    max_timesteps = 40,
-    model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
-    config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='std-lowlr',
-    task='Stock', # 'Stock', 'Compressed', 'Natural'
-    autoregressive=True,
-)
+# args = Namespace(
+#     batch_size=512,# 256 for medium
+#     PROG_LEN = 15,
+#     max_epochs = 10,
+#     LEARNING_RATE=2e-6,
+#     frac_to_train = 0.50,
+#     input_dropout_prob = 0.0,#2,
+#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+#     ar_input_noise=0.0, #0.2, # absolute max value of noise
+#     max_timesteps = 40,
+#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
+#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
+#     trail_name='std-lowlr',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
+#     autoregressive=True,
+# )
 
 
 # args = Namespace(
@@ -129,22 +129,22 @@ args = Namespace(
 # )
 
 
-# args = Namespace(
-#     batch_size=256,# 256 for medium
-#     PROG_LEN = 15,
-#     max_epochs = 4,
-#     LEARNING_RATE=1e-5,
-#     input_dropout_prob = 0.0,#2,
-#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-#     ar_input_noise=0.0, #0.2, # absolute max value of noise
-#     frac_to_train = 0.50,
-#     max_timesteps = 40,
-#     model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
-#     config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-#     trail_name='gpt2_med_ar_cosadamw4',
-#     task='Stock', # 'Stock', 'Compressed', 'Natural'
-#     autoregressive=True,
-# )
+args = Namespace(
+    batch_size=256,# 256 for medium
+    PROG_LEN = 15,
+    max_epochs = 4,
+    LEARNING_RATE=1e-5,
+    input_dropout_prob = 0.0,#2,
+    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+    ar_input_noise=0.0, #0.2, # absolute max value of noise
+    frac_to_train = 0.50,
+    max_timesteps = 40,
+    model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
+    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
+    trail_name='gpt2_med_ar_cosadamw4',
+    task='Stock', # 'Stock', 'Compressed', 'Natural'
+    autoregressive=True,
+)
 
 
 
@@ -720,8 +720,8 @@ class TrainerModule:
         try:
             checkpoints.save_checkpoint(ckpt_dir=self.log_dir, target=self.state.params, step=step)
             dump(self.state.opt_state, open(os.path.join(self.log_dir, "optimiser_state.pkl"), "wb"))    
-        except flax.errors.InvalidCheckpointError:
-            print(f"failed to save the checkpoint, an newer checkpoint exists than step {step}")
+        except:
+            print(f"failed to save the checkpoint, maybe an newer checkpoint exists than step {step}")
 
     def load_model(self, log_dir=None, load_state=True):
         log_dir = self.log_dir if log_dir is None else log_dir
