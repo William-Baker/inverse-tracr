@@ -71,26 +71,27 @@ from functools import partial
 from flax.core.frozen_dict import unfreeze
 from jax import tree_map
 from utils.jax_helpers import zero_grads, create_mask
+from random import sample
 
 # GPT Large Train config
 
 # standard training pythia 125
-args = Namespace(
-    batch_size=512,# 256 for medium
-    PROG_LEN = 15,
-    max_epochs = 40,
-    LEARNING_RATE=1e-5,
-    frac_to_train = 0.50,
-    input_dropout_prob = 0.0,#2,
-    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-    ar_input_noise=0.0, #0.2, # absolute max value of noise
-    max_timesteps = 40,
-    model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
-    config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='val_samp',
-    task='Stock', # 'Stock', 'Compressed', 'Natural'
-    autoregressive=True,
-)
+# args = Namespace(
+#     batch_size=512,# 256 for medium
+#     PROG_LEN = 15,
+#     max_epochs = 40,
+#     LEARNING_RATE=1e-5,
+#     frac_to_train = 0.50,
+#     input_dropout_prob = 0.0,#2,
+#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+#     ar_input_noise=0.0, #0.2, # absolute max value of noise
+#     max_timesteps = 40,
+#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
+#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
+#     trail_name='val_samp',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
+#     autoregressive=True,
+# )
 
 # args = Namespace(
 #     batch_size=512,# 256 for medium
@@ -110,21 +111,22 @@ args = Namespace(
 # )
 
 
-# args = Namespace(
-#     batch_size=256,# 256 for medium
-#     PROG_LEN = 15,
-#     max_epochs = 40,
-#     LEARNING_RATE=1e-5,
-#     input_dropout_prob = 0.0,#2,
-#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-#     ar_input_noise=0.0, #0.2, # absolute max value of noise
-#     max_timesteps = 40,
-#     model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
-#     config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-#     trail_name='gpt2_med_ar',
-#     task='Stock', # 'Stock', 'Compressed', 'Natural'
-#     autoregressive=True,
-# )
+args = Namespace(
+    batch_size=256,# 256 for medium
+    PROG_LEN = 15,
+    max_epochs = 4,
+    LEARNING_RATE=1e-5,
+    input_dropout_prob = 0.0,#2,
+    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+    ar_input_noise=0.0, #0.2, # absolute max value of noise
+    frac_to_train = 0.50,
+    max_timesteps = 40,
+    model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
+    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
+    trail_name='gpt2_med_ar',
+    task='Stock', # 'Stock', 'Compressed', 'Natural'
+    autoregressive=True,
+)
 
 
 
@@ -214,8 +216,8 @@ class TrainerModule:
         )
         optimizer = optax.chain(
             optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
-            optax.adam(lr_schedule)
-            #optax.adamw(learning_rate=config.lr, weight_decay=config.weight_decay)
+            #optax.adam(lr_schedule)
+            optax.adamw(learning_rate=config.lr, weight_decay=config.weight_decay)
         )
         
         # Initialize training state
@@ -570,7 +572,7 @@ class TrainerModule:
 
 
 
-    def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=3, validation_loader=None, VALS_PER_EPOCH = 1):
+    def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=3, validation_loader=None, VALS_PER_EPOCH = 1, train_dataloader_generative=None):
         # Train model for one epoch, and log avg loss and accuracy
         DATALOADER_LENGTH = len(train_loader)
         LOGGING_INTERVAL = DATALOADER_LENGTH // LOGS_PER_EPOCH
@@ -635,7 +637,20 @@ class TrainerModule:
                             best_eval_loss = eval_loss
                             trainer.save_model(step=global_step)
                         
-                        
+                    # ------------ Evaluation Step - train dataloader generative ---------------
+                    if train_dataloader_generative is not None and (idx + 1) % VALIDATION_INTERVAL == 0:
+                        eval_acc, eval_loss = self.eval_model(train_dataloader_generative)
+                        self.logger.add_scalar('train_gen/accuracy', eval_acc.mean(), global_step=global_step)
+                        self.logger.add_scalar('train_gen/accuracy100', (eval_acc == 1.0).mean(), global_step=global_step)
+                        self.logger.add_scalar('train_gen/accuracy90', (eval_acc > 0.9).mean(), global_step=global_step)
+                        self.logger.add_scalar('train_gen/accuracy80', (eval_acc > 0.8).mean(), global_step=global_step)
+                        self.logger.add_scalar('train_gen/accuracy70', (eval_acc > 0.7).mean(), global_step=global_step)
+                        self.logger.add_scalar('train_gen/accuracy60', (eval_acc > 0.6).mean(), global_step=global_step)
+                        self.logger.add_scalar('train_gen/accuracy50', (eval_acc > 0.5).mean(), global_step=global_step)
+                        trainer.logger.add_scalar('train_gen/loss', eval_loss, global_step=global_step)
+                        if eval_loss < best_eval_loss:
+                            best_eval_loss = eval_loss
+                            trainer.save_model(step=global_step)    
 
                     # ----------- TQDM ----------------
                     tepoch.set_postfix({'Batch': idx, 'Train Loss': loss, 'Acc': accuracy.mean(), 'MaxMem': JaxMemUsage.max_usage_str, 'Mem': JaxMemUsage.usage_str})
@@ -857,8 +872,8 @@ for i, seg_size in enumerate(src_dataset.get_segment_sizes()):
 
 #%%
 
-dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.1, autoregressive=False)
-it = iter(dataset)
+dataset_teacher_forced = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=0.1, autoregressive=False)
+it = iter(dataset_teacher_forced)
 #%%
 x, y, loss_mask, attention_mask, autoregressive_mask = next(it)
 y, loss_mask, autoregressive_mask
@@ -960,10 +975,13 @@ if args.task=='Stock':
 elif args.task=='Compressed':
     split_size = 0.98
 
-dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=split_size, autoregressive=True)
+dataset_teacher_forced = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=split_size, autoregressive=True)
+dataset_generative = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=split_size, autoregressive=False)
+dataset_teacher_forced.files = sample(dataset_teacher_forced.files, 10000)
 test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=1 - split_size )
 
-next(iter(dataset))
+next(iter(dataset_teacher_forced))
+next(iter(dataset_generative))
 next(iter(test_dataset))
 
 # sr = StoreReader(dataset_path,  first=0.9)
@@ -974,18 +992,22 @@ next(iter(test_dataset))
 # for x in tqdm(np.random.randint(0, len(sr), len(sr))):
 #     sr.__getitem__(x)
 
-print(f"Dataset contains: {len(dataset)} samples" )
+#%%
+
+print(f"Dataset contains: {len(dataset_teacher_forced)} samples" )
 
 collate_fn = make_collate_fn(args.PROG_LEN)
 
 
 # note num_workers * prefetch_factor should be greater than the batch size
-train_dataloader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=36, shuffle=True)#, pin_memory=True) num_workers=1, prefetch_factor=2)#
+train_dataloader_teacher_forced = DataLoader(dataset_teacher_forced, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=36, shuffle=True)#, pin_memory=True) num_workers=1, prefetch_factor=2)#
+train_dataloader_generative= DataLoader(dataset_generative, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=36, shuffle=True)#, pin_memory=True) num_workers=1, prefetch_factor=2)#
 test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=36, shuffle=True)#, pin_memory=True)
-num_train_iters = len(train_dataloader) * args.max_epochs
+num_train_iters = len(train_dataloader_teacher_forced) * args.max_epochs
 
 
-next(iter(train_dataloader))
+next(iter(train_dataloader_teacher_forced))
+next(iter(train_dataloader_generative))
 next(iter(test_dataloader))
 
 # for x in tqdm(test_dataloader):
@@ -1000,7 +1022,7 @@ def testing_loaders():
     x,y,_,_, _ = next(it)
     src_dataset.decode_pred(y, 0)
 
-    it = iter(train_dataloader)
+    it = iter(train_dataloader_teacher_forced)
     x,y,_,_, _ = next(it)
 
     #print(src_dataset.decode_pred(y, 0))
@@ -1154,7 +1176,7 @@ if args.task in ['Compressed', 'Natural']:
 LOG_FREQ = 12 # if args.task == 'Stock' else 3
 
 for epoch_idx in range(1, args.max_epochs+1):
-    trainer.train_epoch(train_dataloader, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=LOG_FREQ, LOGS_PER_EPOCH=LOG_FREQ )
+    trainer.train_epoch(train_dataloader_teacher_forced, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=LOG_FREQ, LOGS_PER_EPOCH=LOG_FREQ, train_dataloader_generative=train_dataloader_generative)
 
 
 #%%

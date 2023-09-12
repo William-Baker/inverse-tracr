@@ -27,6 +27,8 @@ def get_directory_contents_and_write(dir_path):
         with zipfile.ZipFile(zip_name, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=4) as zf:          
             for future in tqdm(as_completed(futures), desc='await future + write zip'):
                 zip_path, file_content = future.result()
+                
+                # TODO check zip path ends with .pkl
                 # contents[zip_path] = file_content
                 zf.writestr(zip_path, file_content)
 
