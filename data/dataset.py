@@ -398,32 +398,38 @@ def gen_vocab(vocab_size: int, prefix='t', numeric=False):
         return list(range(vocab_size))
 
 
-def build_program_of_length(n_ops, vocab, numeric_range: tuple, TARGET_PROGRAM_LENGTH):
+def build_program_of_length(vocab, numeric_range: tuple, MIN_PROG_LENGTH: int, MAX_PROG_LENGTH: int):
     program_length = 0
     program, actual_ops = None, None
-    while program_length < TARGET_PROGRAM_LENGTH:
+    n_ops = int(1.8 * MAX_PROG_LENGTH)
+    while not (MIN_PROG_LENGTH < program_length <= MAX_PROG_LENGTH):
         ops = generate_ops(n_ops, vocab, numeric_range)
         program, actual_ops = compile_program(ops)
         program_length = len(actual_ops)
     return program, actual_ops
 
-def choose_vocab_and_ops(ops_range: tuple, vocab_size_range: tuple, numeric_inputs_possible: bool):
-    n_ops = randint(*ops_range)
+def choose_vocab_and_ops(ops_range: tuple, vocab_size_range: tuple, numeric_inputs_possible: bool, small_v_large_bias=1):
+    """_
+        small_v_large_bias (int, optional): must be >0, 0.5 would make large values half as likley
+        2 would make large values twice as likely, 1 is uniform. Defaults to 1.
+    """
+    possible_ops = np.arange(ops_range[0], ops_range[1]+1, dtype=int)
+    weights = np.linspace(1, small_v_large_bias, num=possible_ops.shape[0])
+    n_ops = choices(possible_ops, weights, k=1)[0]
     vocab_size = randint(*vocab_size_range)
-    TARGET_PROGRAM_LENGTH = n_ops // 2
     numeric_inputs = choice([True, False]) if numeric_inputs_possible else False
     vocab = gen_vocab(vocab_size, prefix='t', numeric=numeric_inputs)
-    return n_ops, vocab, TARGET_PROGRAM_LENGTH
+    return n_ops, vocab
 
 def program_generator(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool):
-    n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
-    program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
+    n_ops, vocab = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible, small_v_large_bias=3)
+    program, actual_ops = build_program_of_length(vocab, numeric_range, MIN_PROG_LENGTH=max(2, n_ops-2), MAX_PROG_LENGTH=min(n_ops+2, ops_range[1]))
     return program, actual_ops
 
 
 def program_craft_generator(ops_range: tuple, vocab_size_range: tuple, numeric_range: tuple, numeric_inputs_possible: bool):
-    n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
-    program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
+    n_ops, vocab = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible, small_v_large_bias=3)
+    program, actual_ops = build_program_of_length(vocab, numeric_range, MIN_PROG_LENGTH=max(2, n_ops-2), MAX_PROG_LENGTH=min(n_ops+2, ops_range[1]))
     craft_model = compile_program_into_craft_model(program, vocab, max(numeric_range))
     return craft_model, actual_ops
 

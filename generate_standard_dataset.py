@@ -25,7 +25,7 @@ try:
 
    print(args.output_path)
 
-   dataset = TorchParameterProgramDataset(15, no_samples = args.samples, generator_backend='bounded', bounded_timeout_multiplier=1,
+   dataset = TorchParameterProgramDataset(3, 15, no_samples = args.samples, generator_backend='bounded', bounded_timeout_multiplier=1,
                                           vocab_size_range=(args.vocab_min, args.vocab_max),
                                           numeric_range=(args.number_min, args.number_max),
                                           numeric_inputs_possible=args.numeric_inputs

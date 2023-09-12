@@ -93,10 +93,10 @@ else:
     def timed_func():
         assembled_model, compressed_assembled_model, actual_ops = None, None, None
         
-        n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
+        n_ops, vocab = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
         
         try:
-            program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
+            program, actual_ops = build_program_of_length(vocab, numeric_range, MIN_PROG_LENGTH=max(2, n_ops-2), MAX_PROG_LENGTH=min(n_ops+2, ops_range[1])))
         except np.core._exceptions._ArrayMemoryError as E:
             print("mem alloc err")
             return None

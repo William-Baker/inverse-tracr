@@ -16,14 +16,14 @@ from data.encoded_dataloaders import craft_dataset, program_craft_generator_boun
 from data.dataloaders import ProgramEncoder
 from data.program_dataloader import TorchProgramDataset
 class TorchParameterProgramDataset(TorchProgramDataset):
-    def __init__(self, prog_len: int, no_samples = 10000, generator_backend=Union['bounded', 'unbounded'], bounded_timeout_multiplier=1, vocab_size_range=(6,6), numeric_range=(6,6), numeric_inputs_possible: bool = False):
+    def __init__(self, min_prog_len:int, max_prog_len: int, no_samples = 10000, generator_backend=Union['bounded', 'unbounded'], bounded_timeout_multiplier=1, vocab_size_range=(6,6), numeric_range=(6,6), numeric_inputs_possible: bool = False):
         self.vocab_size_range, self.numeric_range, self.numeric_inputs_possible = vocab_size_range, numeric_range, numeric_inputs_possible
         self.no_samples = no_samples
         func = program_craft_generator_unbounded
         if generator_backend == 'bounded':
             func = program_craft_generator_bounded
-        self.prog_len = prog_len
-        self.gen, OP_VOCAB, VAR_VOCAB = craft_dataset((prog_len,prog_len), func=func, timeout_multiplier=bounded_timeout_multiplier.as_integer_ratio,
+        self.prog_len = max_prog_len
+        self.gen, OP_VOCAB, VAR_VOCAB = craft_dataset((min_prog_len,max_prog_len), func=func, timeout_multiplier=bounded_timeout_multiplier.as_integer_ratio,
                                             vocab_size_range=self.vocab_size_range, numeric_range=self.numeric_range, numeric_inputs_possible=self.numeric_inputs_possible)
         self.it = iter(self.gen())
 

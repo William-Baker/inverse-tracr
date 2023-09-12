@@ -15,7 +15,7 @@ def read_file(entry, dir_name):
         return zip_path, f.read()
 
 
-def get_directory_contents_and_write(dir_path):
+def get_directory_contents_and_write(dir_path, zip_name):
     dir_name = os.path.basename(dir_path)
     with ThreadPoolExecutor() as executor:
         futures = []
@@ -40,4 +40,4 @@ if __name__ == "__main__":
     zip_name = "output.zip"
     
     print("reading dir contents")
-    contents = get_directory_contents_and_write(dir_path)
+    contents = get_directory_contents_and_write(dir_path, zip_name)
