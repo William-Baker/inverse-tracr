@@ -33,10 +33,10 @@ CRAFT_TIMEOUT = 2# 0.2 + 0.00001 * max(ops_range) ** 4
 
 
 
-n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
-print(n_ops, vocab, TARGET_PROGRAM_LENGTH)
+n_ops, vocab = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
+print(n_ops, vocab)
 
-program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
+program, actual_ops = build_program_of_length(vocab, numeric_range, n_ops-2, n_ops+2)
 
 assembled_model, craft_model, rasp_model = compile_rasp_to_model(
     program, vocab, max_seq_len)

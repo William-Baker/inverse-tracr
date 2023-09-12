@@ -60,7 +60,7 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, n
     CRAFT_TIMEOUT = 0.2 + 0.00001 * max_prog_complexity ** 4 # 10 op programs take 0.2 seconds, 15 op programs take 0.5, 30 op programs take 4 seconds
     CRAFT_TIMEOUT *= timeout_multiplier
     
-    n_ops, vocab, TARGET_PROGRAM_LENGTH = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible)
+    n_ops, vocab = choose_vocab_and_ops(ops_range=ops_range, vocab_size_range=vocab_size_range, numeric_inputs_possible=numeric_inputs_possible, small_v_large_bias=3)
 
     # Self optimising timeout to adapt to local compute performance
     # if the average of the tally of successes to failures is less thatn the target, 
@@ -71,7 +71,7 @@ def program_craft_generator_bounded(ops_range: tuple, vocab_size_range: tuple, n
 
     def timed():
         try:
-            program, actual_ops = build_program_of_length(n_ops, vocab, numeric_range, TARGET_PROGRAM_LENGTH)
+            program, actual_ops = build_program_of_length(vocab, numeric_range, MIN_PROG_LENGTH=max(2, n_ops-2), MAX_PROG_LENGTH=min(n_ops+2, ops_range[1]))
         except Exception as E:
             if isinstance(E, np.core._exceptions._ArrayMemoryError):
                 print("mem alloc err")

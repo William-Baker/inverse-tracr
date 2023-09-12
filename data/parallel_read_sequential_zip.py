@@ -15,7 +15,7 @@ def read_file(entry, dir_name):
         return zip_path, f.read()
 
 
-def get_directory_contents_and_write(dir_path):
+def get_directory_contents_and_write(dir_path, zip_name):
     dir_name = os.path.basename(dir_path)
     with ThreadPoolExecutor() as executor:
         futures = []
@@ -24,7 +24,7 @@ def get_directory_contents_and_write(dir_path):
                 future = executor.submit(read_file, entry, dir_name)
                 futures.append(future)
         
-        with zipfile.ZipFile(zip_name, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=4) as zf:          
+        with zipfile.ZipFile(zip_name, 'a', compression=zipfile.ZIP_DEFLATED, compresslevel=4) as zf:          
             for future in tqdm(as_completed(futures), desc='await future + write zip'):
                 zip_path, file_content = future.result()
                 
@@ -40,4 +40,4 @@ if __name__ == "__main__":
     zip_name = "output.zip"
     
     print("reading dir contents")
-    contents = get_directory_contents_and_write(dir_path)
+    contents = get_directory_contents_and_write(dir_path, zip_name)
