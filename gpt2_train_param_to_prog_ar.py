@@ -132,7 +132,7 @@ from random import sample
 args = Namespace(
     batch_size=256,# 256 for medium
     PROG_LEN = 15,
-    max_epochs = 4,
+    max_epochs = 40,
     LEARNING_RATE=1e-5,
     input_dropout_prob = 0.0,#2,
     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
@@ -141,7 +141,7 @@ args = Namespace(
     max_timesteps = 40,
     model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-    trail_name='gpt2_med_ar_cosadamw4',
+    trail_name='med_13M_spls',
     task='Stock', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
 )
@@ -174,7 +174,7 @@ if args.task == 'Stock':
     from data.dataloader_streams import ZipPickleStreamReader as StoreReader
     from data.parameter_encoder import CRAFT_TIMESTEPS as TIMESTEPS
     from data.parameter_encoder import CRAFT_ARCH as ARCH
-    dataset_path = '.data/iTracr_dataset_v2_train.zip'
+    dataset_path = '.data/iTracr_standard_20M.zip'
 elif args.task == 'Compressed':
     from data.dataloader_streams import ZipPickleStreamReader as StoreReader
     from data.parameter_encoder import JAX_TIMESTEPS as TIMESTEPS
@@ -513,7 +513,7 @@ class TrainerModule:
 
         # Evaluation function
         def eval_step(state, rng, batch):
-            loss, (acc, rng) = ar_loss(state.params, rng, batch, train=True)
+            loss, (acc, rng) = ar_loss(state.params, rng, batch, train=False)
             return loss, acc, rng
         self.eval_step = jax.jit(eval_step)
 
@@ -776,7 +776,7 @@ class TrainerModule:
         print(f"training {mha_layers_h - training_n_mha} of {mha_layers_h} MHA Layers")
         return trainable
 
-src_dataset = TorchParameterProgramDataset(args.PROG_LEN)
+src_dataset = TorchParameterProgramDataset(3, args.PROG_LEN)
 
 
 def add_noise_to_params(params, frac_of_std=0.1):
@@ -1190,8 +1190,8 @@ if args.task in ['Compressed', 'Natural']:
 # trainer.load_model(log_dir="ar_test GPTNEO pythia_125m TASK: Compressed LR: 1e-05 ParamNoise: 0.0 InpDrop: 0.0 bs: 512 nembed: 768 n_layer: 12 n_head: 12")
 
 #%%
-
-LOG_FREQ = 12 # if args.task == 'Stock' else 3
+# log every 200k samples
+LOG_FREQ = 35#int(len(train_dataloader_teacher_forced) / 200000) # if args.task == 'Stock' else 3
 
 for epoch_idx in range(1, args.max_epochs+1):
     trainer.train_epoch(train_dataloader_teacher_forced, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=LOG_FREQ, LOGS_PER_EPOCH=LOG_FREQ, train_dataloader_generative=train_dataloader_generative)

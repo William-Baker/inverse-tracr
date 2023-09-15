@@ -26,7 +26,7 @@ JAX_ARCH = ['PAD', 'MHA', 'MLP']
 from typing import Sequence
 def encode_architecture(layer_types: Sequence[str], max_prog_length: int, ARCH_LABELS: Sequence[str]):
     ARCHITECTURE_ENCODER = dict(zip(ARCH_LABELS, range(len(ARCH_LABELS))))
-    encoding = np.zeros((max_prog_length*3, len(ARCHITECTURE_ENCODER)))
+    encoding = np.zeros((max_prog_length*5, len(ARCHITECTURE_ENCODER)))
     for layer_no, layer_name in enumerate(layer_types):
         encoding[layer_no, ARCHITECTURE_ENCODER[layer_name]] = 1
     return encoding.reshape(-1)
