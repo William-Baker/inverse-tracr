@@ -88,10 +88,87 @@ from random import sample
 #     max_timesteps = 40,
 #     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
 #     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-#     trail_name='val_samp',
+#     trail_name='7M_125M',
 #     task='Stock', # 'Stock', 'Compressed', 'Natural'
 #     autoregressive=True,
+#     w_decay = False,
 # )
+
+# args = Namespace(
+#     batch_size=512
+#     PROG_LEN = 15,
+#     max_epochs = 40, # @LAURO only does 3 epochs in reality, cosine annealing is disabled
+#     LEARNING_RATE=5e-5,
+#     frac_to_train = 0.50,
+#     input_dropout_prob = 0.0,#2,
+#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+#     ar_input_noise=0.0, #0.2, # absolute max value of noise
+#     max_timesteps = 40,
+#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
+#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
+#     trail_name='7M_125M_hlr_wd_cont2',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
+#     autoregressive=True,
+#     w_decay = True,
+# )
+
+# # super high LR using cont2 aboave --- discarded all previous learning
+# args = Namespace(
+#     batch_size=512,# 256 for medium
+#     PROG_LEN = 15,
+#     max_epochs = 40,
+#     LEARNING_RATE=1e-3,
+#     frac_to_train = 0.50,
+#     input_dropout_prob = 0.0,#2,
+#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+#     ar_input_noise=0.0, #0.2, # absolute max value of noise
+#     max_timesteps = 40,
+#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
+#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
+#     trail_name='7M_125M_super_high_lr',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
+#     autoregressive=True,
+#     w_decay = True,
+# )
+
+# super low LR using cont2 above
+# args = Namespace(
+#     batch_size=512,# 256 for medium
+#     PROG_LEN = 15,
+#     max_epochs = 3,
+#     LEARNING_RATE=5e-7,
+#     frac_to_train = 0.50,
+#     input_dropout_prob = 0.0,#2,
+#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+#     ar_input_noise=0.0, #0.2, # absolute max value of noise
+#     max_timesteps = 40,
+#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
+#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
+#     trail_name='7M_125M_low_lr_cont3',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
+#     autoregressive=True,
+#     w_decay = True,
+# )
+
+# restart testing autoregressive acc on validation set
+args = Namespace(
+    batch_size=512,
+    PROG_LEN = 15,
+    max_epochs = 40, # @LAURO only does 3 epochs in reality, cosine annealing is disabled
+    LEARNING_RATE=5e-5,
+    frac_to_train = 0.50,
+    input_dropout_prob = 0.0,#2,
+    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+    ar_input_noise=0.0, #0.2, # absolute max value of noise
+    max_timesteps = 40,
+    model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
+    config = 'pythia_125m', #'MEDIUM', # 'LARGE'
+    trail_name='7M_125M_val_metrics2',
+    task='Stock', # 'Stock', 'Compressed', 'Natural'
+    autoregressive=True,
+    w_decay = True,
+)
+
 
 # args = Namespace(
 #     batch_size=512,# 256 for medium
@@ -111,40 +188,25 @@ from random import sample
 # )
 
 
+
+
 # args = Namespace(
-#     batch_size=512,# 256 for medium
+#     batch_size=256,# 256 for medium
 #     PROG_LEN = 15,
 #     max_epochs = 40,
-#     LEARNING_RATE=1e-7,
-#     frac_to_train = 0.50,
+#     LEARNING_RATE=1e-5,
 #     input_dropout_prob = 0.0,#2,
 #     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
 #     ar_input_noise=0.0, #0.2, # absolute max value of noise
+#     frac_to_train = 0.50,
 #     max_timesteps = 40,
-#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
-#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-#     trail_name='pretr-smolr',
-#     task='Compressed', # 'Stock', 'Compressed', 'Natural'
+#     model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
+#     config = 'MEDIUM', #'MEDIUM', # 'LARGE'
+#     trail_name='med_13M_spls',
+#     task='Stock', # 'Stock', 'Compressed', 'Natural'
 #     autoregressive=True,
+#     w_decay = False,
 # )
-
-
-args = Namespace(
-    batch_size=256,# 256 for medium
-    PROG_LEN = 15,
-    max_epochs = 40,
-    LEARNING_RATE=1e-5,
-    input_dropout_prob = 0.0,#2,
-    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-    ar_input_noise=0.0, #0.2, # absolute max value of noise
-    frac_to_train = 0.50,
-    max_timesteps = 40,
-    model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
-    config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-    trail_name='med_13M_spls',
-    task='Stock', # 'Stock', 'Compressed', 'Natural'
-    autoregressive=True,
-)
 
 
 
@@ -234,8 +296,7 @@ class TrainerModule:
         )
         optimizer = optax.chain(
             optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
-            #optax.adam(lr_schedule)
-            optax.adamw(learning_rate=lr_schedule)
+            optax.adamw(learning_rate=lr_schedule) if args.w_decay else optax.adam(lr_schedule)
         )
         
         # Initialize training state
@@ -252,7 +313,7 @@ class TrainerModule:
     def apply(self, inp_data, attention_mask, pos_id, labels=None, loss_mask=None, seed=0):
         rng = jax.random.PRNGKey(seed)
         rng, dropout_apply_rng = random.split(rng)
-        logits = self.model.apply({'params': self.state.params}, inp_data, attention_mask=attention_mask, train=False, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
+        logits = self.model.apply({'params': self.state.params}, inp_data, attention_mask=attention_mask, train=True, position_ids=pos_id, rngs={'dropout': dropout_apply_rng})
         
         def logit_classes_jnp(logits):
             classes = []
@@ -511,6 +572,15 @@ class TrainerModule:
         self.train_step = jax.jit(train_step)
 
 
+        # Training function
+        def eval_call(state, rng, batch):
+            loss_fn = lambda params: calculate_loss(params, rng, batch, train=False)
+            ret = loss_fn(state.params)
+            loss, acc, rng = ret[0], *ret[1]
+            return loss, acc
+        self.eval_call = jax.jit(eval_call)
+
+
         # Evaluation function
         def eval_step(state, rng, batch):
             loss, (acc, rng) = ar_loss(state.params, rng, batch, train=False)
@@ -590,7 +660,7 @@ class TrainerModule:
 
 
 
-    def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=3, validation_loader=None, VALS_PER_EPOCH = 1, train_dataloader_generative=None):
+    def train_epoch(self, train_loader, epoch, LOGS_PER_EPOCH=3, validation_loader=None, VALS_PER_EPOCH = 1, train_dataloader_generative=None, validation_dataloader_single=None):
         # Train model for one epoch, and log avg loss and accuracy
         DATALOADER_LENGTH = len(train_loader)
         LOGGING_INTERVAL = DATALOADER_LENGTH // LOGS_PER_EPOCH
@@ -666,9 +736,30 @@ class TrainerModule:
                         self.logger.add_scalar('train_gen/accuracy60', (eval_acc > 0.6).mean(), global_step=global_step)
                         self.logger.add_scalar('train_gen/accuracy50', (eval_acc > 0.5).mean(), global_step=global_step)
                         trainer.logger.add_scalar('train_gen/loss', eval_loss, global_step=global_step)
-                        if eval_loss < best_eval_loss:
-                            best_eval_loss = eval_loss
-                            trainer.save_model(step=global_step)    
+
+                    if validation_dataloader_single is not None and (idx + 1) % VALIDATION_INTERVAL == 0:
+                        
+                        val_acc_sum, val_loss_sum, val_count = 0.0, 0.0, 0
+                        for idx, e_batch in enumerate(tqdm(validation_dataloader_single, desc='eval single')):
+                            val_loss, val_accuracy = self.eval_call(self.state, self.rng, e_batch)
+                            val_count +=   1
+
+                        # ----------- metrics -------------
+                        val_loss, val_accuracy = val_loss.item(), np.array(val_accuracy)
+                        val_loss_sum += val_loss
+                        val_acc_sum += val_accuracy.mean()
+
+                        
+                        # ----------- TF metrics ----------
+                        self.logger.add_scalar('eval_single/loss', val_loss, global_step=global_step)
+                        self.logger.add_scalar('eval_single/accuracy',     val_accuracy.mean(), global_step=global_step)
+                        self.logger.add_scalar('eval_single/accuracy100', (val_accuracy == 1.0).mean(), global_step=global_step)
+                        self.logger.add_scalar('eval_single/accuracy90',  (val_accuracy > 0.9).mean(), global_step=global_step)
+                        self.logger.add_scalar('eval_single/accuracy80',  (val_accuracy > 0.8).mean(), global_step=global_step)
+                        self.logger.add_scalar('eval_single/accuracy70',  (val_accuracy > 0.7).mean(), global_step=global_step)
+                        self.logger.add_scalar('eval_single/accuracy60',  (val_accuracy > 0.6).mean(), global_step=global_step)
+                        self.logger.add_scalar('eval_single/accuracy50',  (val_accuracy > 0.5).mean(), global_step=global_step)
+                        
 
                     # ----------- TQDM ----------------
                     tepoch.set_postfix({'Batch': idx, 'Train Loss': loss, 'Acc': accuracy.mean(), 'MaxMem': JaxMemUsage.max_usage_str, 'Mem': JaxMemUsage.usage_str})
@@ -997,6 +1088,7 @@ dataset_teacher_forced = WrappedDataset(dataset_path, args.PROG_LEN, args.max_ti
 dataset_generative = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, first=split_size, autoregressive=False)
 dataset_generative.files = sample(dataset_generative.files, 10000)
 test_dataset = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=1 - split_size )
+validation_dataset_single = WrappedDataset(dataset_path, args.PROG_LEN, args.max_timesteps, last=1 - split_size, autoregressive=True)
 
 next(iter(dataset_teacher_forced))
 next(iter(dataset_generative))
@@ -1021,6 +1113,7 @@ collate_fn = make_collate_fn(args.PROG_LEN)
 train_dataloader_teacher_forced = DataLoader(dataset_teacher_forced, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=36, shuffle=True)#, pin_memory=True) num_workers=1, prefetch_factor=2)#
 train_dataloader_generative= DataLoader(dataset_generative, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, prefetch_factor=36, shuffle=True)#, pin_memory=True) num_workers=1, prefetch_factor=2)#
 test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=36, shuffle=True)#, pin_memory=True)
+validation_dataloader_single = DataLoader(validation_dataset_single, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, prefetch_factor=36, shuffle=True)#, pin_memory=True)
 num_train_iters = len(train_dataloader_teacher_forced) * args.max_epochs
 
 
@@ -1189,12 +1282,17 @@ if args.task in ['Compressed', 'Natural']:
 
 # trainer.load_model(log_dir="ar_test GPTNEO pythia_125m TASK: Compressed LR: 1e-05 ParamNoise: 0.0 InpDrop: 0.0 bs: 512 nembed: 768 n_layer: 12 n_head: 12")
 
+# trainer.load_model(log_dir="7M_125M_hlr_wd_cont2 GPTNEO pythia_125m TASK: Stock LR: 5e-05 TrainFrac:0.5 ParamNoise: 0.0 InpDrop: 0.0 bs: 512 nembed: 768 n_layer: 12 n_head: 12")
+
 #%%
 # log every 200k samples
 LOG_FREQ = 35#int(len(train_dataloader_teacher_forced) / 200000) # if args.task == 'Stock' else 3
 
 for epoch_idx in range(1, args.max_epochs+1):
-    trainer.train_epoch(train_dataloader_teacher_forced, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=LOG_FREQ, LOGS_PER_EPOCH=LOG_FREQ, train_dataloader_generative=train_dataloader_generative)
+    trainer.train_epoch(train_dataloader_teacher_forced, epoch=epoch_idx, validation_loader=test_dataloader, VALS_PER_EPOCH=LOG_FREQ, LOGS_PER_EPOCH=LOG_FREQ, 
+                            train_dataloader_generative=train_dataloader_generative, 
+                            validation_dataloader_single=validation_dataloader_single,
+                        )
 
 
 #%%

@@ -15,7 +15,9 @@ class ZipStreamReader:
         return x, y
 
 # df = ZipStreamReader('cp_dataset_train_w.zip')
-df = ZipStreamReader('.data/iTracr_standard_20M.zip')
+df = ZipStreamReader('.data/iTracr_dataset_v2_train.zip')
+# df = ZipStreamReader('.data/iTracr_standard_20M.zip')
+
 
 #df = ZipStreamReader('.data/dltest.zip')
 #df = ZipStreamReader('fixed.zip')
@@ -24,22 +26,26 @@ it = iter(df)
 # for i in range(200):
 #     next(it)
 sizes = []
-for i in range(5):
+for i in range(500000):
     # next(it)
     # next(it)
     # next(it)
-    x,y = next(it)
+    try:
+        x,y = next(it)
 
-    print(len(df))
-    from data.dataloaders import ProgramEncoder
-    # print(x.keys())
-    prog_enc = ProgramEncoder(15)
-    print(prog_enc.decode_pred(y))
-    
-    sizes.append(y.shape[0])
+        from data.dataloaders import ProgramEncoder
+        # print(x.keys())
+        # prog_enc = ProgramEncoder(15)
+        # print(prog_enc.decode_pred(y))
+        
+        sizes.append(y.shape[0])
+        if (i % 50000):
+            import pandas as pd
+            print(pd.Series(sizes).value_counts())
+    except:
+        pass
 
-import pandas as pd
-print(pd.Series(sizes).value_counts())
+
     
 #df.zip.close()
 
