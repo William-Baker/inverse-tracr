@@ -1,6 +1,7 @@
 #%%
 from data.parallelzipfile import ParallelZipFile as ZipFile
 import cloudpickle
+from random import randint
 
 class ZipStreamReader:
     def __init__(self, dir:str) -> None:
@@ -15,25 +16,22 @@ class ZipStreamReader:
         return x, y
 
 # df = ZipStreamReader('cp_dataset_train_w.zip')
-df = ZipStreamReader('.data/iTracr_dataset_v2_train.zip')
-# df = ZipStreamReader('.data/iTracr_standard_20M.zip')
+#df = ZipStreamReader('.data/iTracr_dataset_v2_train.zip')
+df = ZipStreamReader('.data/iTracr_standard_20M.zip')
 
 
 #df = ZipStreamReader('.data/dltest.zip')
 #df = ZipStreamReader('fixed.zip')
 print(len(df))
-it = iter(df)
 # for i in range(200):
 #     next(it)
 sizes = []
 for i in range(500000):
-    # next(it)
-    # next(it)
-    # next(it)
     try:
-        x,y = next(it)
+        idx = randint(0, len(df))
+        x,y = df.__getitem__(idx)
 
-        from data.dataloaders import ProgramEncoder
+        # from data.dataloaders import ProgramEncoder
         # print(x.keys())
         # prog_enc = ProgramEncoder(15)
         # print(prog_enc.decode_pred(y))

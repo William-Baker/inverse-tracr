@@ -25,10 +25,14 @@ elif mode == 'standard':
     vocab_range = (3, 15)
     numeric_range = (3, 15)
     numeric_inputs_possible = True
-    output_path = '.data/iTracr_dataset_v2_train/'
+    output_path = '.data/iTracr_dataset_v2_train_v2/'
     cmd = f"python generate_standard_dataset.py -pth \"{output_path}\" -s {samples} -vmin {vocab_range[0]} -vmax {vocab_range[1]} -nmin {numeric_range[0]} -nmax {numeric_range[1]} -num {numeric_inputs_possible}"
 
-#%%
+# print(cmd)
+# 1/0
+# #%%
+
+# python generate_standard_dataset.py -pth .data/iTracr_dataset_v2_train_v2 -s 1000000 -vmin 3 -vmax 15 -nmin 3 -nmax 15 -num True
 
 def run_experiments(id):
     logger = SummaryWriter(log_dir=f"pool compressed Tracr/{id}")

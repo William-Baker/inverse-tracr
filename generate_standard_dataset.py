@@ -4,19 +4,13 @@ from os import makedirs
 from tqdm import tqdm
 import cloudpickle
 from datetime import datetime
-   
-from data.dataloader_streams import StreamWriter
-from data.parameter_program_dataloader import TorchParameterProgramDataset
+from data.encoded_dataloaders import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
+from data.dataloaders import ProgramEncoder
+
 
 try:
    # construct the argument parse and parse the arguments
    ap = argparse.ArgumentParser()
-   ap.add_argument("-s", "--samples", required=True, help="number of samples", type=int)
-   ap.add_argument("-vmin", "--vocab_min", required=False, help="lower bound of vocab size", type=int, default=6)
-   ap.add_argument("-vmax", "--vocab_max", required=False, help="upper bound of vocab size", type=int, default=6)
-   ap.add_argument("-nmin", "--number_min", required=False, help="lower bound of numeric range size", type=int, default=6)
-   ap.add_argument("-nmax", "--number_max", required=False, help="upper bound of numeric range size", type=int, default=6)
-   ap.add_argument("-num", "--numeric_inputs", required=False, help="whether to generate samples with numeric inputs", type=bool, default=False)
    ap.add_argument("-pth", "--output_path", required=False, help="path to export files to", type=str, default=False)
 
 
@@ -25,22 +19,24 @@ try:
 
    print(args.output_path)
 
-   dataset = TorchParameterProgramDataset(3, 15, no_samples = args.samples, generator_backend='bounded', bounded_timeout_multiplier=1,
-                                          vocab_size_range=(args.vocab_min, args.vocab_max),
-                                          numeric_range=(args.number_min, args.number_max),
-                                          numeric_inputs_possible=args.numeric_inputs
-                                       )
-   #pth = '.data/iTracr_dataset_v2_test/'
-   # sw = StreamWriter(args.pth, dataset, id_N=(args.id_number, args.proc_num), start_offset=args.offset)
-   # sw.write_samples(num_threads=0)
+   
+   vocab_range = (3, 15)
+   numeric_range = (3, 15)
+   numeric_inputs_possible = True
+
+   (min_prog_len,max_prog_len) = 3,15
+   vocab_size_range = vocab_range
+   func = program_craft_generator_bounded
+   gen, OP_VOCAB, VAR_VOCAB = craft_dataset((min_prog_len,max_prog_len), func=func, timeout_multiplier=int(1).as_integer_ratio,
+                                 vocab_size_range=vocab_size_range, numeric_range=numeric_range, numeric_inputs_possible=numeric_inputs_possible)
 
 
+   prog_enc = ProgramEncoder(max_prog_len)
 
 
    makedirs(args.output_path, exist_ok=True)
-   it = iter(dataset)
    for idx in tqdm(range(args.samples), desc=f'Writing samples:'):
-      x, y = next(it)
+      x, y = gen()
       # np.savez(self.dir + str(idx).zfill(8), x=x, y=y)
       for i in range(2000):
          try:

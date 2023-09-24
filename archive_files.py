@@ -42,6 +42,7 @@ while True:
     except:
         pass
     try:
+        #transfer_to_archive(source_dir = '.data/iTracr_dataset_v2_train')
         transfer_to_archive(source_dir = '.data/iTracr_dataset_v2_train')
     except:
         pass

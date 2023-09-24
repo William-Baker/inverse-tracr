@@ -21,6 +21,9 @@ from collections import defaultdict
 from enum import Enum
 import tracr.compiler.lib as lib
 from tracr.rasp import rasp
+import networkx as nx
+
+
 class Cat(Enum):
     numeric = 1
     categoric = 2
@@ -282,7 +285,8 @@ def generate_ops(max_ops: int, vocab: Sequence, numeric_range: tuple):
     sample_function(scope, ops, RASP_OPS_RETURNS_SOP)
 
     return ops
-import networkx as nx
+
+
 def compile_program(ops):
     op_names = dict([(op.output, idx+2) for idx, op in enumerate(ops)] + [('tokens', 0), ('indices', 1)])
 
