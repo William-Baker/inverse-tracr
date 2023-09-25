@@ -175,7 +175,7 @@ args = Namespace(
     batch_size=512,
     PROG_LEN = 15,
     max_epochs = 40, 
-    LEARNING_RATE=5e-5,
+    LEARNING_RATE=5e-5, # normally 5e-5, decreased to 5e-6 to test on 26/09/2023 @ 00:40 GMT
     frac_to_train = 0.50,
     input_dropout_prob = 0.0,#2,
     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
@@ -183,7 +183,7 @@ args = Namespace(
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='iTracrV4_1',
+    trail_name='iTracrV5_1',
     task='Stock', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
     w_decay = True,
@@ -256,7 +256,7 @@ if args.task == 'Stock':
     from data.dataloader_streams import ZipPickleStreamReader as StoreReader
     from data.parameter_encoder import CRAFT_TIMESTEPS as TIMESTEPS
     from data.parameter_encoder import CRAFT_ARCH as ARCH
-    dataset_path = '.data/iTracr_dataset_v4.zip'#'.data/iTracr_standard_20M.zip'
+    dataset_path = '.data/iTracr_dataset_v5.zip'#'.data/iTracr_standard_20M.zip'
 elif args.task == 'Compressed':
     from data.dataloader_streams import ZipPickleStreamReader as StoreReader
     from data.parameter_encoder import JAX_TIMESTEPS as TIMESTEPS

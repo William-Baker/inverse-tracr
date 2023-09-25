@@ -4,11 +4,13 @@
 from data.parallelzipfile import ParallelZipFile
 from zipfile import ZipFile, ZIP_DEFLATED
 import cloudpickle
-import cloudpickle
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from collections import defaultdict
 from random import shuffle
+
+DISABLE_TQDM = False
+
 
 class ZipStreamReader:
     def __init__(self, dir: str) -> None:
@@ -30,14 +32,6 @@ total = 0
 print("Done initializing. Total nr of files:", len(df.files))
 
 
-def print_info(d):
-    dupes = sum(list(d.values()))
-    print()
-    print(f"Programs duplicated: {(100 * dupes / total):.3f}%  (total {dupes})")
-    for k, v in sorted(list(d.items()), key=lambda x: x[0]):
-        print(f"Program length {k}: {(100 * v / dupes):.3f}%  (total {v}).")
-
-
 def read_file(idx):
     try:
         return df[idx]
@@ -45,10 +39,8 @@ def read_file(idx):
         return None
 
 
-#NUM_SAMPLES = 10**5
 NUM_SAMPLES = len(df.files)
 deduplicated = set()
-
 
 
 out = ZipFile(file='.data/deduplicated.zip', mode='w', compression=ZIP_DEFLATED, compresslevel=4)
@@ -56,13 +48,14 @@ out_names = [str(x).zfill(9) + '.pkl' for x in range(NUM_SAMPLES)]
 shuffle(out_names)
 out_i = 0
 
+
 with ThreadPoolExecutor() as executor:
     futures = []
-    for idx in tqdm(range(NUM_SAMPLES), desc='collecting futures'):
-        future = executor.submit(read_file, idx)
+    for idx in tqdm(range(NUM_SAMPLES), desc='collecting futures', disable=DISABLE_TQDM):
+        future = executor.submit(read_file, idx)  # probably better to use map here
         futures.append(future)
 
-    for i, future in tqdm(enumerate(as_completed(futures)), desc='scheduling set checks', total=NUM_SAMPLES):
+    for i, future in tqdm(enumerate(as_completed(futures)), desc='scheduling set checks', total=NUM_SAMPLES, disable=DISABLE_TQDM):
         res = future.result()
         if res is None:
             continue
@@ -72,13 +65,10 @@ with ThreadPoolExecutor() as executor:
             deduplicated.add(b)
 
             # write to zip
-            b = cloudpickle.dumps(res)
-            out.writestr(out_names[out_i], b)
+            pickled = cloudpickle.dumps(res)
+            out.writestr(out_names[out_i], pickled)
             out_i += 1
-        del x
             
-
-
 
 print("Original length:", NUM_SAMPLES)
 print("Length of deduplicated dataset:", len(deduplicated))
