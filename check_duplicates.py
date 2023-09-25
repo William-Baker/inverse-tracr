@@ -27,7 +27,8 @@ class ZipStreamReader:
 #df = ZipStreamReader('.data/sequential_fixed.zip')
 # df = ZipStreamReader('.data/output.zip')
 # df = ZipStreamReader('.data/iTracr_dataset_v2_train_v2.zip')
-df = ZipStreamReader('.data/iTracr_dataset_v3.zip')
+#df = ZipStreamReader('.data/iTracr_dataset_v3.zip')
+df = ZipStreamReader('.data/iTracr_dataset_v4.zip')
 
 
 
@@ -41,6 +42,7 @@ def p(d):
         print(f"{k}: {v} \t {100 * v / dupes}%")
 
 """
+print(len(df.files))
 progs = []
 # method is pretty slow since sequeuntially reading
 for idx, entry in tqdm(enumerate(df.files), desc='reading from dir'):
@@ -67,10 +69,10 @@ def read_file(idx):
         return None
     return y
 
-# random_sample = sample(df.files, 10000)
-random_sample = list(df.files)
-shuffle(random_sample)
-
+random_sample = sample(df.files, 100000)
+#random_sample = list(df.files)
+#shuffle(random_sample)
+print(len(df.files))
 progs = defaultdict(lambda: [])
 with ThreadPoolExecutor() as executor:
     futures = []

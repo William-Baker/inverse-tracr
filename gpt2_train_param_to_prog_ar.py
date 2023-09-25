@@ -183,7 +183,7 @@ args = Namespace(
     max_timesteps = 40,
     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='iTracrV3_1',
+    trail_name='iTracrV4_1',
     task='Stock', # 'Stock', 'Compressed', 'Natural'
     autoregressive=True,
     w_decay = True,
@@ -256,7 +256,7 @@ if args.task == 'Stock':
     from data.dataloader_streams import ZipPickleStreamReader as StoreReader
     from data.parameter_encoder import CRAFT_TIMESTEPS as TIMESTEPS
     from data.parameter_encoder import CRAFT_ARCH as ARCH
-    dataset_path = '.data/iTracr_dataset_v3.zip'#'.data/iTracr_standard_20M.zip'
+    dataset_path = '.data/iTracr_dataset_v4.zip'#'.data/iTracr_standard_20M.zip'
 elif args.task == 'Compressed':
     from data.dataloader_streams import ZipPickleStreamReader as StoreReader
     from data.parameter_encoder import JAX_TIMESTEPS as TIMESTEPS
