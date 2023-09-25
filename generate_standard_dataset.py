@@ -11,7 +11,7 @@ from data.dataloaders import ProgramEncoder
 try:
    # construct the argument parse and parse the arguments
    ap = argparse.ArgumentParser()
-   ap.add_argument("-pth", "--output_path", required=False, help="path to export files to", type=str, default=False)
+   ap.add_argument("-pth", "--output_path", required=False, help="path to export files to", type=str, default='.data/iTracr_dataset_v3_train/')
 
 
    args = ap.parse_args()
@@ -19,7 +19,8 @@ try:
 
    print(args.output_path)
 
-   
+   samples = 10000000
+
    vocab_range = (3, 15)
    numeric_range = (3, 15)
    numeric_inputs_possible = True
@@ -33,18 +34,27 @@ try:
 
    prog_enc = ProgramEncoder(max_prog_len)
 
+   def get():
+    x,y = gen()
+    y = prog_enc.tokenise_program(y)
+    return x,y
+
 
    makedirs(args.output_path, exist_ok=True)
-   for idx in tqdm(range(args.samples), desc=f'Writing samples:'):
-      x, y = gen()
+   for idx in tqdm(range(samples), desc=f'Writing samples:'):
+      x, y = get()
       # np.savez(self.dir + str(idx).zfill(8), x=x, y=y)
-      for i in range(2000):
+      pth = str(datetime.now().strftime("%m-%d %H.%M.%S.%f")) + '.pkl'
+      writes = 0
+      for i in range(100):
          try:
-            with open(args.output_path + "/" +  str(datetime.now().strftime("%m-%d %H.%M.%S.%f")) + '.pkl', 'wb') as f:
+            with open(args.output_path + "/" +  pth, 'wb') as f:
                cloudpickle.dump((x,y), f)
-            
+               writes += 1
+            break
          except:
             print("failed to save to zip archive")
+      assert writes <= 1
 except Exception as E:
     from os import makedirs
     makedirs('logs', exist_ok=True)

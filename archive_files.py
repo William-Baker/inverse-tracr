@@ -10,26 +10,33 @@ import numpy as np
 from time import sleep
 from tqdm import tqdm
 
-def transfer_to_archive(source_dir: str):
-    dest_dir = source_dir + '.zip'
+def transfer_to_archive(source_dir: str, dest_dir=None):
+    if dest_dir is None:
+        dest_dir = source_dir + '.zip'
     from zipfile import ZipFile, ZIP_DEFLATED
     import os
     source_files = os.listdir(source_dir)
     zip = ZipFile(dest_dir, mode='a', compression=ZIP_DEFLATED, compresslevel=9)
     dest_files = [x.filename for x in zip.filelist]
     transfer_files = set(source_files) - set(dest_files)
-    for file in tqdm(transfer_files):
-        try:
-            zip.write(os.path.join(source_dir, file), file)
-            # os.remove(os.path.join(source_dir, file)) # TODO REMOVE
-        except:
-            pass
-    zip.close()
-    for file in transfer_files:
-        try:
-            os.remove(os.path.join(source_dir, file))
-        except Exception as E:
-            pass
+    print(f"doing {source_dir}")
+    while len(transfer_files) > 0:
+        num = min(len(transfer_files), 1000)
+        working_files = transfer_files[:num]
+        transfer_files = transfer_files[num:]
+        print(f"doing {len(working_files)}")
+        for file in tqdm(working_files):
+            try:
+                zip.write(os.path.join(source_dir, file), file)
+                # os.remove(os.path.join(source_dir, file)) # TODO REMOVE
+            except:
+                pass
+        zip.close()
+        for file in working_files:
+            try:
+                os.remove(os.path.join(source_dir, file))
+            except Exception as E:
+                pass
 
 while True:
     print("Archiving samples...")
@@ -43,7 +50,7 @@ while True:
         pass
     try:
         #transfer_to_archive(source_dir = '.data/iTracr_dataset_v2_train')
-        transfer_to_archive(source_dir = '.data/iTracr_dataset_v2_train')
+        transfer_to_archive(source_dir = '.data/iTracr_dataset_v3_train', dest_dir='.data/output.zip')
     except:
         pass
     print("done, waiting")

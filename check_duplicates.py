@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import sleep
 from tqdm import tqdm
 from collections import defaultdict
+from random import sample, shuffle
 
 class ZipStreamReader:
     def __init__(self, dir:str) -> None:
@@ -23,8 +24,10 @@ class ZipStreamReader:
 # df = ZipStreamReader('cp_dataset_train_w.zip')
 # df = ZipStreamReader('.data/iTracr_dataset_v2_train.zip')
 #df = ZipStreamReader('.data/iTracr_standard_20M.zip')
-df = ZipStreamReader('.data/sequential_fixed.zip')
-
+#df = ZipStreamReader('.data/sequential_fixed.zip')
+# df = ZipStreamReader('.data/output.zip')
+# df = ZipStreamReader('.data/iTracr_dataset_v2_train_v2.zip')
+df = ZipStreamReader('.data/iTracr_dataset_v3.zip')
 
 
 
@@ -34,7 +37,7 @@ total = 0
 def p(d):
     dupes = sum(list(d.values()))
     print(f"{100 * dupes / total}% duplicated")
-    for k,v in d.items():
+    for k,v in sorted(list(d.items()), key=lambda x: x[0]):
         print(f"{k}: {v} \t {100 * v / dupes}%")
 
 """
@@ -64,10 +67,14 @@ def read_file(idx):
         return None
     return y
 
+# random_sample = sample(df.files, 10000)
+random_sample = list(df.files)
+shuffle(random_sample)
+
 progs = defaultdict(lambda: [])
 with ThreadPoolExecutor() as executor:
     futures = []
-    for idx, entry in tqdm(enumerate(df.files), desc='reading from dir'):
+    for idx, entry in tqdm(enumerate(random_sample), desc='reading from dir'):
         future = executor.submit(read_file, idx)
         futures.append(future)
 
@@ -86,11 +93,11 @@ with ThreadPoolExecutor() as executor:
         if not duplicated:
             progs[y.shape[0]].append(y)
 
-        if (i % 100) == 0:
+        if (i % 1000) == 0:
             p(duplicates)
 
 
-
+"""
 class custom_set:
     def __init__(self) -> None:
         self.set = defaultdict(lambda: [])
@@ -200,3 +207,4 @@ for idx, entry in tqdm(enumerate(df.files), desc='reading from dir'):
 #     os.remove(".data/iTracr_dataset_v2_train/" + i)
 
 #%%
+"""

@@ -1,3 +1,59 @@
+if you have problems reading a zip file use this to repair it:
+`zip -FF bad.zip --out good.zip`
+
+# Train Instructions
+The autoregressive training script is gpt2_train_param_to_prog_ar.py, to run do the following
+```
+cd /rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr
+source venv/bin/activate
+python gpt2_train_param_to_prog_ar.py
+```
+## hyper params
+currently at line 174
+```
+args = Namespace(
+    batch_size=512,
+    PROG_LEN = 15,
+    max_epochs = 40, 
+    LEARNING_RATE=5e-5,
+    frac_to_train = 0.50,
+    input_dropout_prob = 0.0,#2,
+    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
+    ar_input_noise=0.0, #0.2, # absolute max value of noise
+    max_timesteps = 40,
+    model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
+    config = 'pythia_125m', #'MEDIUM', # 'LARGE'
+    trail_name='iTracrV3_1',
+    task='Stock', # 'Stock', 'Compressed', 'Natural'
+    autoregressive=True,
+    w_decay = True,
+)
+
+```
+
+make sure to change the trial name each run (i know its spelt wrong XD)
+
+all should be pretty self explanitory, leave the task unchanged, feel free to mess around with model, use either GPTNEO+pythia_125m or GPT2 + MEDIUM or GPT2 + LARGE
+
+ignore max timesteps
+keep autoregressive true
+ignore frac to train
+keep prog len 15
+
+## results
+results are logged to tensorboard run this to see everything:
+`tensorboard --logdir "/rds/project/rds-dsk-lab-eWkDxBhxBrQ/iTracr/inverse-tracr/.logs" --port 8080 --samples_per_plugin=images=10000`
+feel free to decrease samples per plugin images, if scalars are taking ages to load
+
+# data generation
+I'll try to handle all of this, but there are two sbatch scripts:
+1. `generate_sbatch.txt` - allocates 10 full CPU nodes and starts writing samples to .data/iTracr_v3 - can be run as many times as we need, beware of 488 cpu limit on sl3 and 4000 cpu limit on sl2
+2. `generate_zip_sbatch.txt` - should always be running if you're writing to .data or we will run out of space quickly, however ONLY ONE instance can be running at any given time!
+
+
+compressed samples are written to .data/output.zip, if we've got lots more data i delete .data/iTracr_dataset_v3.zip and copy output.zip to iTracr_dataset_v3.zip.
+
+
 `~/go/bin/pprof -svg ~/inverse-tracr/memory.prof`
 
 

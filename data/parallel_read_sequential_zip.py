@@ -122,7 +122,7 @@ def get_directory_contents_and_write(dir_path, zip_name, batch_size=100000):
 
 
 if __name__ == "__main__":
-    dir_path = ".data/iTracr_dataset_v2_train"
+    dir_path = ".data/iTracr_dataset_v3_train"
     zip_name = ".data/output.zip"
     
     

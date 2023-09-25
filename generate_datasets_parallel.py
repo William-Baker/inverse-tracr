@@ -21,12 +21,8 @@ if mode == 'compressed':
     cmd = 'python train_compressed_w_emb_multiproc.py'
     output_path = 1/0 # TODO
 elif mode == 'standard':
-    samples = 1000000
-    vocab_range = (3, 15)
-    numeric_range = (3, 15)
-    numeric_inputs_possible = True
-    output_path = '.data/iTracr_dataset_v2_train_v2/'
-    cmd = f"python generate_standard_dataset.py -pth \"{output_path}\" -s {samples} -vmin {vocab_range[0]} -vmax {vocab_range[1]} -nmin {numeric_range[0]} -nmax {numeric_range[1]} -num {numeric_inputs_possible}"
+    output_path = '.data/iTracr_dataset_v3_train/'
+    cmd = f"python generate_standard_dataset.py -pth \"{output_path}\""
 
 # print(cmd)
 # 1/0
@@ -54,19 +50,26 @@ def run_experiments(id):
             tb = traceback.format_exc()
             print(str(tb))
         
-
+compression = False
 if __name__ == '__main__':
     #processes = int(os.cpu_count() // 1.25)
     #processes = 5#int(os.cpu_count() * 1.5)
     cores = int(len(os.sched_getaffinity(0)))#os.cpu_count()
-    compressing_cores = max(int(cores * 0.1), 1)
-    generating_cores = cores - compressing_cores
-    print({'Generating cores': generating_cores, 'Compressing Cores': compressing_cores})
-    threads = [Thread(target = run_experiments, args = (idx, )) for idx in range(generating_cores)]
-    [thread.start() for thread in threads]
-    while True:
-        time.sleep(30)
-        get_directory_contents_and_write(output_path, '.data/output.zip')
+    if compression:
+        compressing_cores = max(int(cores * 0.1), 1)
+        generating_cores = cores - compressing_cores
+        print({'Generating cores': generating_cores, 'Compressing Cores': compressing_cores})
+        threads = [Thread(target = run_experiments, args = (idx, )) for idx in range(generating_cores)]
+        [thread.start() for thread in threads]
+        while True:
+            time.sleep(30)
+            get_directory_contents_and_write(output_path, '.data/output.zip')
+    else:
+        generating_cores = cores
+        print({'Generating cores': generating_cores})
+        threads = [Thread(target = run_experiments, args = (idx, )) for idx in range(generating_cores)]
+        [thread.start() for thread in threads]
+
     # while True:
     #     print("Archiving samples...")
     #     try:
