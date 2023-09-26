@@ -28,9 +28,7 @@ class ZipStreamReader:
 
 print('Initializing reader...')
 df = ZipStreamReader('.data/iTracr_dataset_v4.zip')
-total = 0
 print("Done initializing. Total nr of files:", len(df.files))
-
 
 def read_file(idx):
     try:
@@ -38,36 +36,31 @@ def read_file(idx):
     except EOFError:
         return None
 
-
 NUM_SAMPLES = len(df.files)
 deduplicated = set()
 
 
-out = ZipFile(file='.data/deduplicated.zip', mode='w', compression=ZIP_DEFLATED, compresslevel=4)
+out = ZipFile(file='.data/deduplicated-v5.zip', mode='w', compression=ZIP_DEFLATED, compresslevel=4)
 out_names = [str(x).zfill(9) + '.pkl' for x in range(NUM_SAMPLES)]
 shuffle(out_names)
 out_i = 0
 
 
-with ThreadPoolExecutor() as executor:
-    futures = []
-    for idx in tqdm(range(NUM_SAMPLES), desc='collecting futures', disable=DISABLE_TQDM):
-        future = executor.submit(read_file, idx)  # probably better to use map here
-        futures.append(future)
+print("Iterating through files...")
+for idx in tqdm(range(NUM_SAMPLES), desc='load and save deduped', disable=DISABLE_TQDM):
+    sample = read_file(idx)
+    if sample is None:
+        continue
 
-    for i, future in tqdm(enumerate(as_completed(futures)), desc='scheduling set checks', total=NUM_SAMPLES, disable=DISABLE_TQDM):
-        res = future.result()
-        if res is None:
-            continue
-        x, program = res
-        b = program.tobytes()
-        if b not in deduplicated:
-            deduplicated.add(b)
+    x, program = sample
+    b = program.tobytes()
+    if b not in deduplicated:
+        deduplicated.add(b)
 
-            # write to zip
-            pickled = cloudpickle.dumps(res)
-            out.writestr(out_names[out_i], pickled)
-            out_i += 1
+        # write to zip
+        pickled = cloudpickle.dumps(sample)
+        out.writestr(out_names[out_i], pickled)
+        out_i += 1
             
 
 print("Original length:", NUM_SAMPLES)
