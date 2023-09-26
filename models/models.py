@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from flax import linen as nn
 #from transformers.models.gpt2.modeling_flax_gpt2 import FlaxGPT2BlockCollection
-from flax_gpt2 import FlaxGPT2BlockCollection
+from models.flax_gpt2 import FlaxGPT2BlockCollection
 from transformers import GPT2Config
 import math
 import numpy as np

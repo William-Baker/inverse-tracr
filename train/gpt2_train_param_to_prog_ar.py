@@ -38,15 +38,16 @@
 import os
 import jax
 
+from jax import tree_map
+from utils.jax_helpers import zero_grads, create_mask
 
-#os.environ["CUDA_VISIBLE_DEVICES"]=""
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
-# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 
 
 from jax import random
 import jax.numpy as jnp
 import os
+import json
 from torch.utils.tensorboard import SummaryWriter
 import optax
 from flax.training import train_state, checkpoints
@@ -55,218 +56,70 @@ import numpy as np
 import torch, flax
 torch.cuda.is_available = lambda : False
 from torch.utils.data import DataLoader
+JaxMemUsage.launch(interval=0.01)
+from dill import dump, load
+from jaxlib.xla_extension import XlaRuntimeError
+from transformers.models.gptj.configuration_gptj import GPTJConfig
+from argparse import Namespace
+from functools import partial
+from flax.core.frozen_dict import unfreeze
+from jax import tree_map
+from utils.jax_helpers import zero_grads, create_mask
+from random import sample
+import argparse
+from torch.nn.utils.rnn import pad_sequence
+
+from data.dataloaders import ProgramEncoder
+from data.parameter_encoder import CRAFT_TIMESTEPS, JAX_TIMESTEPS, CRAFT_ARCH, JAX_ARCH
+from data.parameter_encoder import get_onehot_timestep_encoder
+from data.parameter_encoder import decode_timesteps
 from data.parameter_program_dataloader import TorchParameterProgramDataset
 from data.plot_true_v_pred import plot_orginal_heatmaps, figure_to_array, plot_orginal_heatmaps_ar
 from data.dataset import example_program_dataset
 from data.encoded_dataloaders import encode_rasp_program
 from utils.export_compressed_params import compress_params, encode_jax_params
 from utils.jax_helpers import JaxMemUsage
-JaxMemUsage.launch(interval=0.01)
-from dill import dump, load
-from jaxlib.xla_extension import XlaRuntimeError
-from models import GPT2, GPT2Config, GPTNeo, GPTJ
-from transformers.models.gptj.configuration_gptj import GPTJConfig
-from argparse import Namespace
-from data.dataloaders import ProgramEncoder
-from functools import partial
-from flax.core.frozen_dict import unfreeze
-from jax import tree_map
-from utils.jax_helpers import zero_grads, create_mask
-from random import sample
-
-# GPT Large Train config
-
-# standard training pythia 125
-# args = Namespace(
-#     batch_size=512,# 256 for medium
-#     PROG_LEN = 15,
-#     max_epochs = 40,
-#     LEARNING_RATE=1e-5,
-#     frac_to_train = 0.50,
-#     input_dropout_prob = 0.0,#2,
-#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-#     ar_input_noise=0.0, #0.2, # absolute max value of noise
-#     max_timesteps = 40,
-#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
-#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-#     trail_name='7M_125M',
-#     task='Stock', # 'Stock', 'Compressed', 'Natural'
-#     autoregressive=True,
-#     w_decay = False,
-# )
-
-# args = Namespace(
-#     batch_size=512
-#     PROG_LEN = 15,
-#     max_epochs = 40, # @LAURO only does 3 epochs in reality, cosine annealing is disabled
-#     LEARNING_RATE=5e-5,
-#     frac_to_train = 0.50,
-#     input_dropout_prob = 0.0,#2,
-#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-#     ar_input_noise=0.0, #0.2, # absolute max value of noise
-#     max_timesteps = 40,
-#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
-#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-#     trail_name='7M_125M_hlr_wd_cont2',
-#     task='Stock', # 'Stock', 'Compressed', 'Natural'
-#     autoregressive=True,
-#     w_decay = True,
-# )
-
-# # super high LR using cont2 aboave --- discarded all previous learning
-# args = Namespace(
-#     batch_size=512,# 256 for medium
-#     PROG_LEN = 15,
-#     max_epochs = 40,
-#     LEARNING_RATE=1e-3,
-#     frac_to_train = 0.50,
-#     input_dropout_prob = 0.0,#2,
-#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-#     ar_input_noise=0.0, #0.2, # absolute max value of noise
-#     max_timesteps = 40,
-#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
-#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-#     trail_name='7M_125M_super_high_lr',
-#     task='Stock', # 'Stock', 'Compressed', 'Natural'
-#     autoregressive=True,
-#     w_decay = True,
-# )
-
-# super low LR using cont2 above
-# args = Namespace(
-#     batch_size=512,# 256 for medium
-#     PROG_LEN = 15,
-#     max_epochs = 3,
-#     LEARNING_RATE=5e-7,
-#     frac_to_train = 0.50,
-#     input_dropout_prob = 0.0,#2,
-#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-#     ar_input_noise=0.0, #0.2, # absolute max value of noise
-#     max_timesteps = 40,
-#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
-#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-#     trail_name='7M_125M_low_lr_cont3',
-#     task='Stock', # 'Stock', 'Compressed', 'Natural'
-#     autoregressive=True,
-#     w_decay = True,
-# )
-
-# restart testing autoregressive acc on validation set
-# args = Namespace(
-#     batch_size=512,
-#     PROG_LEN = 15,
-#     max_epochs = 40, # @LAURO only does 3 epochs in reality, cosine annealing is disabled
-#     LEARNING_RATE=5e-5,
-#     frac_to_train = 0.50,
-#     input_dropout_prob = 0.0,#2,
-#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-#     ar_input_noise=0.0, #0.2, # absolute max value of noise
-#     max_timesteps = 40,
-#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
-#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-#     trail_name='7M_125M_val_metrics2',
-#     task='Stock', # 'Stock', 'Compressed', 'Natural'
-#     autoregressive=True,
-#     w_decay = True,
-# )
-
-# WARNING using old dataset
-args = Namespace(
-    batch_size=512,
-    PROG_LEN = 15,
-    max_epochs = 40, 
-    LEARNING_RATE=5e-5, 
-    frac_to_train = 0.50,
-    input_dropout_prob = 0.0,#2,
-    parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-    ar_input_noise=0.0, #0.2, # absolute max value of noise
-    max_timesteps = 40,
-    model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
-    config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-    trail_name='iTracrV5_1',
-    task='Stock', # 'Stock', 'Compressed', 'Natural'
-    autoregressive=True,
-    w_decay = True,
-)
-
-
-# args = Namespace(
-#     batch_size=512,# 256 for medium
-#     PROG_LEN = 15,
-#     max_epochs = 10,
-#     LEARNING_RATE=2e-6,
-#     frac_to_train = 0.50,
-#     input_dropout_prob = 0.0,#2,
-#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-#     ar_input_noise=0.0, #0.2, # absolute max value of noise
-#     max_timesteps = 40,
-#     model = 'GPTNEO', # 'GPT2', 'GPTJ', 'GPTNEO'
-#     config = 'pythia_125m', #'MEDIUM', # 'LARGE'
-#     trail_name='std-lowlr',
-#     task='Stock', # 'Stock', 'Compressed', 'Natural'
-#     autoregressive=True,
-# )
+from models.models import GPT2, GPT2Config, GPTNeo, GPTJ
+    
+from transformers import GPTJConfig
 
 
 
-
-# args = Namespace(
-#     batch_size=256,# 256 for medium
-#     PROG_LEN = 15,
-#     max_epochs = 40,
-#     LEARNING_RATE=1e-5,
-#     input_dropout_prob = 0.0,#2,
-#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-#     ar_input_noise=0.0, #0.2, # absolute max value of noise
-#     frac_to_train = 0.50,
-#     max_timesteps = 40,
-#     model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
-#     config = 'MEDIUM', #'MEDIUM', # 'LARGE'
-#     trail_name='med_13M_spls',
-#     task='Stock', # 'Stock', 'Compressed', 'Natural'
-#     autoregressive=True,
-#     w_decay = False,
-# )
-
-
-
-# args = Namespace(
-#     batch_size=128,# 256 for medium
-#     PROG_LEN = 15,
-#     max_epochs = 40,
-#     LEARNING_RATE=1e-5,
-#     input_dropout_prob = 0.0,#2,
-#     parameter_noise = 0.0, # 30, # inverse fraction of the standard deviation of the noise to add
-#     ar_input_noise=0.0, #0.2, # absolute max value of noise
-#     max_timesteps = 40,
-#     model = 'GPT2', # 'GPT2', 'GPTJ', 'GPTNEO'
-#     config = 'LARGE', #'MEDIUM', # 'LARGE'
-#     trail_name='gpt2_lar_ar',
-#     task='Stock', # 'Stock', 'Compressed', 'Natural'
-#     autoregressive=True,
-# )
+parser = argparse.ArgumentParser(description='Train a GPT2 model to predict programs from parameters')
+parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
+parser.add_argument('--PROG_LEN', type=int, default=15, help='Maximum length of programs')
+parser.add_argument('--max_epochs', type=int, default=40, help='number of epochs')
+parser.add_argument('--LEARNING_RATE', type=float, default=5e-5, help='learning rate')
+parser.add_argument('--frac_to_train', type=float, default=0.50, help='fraction of dataset to train on')
+parser.add_argument('--input_dropout_prob', type=float, default=0.0, help='dropout probability for input')
+parser.add_argument('--parameter_noise', type=float, default=0.0, help='inverse fraction of the standard deviation of the noise to add')
+parser.add_argument('--ar_input_noise', type=float, default=0.0, help='absolute max value of noise')
+parser.add_argument('--max_timesteps', type=int, default=40, help='max timesteps for autoregressive model')
+parser.add_argument('--model', type=str, default='GPTNEO', help='model to use. options: GPTNEO, GPT2, GPTJ, GPTNEO')
+parser.add_argument('--config', type=str, default='pythia_125m', help='model config to use, pythia_125m, MEDIUM, LARGE')
+parser.add_argument('--trail_name', type=str, default='iTracrV5_1', help='name of the trail')
+parser.add_argument('--task', type=str, default='Stock', help='task to train on. Options: Stock, Compressed, Natural')
+parser.add_argument('--autoregressive', type=bool, default=True, help='train autoregressive model')
+parser.add_argument('--w_decay', type=bool, default=True, help='use weight decay')
+args = parser.parse_args()
 
 
 
-
-CHECKPOINT_PATH = ".logs/"
+CHECKPOINT_PATH = "../.logs/"
 
 dataset_path = None
 if args.task == 'Stock':
-    from data.dataloader_streams import ZipPickleStreamReader as StoreReader
-    from data.parameter_encoder import CRAFT_TIMESTEPS as TIMESTEPS
-    from data.parameter_encoder import CRAFT_ARCH as ARCH
-    dataset_path = '.data/iTracr_dataset_v5.zip'#'.data/iTracr_standard_20M.zip'
+    ARCH = CRAFT_ARCH
+    TIMESTEPS = CRAFT_TIMESTEPS
+    dataset_path = '../.data/iTracr_dataset_v5.zip'#'.data/iTracr_standard_20M.zip'
 elif args.task == 'Compressed':
-    from data.dataloader_streams import ZipPickleStreamReader as StoreReader
-    from data.parameter_encoder import JAX_TIMESTEPS as TIMESTEPS
-    from data.parameter_encoder import JAX_ARCH as ARCH
-    dataset_path = 'cp_dataset_train_w.zip'
+    ARCH = JAX_ARCH
+    TIMESTEPS = JAX_TIMESTEPS
+    dataset_path = '../cp_dataset_train_w.zip'
 elif args.task == 'Natural':
-    from data.dataloader_streams import ZipPickleStreamReader as StoreReader
-    from data.parameter_encoder import JAX_TIMESTEPS as TIMESTEPS
-    from data.parameter_encoder import JAX_ARCH as ARCH
-    dataset_path = 'cp_dataset_train_all.zip'
+    ARCH = JAX_ARCH
+    TIMESTEPS = JAX_TIMESTEPS
+    dataset_path = '../cp_dataset_train_all.zip'
 
 
 #%%
@@ -1011,11 +864,6 @@ print(autoregressive_mask[-17, :])
 print(autoregressive_mask[-16, :])
 print(autoregressive_mask[-15, :])
 print(y)
-# #%%
-# from data.dataloaders import ProgramEncoder
-# prog_enc = ProgramEncoder(args.PROG_LEN)
-# onehot = prog_enc.tokens_to_onehot(y, ignore_padding=True)
-
 
 #%%
 def make_collate_fn(PROG_LEN):
@@ -1041,8 +889,6 @@ def make_collate_fn(PROG_LEN):
     # | <PAD> |
     # |  ...  |
 
-    from torch.nn.utils.rnn import pad_sequence
-    from data.parameter_encoder import get_onehot_timestep_encoder
     ONEHOT_TIMESTEP_ENCODER = get_onehot_timestep_encoder(TIMESTEPS)
 
 
@@ -1166,7 +1012,6 @@ testing_loaders()
 
 
 
-from data.parameter_encoder import decode_timesteps
 
 
 test_it = iter(test_dataloader)
@@ -1183,8 +1028,7 @@ decode_test_sample()
 #%%
 model, model_config = None, None
 if args.model == 'GPT2':
-    import json
-    with open(f'utils/gpt2_configs/gpt2_{args.config.lower()}.json') as f: # GPT2 Large - 774M
+    with open(f'../utils/gpt2_configs/gpt2_{args.config.lower()}.json') as f: # GPT2 Large - 774M
         config_json = json.load(f)
     model_config = GPT2Config(**config_json)
 
@@ -1195,8 +1039,7 @@ if args.model == 'GPT2':
     model = GPT2(num_classes=sum(src_dataset.get_segment_sizes()), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
 elif args.model == 'GPTJ':
-    import json
-    with open(f'utils/gptj_pythia/{args.config}.yml') as f:
+    with open(f'../utils/gptj_pythia/{args.config}.yml') as f:
         config_json = json.load(f)
         model_config = GPTJConfig(
             vocab_size =          None,
@@ -1245,18 +1088,7 @@ elif args.model == 'GPTJ':
 
 
 elif args.model == 'GPTNEO':
-    
-    from transformers import GPTJConfig
-
-    # import yaml
-
-    # with open(r'utils/gptneo_configs/pythia_125m.json') as file:
-    #     documents = yaml.full_load(file)
-
-
-    import json
-
-    with open(f'utils/gptneo_configs/{args.config}.json') as f:
+    with open(f'../utils/gptneo_configs/{args.config}.json') as f:
         config_json = json.load(f)
 
 
@@ -1275,7 +1107,9 @@ elif args.model == 'GPTNEO':
 
 
 trainer = TrainerModule(model, 
-                        f'{args.trail_name} {args.model} {args.config} TASK: {args.task} LR: {args.LEARNING_RATE} TrainFrac:{args.frac_to_train} ParamNoise: {args.parameter_noise} InpDrop: {args.input_dropout_prob} bs: {args.batch_size} nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
+                        f'{args.trail_name} {args.model} {args.config} TASK: {args.task} LR: {args.LEARNING_RATE} TrainFrac:{args.frac_to_train} '
+                        'ParamNoise: {args.parameter_noise} InpDrop: {args.input_dropout_prob} bs: {args.batch_size} '
+                        'nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 
@@ -1292,7 +1126,6 @@ _ = open(os.path.join(trainer.log_dir, "hyperparameters"), "w").write(f"{args}\n
 
 # trainer.load_model(log_dir=f"PARAM_NumVar_GPT2_LARGE cont LR 1e-06 bs: 256 nembed: 1280 n_layer: 36 n_head: 20")
 # test_val_acc, test_val_loss = trainer.eval_model(test_dataloader)
-# import pandas as pd
 # pd.Series(test_val_acc).to_csv('GPT_LARGE_NUMVAR.csv')
 
 if args.task in ['Compressed', 'Natural']:
@@ -1317,8 +1150,6 @@ for epoch_idx in range(1, args.max_epochs+1):
 
 #%%
 
-# from jax import tree_map
-# from utils.jax_helpers import zero_grads, create_mask
 
 # def load_pretrained(self, log_dir: str):
 #     params = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(CHECKPOINT_PATH, log_dir), target=self.state.params)
