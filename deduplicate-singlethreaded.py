@@ -40,7 +40,7 @@ NUM_SAMPLES = len(df.files)
 deduplicated = set()
 
 
-out = ZipFile(file='.data/deduplicated-v4.zip', mode='w', compression=ZIP_DEFLATED, compresslevel=4)
+out = ZipFile(file='.data/deduplicated-v5.zip', mode='w', compression=ZIP_DEFLATED, compresslevel=4)
 out_names = [str(x).zfill(9) + '.pkl' for x in range(NUM_SAMPLES)]
 shuffle(out_names)
 out_i = 0
