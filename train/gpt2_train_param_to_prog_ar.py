@@ -1025,7 +1025,7 @@ decode_test_sample()
 #%%
 model, model_config = None, None
 if args.model == 'GPT2':
-    with open(f'utils/gpt2_configs/gpt2_{args.config.lower()}.json') as f: # GPT2 Large - 774M
+    with open(f'inverse_tracr/utils/gpt2_configs/gpt2_{args.config.lower()}.json') as f: # GPT2 Large - 774M
         config_json = json.load(f)
     model_config = GPT2Config(**config_json)
 
@@ -1036,7 +1036,7 @@ if args.model == 'GPT2':
     model = GPT2(num_classes=sum(src_dataset.get_segment_sizes()), gpt_config=model_config, input_dropout_prob=args.input_dropout_prob)
 
 elif args.model == 'GPTJ':
-    with open(f'utils/gptj_pythia/{args.config}.yml') as f:
+    with open(f'inverse_tracr/utils/gptj_pythia/{args.config}.yml') as f:
         config_json = json.load(f)
         model_config = GPTJConfig(
             vocab_size =          None,
@@ -1085,7 +1085,7 @@ elif args.model == 'GPTJ':
 
 
 elif args.model == 'GPTNEO':
-    with open(f'utils/gptneo_configs/{args.config}.json') as f:
+    with open(f'inverse_tracr/utils/gptneo_configs/{args.config}.json') as f:
         config_json = json.load(f)
 
 
