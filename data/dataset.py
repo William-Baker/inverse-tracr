@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from data.canonical_ordering import sort_program
 from data.rasp_operators import *
 import numpy as np
-from data.sigterm import guard_timeout, TimeoutException
 import inspect
 from collections import defaultdict
 from enum import Enum
