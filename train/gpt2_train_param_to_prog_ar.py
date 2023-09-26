@@ -1105,8 +1105,8 @@ elif args.model == 'GPTNEO':
 
 trainer = TrainerModule(model, 
                         f'{args.trail_name} {args.model} {args.config} TASK: {args.task} LR: {args.LEARNING_RATE} TrainFrac:{args.frac_to_train} '
-                        'ParamNoise: {args.parameter_noise} InpDrop: {args.input_dropout_prob} bs: {args.batch_size} '
-                        'nembed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
+                        f'ParamNoise: {args.parameter_noise} InpDrop: {args.input_dropout_prob} bs: {args.batch_size} '
+                        f'n_embed: {model_config.n_embd} n_layer: {model_config.n_layer} n_head: {model_config.n_head}',
                         next(test_it), 
                         num_train_iters, 
                         dataset=src_dataset, 

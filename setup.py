@@ -21,6 +21,9 @@ setup(name='inverse-tracr',  # For pip. E.g. `pip show`, `pip uninstall`
           "cloudpickle",
           "graphviz",
           "antlr4-python3-runtime==4.9.1",
+          "tensorboard",
+          "pandas",
+          "dm-haiku",
           ],                                                                                                          
       )                                                                                                               
 
