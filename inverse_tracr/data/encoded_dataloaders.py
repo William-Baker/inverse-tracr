@@ -1,19 +1,22 @@
 import sys
-sys.path.append('tracr/')
+from functools import partial
 
-
-from tracr.craft.transformers import MultiAttentionHead, MLP
-from dataclasses import dataclass
-
-from data.rasp_operators import *
+from collections import deque
+from statistics import mean
 import numpy as np
 from collections import defaultdict
+from dataclasses import dataclass
+
 import tracr.compiler.lib as lib
 from tracr.rasp import rasp
+from tracr.craft.transformers import MultiAttentionHead, MLP
 
-from data.dataset import choose_vocab_and_ops, build_program_of_length, compile_program_into_craft_model, program_craft_generator, program_generator
-from data.dataloaders import ProgramEncoder
-from functools import partial
+from inverse_tracr.data.dataset import choose_vocab_and_ops, build_program_of_length, compile_program_into_craft_model, program_craft_generator, program_generator
+from inverse_tracr.data.dataloaders import ProgramEncoder
+from inverse_tracr.data.rasp_operators import *
+from inverse_tracr.data.dataloaders import ProgramEncoder
+from inverse_tracr.data.dataset import traverse_prog, gen_vocab, compile_program_into_craft_model
+from inverse_tracr.utils.time_sensitive import time_sensitive
 
 #============================= Data Encoding ==============================================
 
@@ -50,10 +53,6 @@ def encode_craft_model(craft_model):
 
 
 # ====== encoder with timeout ==================
-from collections import deque
-from statistics import mean
-
-from utils.time_sensitive import time_sensitive
 
 """
 # Old version that can only be used as a generator
@@ -232,8 +231,6 @@ def program_dataset(ops_range=(10,10), vocab_size_range=(6,6), numeric_range=(6,
 
 
 
-from data.dataloaders import ProgramEncoder
-from data.dataset import traverse_prog, gen_vocab, compile_program_into_craft_model
 def encode_rasp_program(program, PROG_LEN, lambdas=[], numeric_vars: bool = False):
     actual_ops = traverse_prog(program, lambdas)
     vocab = gen_vocab(PROG_LEN, prefix='t', numeric=numeric_vars)

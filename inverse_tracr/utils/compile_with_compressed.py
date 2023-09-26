@@ -16,11 +16,13 @@ import jax.numpy as jnp
 import numpy as np
 from tracr.craft import vectorspace_fns
 from tracr.transformer import model
-from utils.compiled_transformer_model import CompiledTransformerModel
 from tracr.transformer import encoder
 # , AssembledTransformerModel
 from tracr.compiler.assemble import _get_model_config_and_module_names, _make_embedding_modules
-from utils import compressed_model
+
+from inverse_tracr.utils import compressed_model
+from inverse_tracr.utils.compiled_transformer_model import CompiledTransformerModel
+from inverse_tracr.utils.time_sensitive import time_sensitive
 
 COMPILER_BOS = "compiler_bos"
 COMPILER_PAD = "compiler_pad"
@@ -71,7 +73,6 @@ def compile_with_compressed(
                 mlp_exactness=mlp_exactness,
                 )
             return graph
-        from utils.time_sensitive import time_sensitive
         graph = time_sensitive(fun, CRAFT_TIMEOUT)
         if graph == None:
             raise TimeoutError("Craft took too long to compile")

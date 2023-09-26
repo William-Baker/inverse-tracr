@@ -1,6 +1,10 @@
 #%%
 
+from typing import Sequence
 import numpy as np
+import pandas as pd
+
+from inverse_tracr.data.dataloader_streams import StreamReader
 
 
 
@@ -23,7 +27,6 @@ JAX_TIMESTEPS = ['PAD', 'key', 'value', 'query', 'linear', 'linear_1', 'linear_2
 CRAFT_ARCH = ['PAD', 'HEAD', 'MLP']
 JAX_ARCH = ['PAD', 'MHA', 'MLP']
 
-from typing import Sequence
 def encode_architecture(layer_types: Sequence[str], max_prog_length: int, ARCH_LABELS: Sequence[str]):
     ARCHITECTURE_ENCODER = dict(zip(ARCH_LABELS, range(len(ARCH_LABELS))))
     encoding = np.zeros((max_prog_length*5, len(ARCHITECTURE_ENCODER)))
@@ -168,7 +171,6 @@ def test_flat_match(src, B):
 #%%
 
 if __name__ == "__main__":
-    from data.dataloader_streams import StreamReader
     pth = '.data/iTracr_dataset/'
     dataset = StreamReader(pth)
 
@@ -194,7 +196,6 @@ if __name__ == "__main__":
         for j in x:
             layer_components += sum([list(i.keys()) for i in j.values()], [])
 
-    import pandas as pd
     print("Dataset balance: ")
     print(pd.Series(layer_names).value_counts())
     # print(pd.Series(layer_components).value_counts())

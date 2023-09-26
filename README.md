@@ -1,6 +1,14 @@
 if you have problems reading a zip file use this to repair it:
 `zip -FF bad.zip --out good.zip`
 
+# Installation instructions
+First, install dependencies (see setup.sh)
+Then clone this repository, and install this library via
+```
+cd inverse-tracr
+pip install -e .
+```
+
 # Train Instructions
 The autoregressive training script is gpt2_train_param_to_prog_ar.py, to run do the following
 ```

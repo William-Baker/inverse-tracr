@@ -2,10 +2,15 @@ import jax
 import jax.numpy as jnp
 from flax import linen as nn
 #from transformers.models.gpt2.modeling_flax_gpt2 import FlaxGPT2BlockCollection
-from models.flax_gpt2 import FlaxGPT2BlockCollection
 from transformers import GPT2Config
 import math
 import numpy as np
+from transformers.models.gptj.modeling_flax_gptj import FlaxGPTJBlockCollection
+from transformers.models.gptj.configuration_gptj import GPTJConfig
+#from transformers.models.gpt_neox import GPTNeoXLayer
+from transformers.models.gpt_neo.modeling_flax_gpt_neo import FlaxGPTNeoBlockCollection
+
+from inverse_tracr.models.flax_gpt2 import FlaxGPT2BlockCollection
 
 
 def scaled_dot_product(q, k, v, mask=None):
@@ -263,9 +268,6 @@ class GPT2(nn.Module):
 
 
 
-from transformers.models.gptj.modeling_flax_gptj import FlaxGPTJBlockCollection
-from transformers.models.gptj.configuration_gptj import GPTJConfig
-
 class GPTJ(nn.Module):
     num_classes: int
     gpt_config: GPTJConfig
@@ -301,8 +303,6 @@ class GPTJ(nn.Module):
 
 
 
-#from transformers.models.gpt_neox import GPTNeoXLayer
-from transformers.models.gpt_neo.modeling_flax_gpt_neo import FlaxGPTNeoBlockCollection
 class GPTNeo(nn.Module):
     num_classes: int
     gpt_config: GPTJConfig

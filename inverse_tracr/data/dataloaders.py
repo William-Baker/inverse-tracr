@@ -1,9 +1,10 @@
 
 import torch
 import numpy as np
-from data.rasp_operators import *
 from typing import Union, TypeVar, Sequence, Callable, Optional
-from data.canonical_ordering import sort_program
+
+from inverse_tracr.data.rasp_operators import *
+from inverse_tracr.data.canonical_ordering import sort_program
 
 START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'

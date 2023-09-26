@@ -1,9 +1,9 @@
 #%%
 
-from data.dataloaders import ProgramDataset
 from tqdm import tqdm
-
 import pandas as pd
+
+from inverse_tracr.data.dataloaders import ProgramDataset
 
 samples = 100000
 

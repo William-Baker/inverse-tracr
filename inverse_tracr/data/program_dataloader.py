@@ -1,4 +1,5 @@
 #%%
+import time
 import torch
 import pandas as pd
 import jax.numpy as jnp
@@ -6,12 +7,13 @@ from torch.nn.utils.rnn import pad_sequence
 from functools import partial
 import numpy as np
 from random import shuffle
+from torch.utils.data import DataLoader
+from inverse_tracr.data.dataset import example_program_dataset
+from inverse_tracr.data.dataloaders import ProgramEncoder
 
 START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'
 
-from data.dataset import example_program_dataset
-from data.dataloaders import ProgramEncoder
 
 class TorchProgramDataset(torch.utils.data.Dataset):
     def __init__(self, prog_len, no_samples = 10000, shuffled_inputs=True):
@@ -62,7 +64,6 @@ class TorchProgramDataset(torch.utils.data.Dataset):
         return translated
 
 if __name__ == "__main__":
-    from torch.utils.data import DataLoader
 
     dataset = TorchProgramDataset(30)
     train_dataloader = DataLoader(dataset, batch_size=32, num_workers=8, prefetch_factor=2, collate_fn=partial(TorchProgramDataset.collate_fn, dataset.prog_len))#, pin_memory=True)
@@ -94,7 +95,6 @@ if __name__ == "__main__":
 
 
     #%%
-    import time
     start = time.time()
     for i in range(10):
         x,y = next(it)

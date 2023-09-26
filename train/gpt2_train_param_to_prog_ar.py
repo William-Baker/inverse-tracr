@@ -36,53 +36,50 @@
 
 
 import os
-import jax
+import json
+from tqdm import tqdm
+import numpy as np
+import argparse
+from functools import partial
+from random import sample
 
+import torch
+from torch.utils.tensorboard import SummaryWriter
+torch.cuda.is_available = lambda : False
+from torch.utils.data import DataLoader
+from torch.nn.utils.rnn import pad_sequence
+
+
+import jax
 from jax import tree_map
-from utils.jax_helpers import zero_grads, create_mask
+from jax import random
+import jax.numpy as jnp
+import optax
+from flax.training import train_state, checkpoints
 
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]="0.95"
 
-
-from jax import random
-import jax.numpy as jnp
-import os
-import json
-from torch.utils.tensorboard import SummaryWriter
-import optax
-from flax.training import train_state, checkpoints
-from tqdm import tqdm
-import numpy as np
-import torch, flax
-torch.cuda.is_available = lambda : False
-from torch.utils.data import DataLoader
-JaxMemUsage.launch(interval=0.01)
 from dill import dump, load
 from jaxlib.xla_extension import XlaRuntimeError
 from transformers.models.gptj.configuration_gptj import GPTJConfig
-from argparse import Namespace
-from functools import partial
 from flax.core.frozen_dict import unfreeze
-from jax import tree_map
-from utils.jax_helpers import zero_grads, create_mask
-from random import sample
-import argparse
-from torch.nn.utils.rnn import pad_sequence
-
-from data.dataloaders import ProgramEncoder
-from data.parameter_encoder import CRAFT_TIMESTEPS, JAX_TIMESTEPS, CRAFT_ARCH, JAX_ARCH
-from data.parameter_encoder import get_onehot_timestep_encoder
-from data.parameter_encoder import decode_timesteps
-from data.parameter_program_dataloader import TorchParameterProgramDataset
-from data.plot_true_v_pred import plot_orginal_heatmaps, figure_to_array, plot_orginal_heatmaps_ar
-from data.dataset import example_program_dataset
-from data.encoded_dataloaders import encode_rasp_program
-from utils.export_compressed_params import compress_params, encode_jax_params
-from utils.jax_helpers import JaxMemUsage
-from models.models import GPT2, GPT2Config, GPTNeo, GPTJ
-    
 from transformers import GPTJConfig
 
+from inverse_tracr.utils.jax_helpers import zero_grads, create_mask
+from inverse_tracr.utils.jax_helpers import JaxMemUsage
+from inverse_tracr.utils.export_compressed_params import compress_params, encode_jax_params
+from inverse_tracr.data.dataloaders import ProgramEncoder
+from inverse_tracr.data.parameter_encoder import CRAFT_TIMESTEPS, JAX_TIMESTEPS, CRAFT_ARCH, JAX_ARCH
+from inverse_tracr.data.parameter_encoder import get_onehot_timestep_encoder
+from inverse_tracr.data.parameter_encoder import decode_timesteps
+from inverse_tracr.data.parameter_program_dataloader import TorchParameterProgramDataset
+from inverse_tracr.data.plot_true_v_pred import plot_orginal_heatmaps, figure_to_array, plot_orginal_heatmaps_ar
+from inverse_tracr.data.dataset import example_program_dataset
+from inverse_tracr.data.encoded_dataloaders import encode_rasp_program
+from inverse_tracr.data.dataloader_streams import ZipPickleStreamReader as StoreReader
+from inverse_tracr.models.models import GPT2, GPT2Config, GPTNeo, GPTJ
+
+JaxMemUsage.launch(interval=0.01)
 
 
 parser = argparse.ArgumentParser(description='Train a GPT2 model to predict programs from parameters')

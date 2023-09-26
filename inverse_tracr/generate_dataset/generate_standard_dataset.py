@@ -1,11 +1,13 @@
 
+import traceback
 import argparse
 from os import makedirs
 from tqdm import tqdm
 import cloudpickle
 from datetime import datetime
-from data.encoded_dataloaders import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
-from data.dataloaders import ProgramEncoder
+
+from inverse_tracr.data.encoded_dataloaders import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
+from inverse_tracr.data.dataloaders import ProgramEncoder
 
 
 try:
@@ -56,10 +58,8 @@ try:
             print("failed to save to zip archive")
       assert writes <= 1
 except Exception as E:
-    from os import makedirs
     makedirs('logs', exist_ok=True)
     with open(f'logs/{str(datetime.now().strftime("%m-%d %H.%M.%S.%f"))}.txt','w') as f:
-        import traceback
         f.write(str(E))
         tb = traceback.format_exc()
         f.write(str(tb))

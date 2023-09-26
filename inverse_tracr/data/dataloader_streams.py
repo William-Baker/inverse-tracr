@@ -1,9 +1,19 @@
 #%%
+from os import listdir
 from torch.utils.data import Dataset as TorchDataset
 from torch.utils.data import DataLoader as TorchDataLoader
 from os import makedirs
 import numpy as np
 from tqdm import tqdm
+import pickle
+#from zipfile import ZipFile
+from io import BytesIO
+import cloudpickle
+
+from inverse_tracr.data.parallelzipfile import ParallelZipFile as ZipFile
+
+
+
 class StreamWriter:
     def __init__(self, dir:str, torch_dataset: TorchDataset, id_N = None, start_idx= None, start_offset=0) -> None:
         """
@@ -51,7 +61,6 @@ class StreamWriter:
         else:
             self.__write_serial__()
 
-from os import listdir
 class StreamReader:
     def __init__(self, dir:str) -> None:
         self.dir = dir
@@ -63,11 +72,6 @@ class StreamReader:
         return loaded['x'].squeeze(), loaded['y'].squeeze()
 
 
-import pickle
-
-from data.parallelzipfile import ParallelZipFile as ZipFile
-#from zipfile import ZipFile
-from io import BytesIO
 class ZipStreamReader:
     def __init__(self, dir:str, first=None, last= None) -> None:
         """
@@ -98,7 +102,6 @@ class ZipStreamReader:
         
 
 
-import cloudpickle
 
 class ZipPickleStreamReader(ZipStreamReader):
     def __getitem__(self, idx):

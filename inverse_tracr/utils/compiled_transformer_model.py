@@ -24,15 +24,11 @@ Glossary of shapes:
 Forked from: haiku.examples.transformer.model
 """
 
-import collections
 import dataclasses
-from typing import Callable, List, Optional
-
-import chex
+from typing import Callable, Optional
 import haiku as hk
 import jax
 import jax.numpy as jnp
-import numpy as np
 from tracr.transformer import attention
 
 # hk.Modules are not always callable: github.com/deepmind/dm-haiku/issues/52

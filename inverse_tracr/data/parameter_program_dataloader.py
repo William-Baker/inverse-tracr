@@ -1,17 +1,20 @@
 #%%
+import time
 import torch
 from torch.nn.utils.rnn import pad_sequence
 import numpy as np
 from typing import Union
-from data.parameter_encoder import encode_sample
+from torch.utils.data import DataLoader
+
+from inverse_tracr.data.parameter_encoder import encode_sample
+from inverse_tracr.data.encoded_dataloaders import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
+from inverse_tracr.data.dataloaders import ProgramEncoder
+from inverse_tracr.data.program_dataloader import TorchProgramDataset
 
 
 START_TOKEN = 'PROGRAM_START'
 END_TOKEN = 'PROGRAM_END'
 
-from data.encoded_dataloaders import craft_dataset, program_craft_generator_bounded, program_craft_generator_unbounded
-from data.dataloaders import ProgramEncoder
-from data.program_dataloader import TorchProgramDataset
 class TorchParameterProgramDataset(TorchProgramDataset):
     def __init__(self, min_prog_len:int, max_prog_len: int, generator_backend=Union['bounded', 'unbounded'], bounded_timeout_multiplier=1, vocab_size_range=(6,6), numeric_range=(6,6), numeric_inputs_possible: bool = False):
         self.vocab_size_range, self.numeric_range, self.numeric_inputs_possible = vocab_size_range, numeric_range, numeric_inputs_possible
@@ -102,7 +105,6 @@ class TorchParameterProgramDataset(TorchProgramDataset):
 
 
 if __name__ == "__main__":
-    from torch.utils.data import DataLoader
 
     dataset = TorchParameterProgramDataset(15, generator_backend='bounded', bounded_timeout_multiplier=10)
 
@@ -128,7 +130,6 @@ if __name__ == "__main__":
     # dataset.logit_classes_np(x[0, :, :])
 
 
-    import time
     print("timing")
     start = time.time()
     for i in range(10):

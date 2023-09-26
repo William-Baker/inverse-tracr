@@ -1,5 +1,16 @@
 from typing import Any
 from jax import random
+import threading
+import time
+import jax
+import subprocess
+import posix
+from jax_smi import initialise_tracking
+from flax.core.frozen_dict import FrozenDict
+import jax
+import optax
+import jax.numpy as jnp
+
 
 class JaxSeeder:
     def __init__(self, seed=0) -> None:
@@ -18,11 +29,6 @@ class JaxMemUsage:
     usage_str = ''
     max_usage_str = ''
 
-    import threading
-    import time
-    import jax
-    import subprocess
-    import posix
     interval = 0.01
     
 
@@ -30,14 +36,14 @@ class JaxMemUsage:
         unit_dict = {'B': 1, 'kB': 1000, 'MB': 1000000, 'GB': 1000000000, 'TB': 1000000000000}
         while True:
             dir_prefix='/dev/shm'
-            # JaxMemUsage.jax.profiler.save_device_memory_profile(f'{dir_prefix}/memory.prof.new')
-            # JaxMemUsage.time.sleep(JaxMemUsage.interval//2)
-            # JaxMemUsage.posix.rename(f'{dir_prefix}/memory.prof.new', f'{dir_prefix}/memory.prof')  # atomic
-            # JaxMemUsage.time.sleep(JaxMemUsage.interval//2)
-            output = JaxMemUsage.subprocess.run(
+            # jax.profiler.save_device_memory_profile(f'{dir_prefix}/memory.prof.new')
+            # time.sleep(JaxMemUsage.interval//2)
+            # posix.rename(f'{dir_prefix}/memory.prof.new', f'{dir_prefix}/memory.prof')  # atomic
+            # time.sleep(JaxMemUsage.interval//2)
+            output = subprocess.run(
                     args=['go', 'tool', 'pprof', '-tags', f'{dir_prefix}/memory.prof'],
-                    stdout=JaxMemUsage.subprocess.PIPE,
-                    stderr=JaxMemUsage.subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
                 ).stdout.decode('utf-8')
 
             if output != '':
@@ -71,21 +77,17 @@ class JaxMemUsage:
                 #usage_str = str(usage) + usage_unit
                 JaxMemUsage.max_usage_str = str(JaxMemUsage.max_usage) + JaxMemUsage.max_usage_unit
                
-            JaxMemUsage.time.sleep(JaxMemUsage.interval)
+            time.sleep(JaxMemUsage.interval)
             
 
     def launch(interval = 0.01):
-        from jax_smi import initialise_tracking
         initialise_tracking(interval=interval)
         JaxMemUsage.interval = interval
-        JaxMemUsage.time.sleep(JaxMemUsage.interval * 5)
-        thread = JaxMemUsage.threading.Thread(target=JaxMemUsage.inner, daemon=True)
+        time.sleep(JaxMemUsage.interval * 5)
+        thread = threading.Thread(target=JaxMemUsage.inner, daemon=True)
         thread.start()
 
 
-from flax.core.frozen_dict import FrozenDict
-import jax, optax
-import jax.numpy as jnp
 
 def create_mask(params, label_fn):
     def _map(params, mask, label_fn):

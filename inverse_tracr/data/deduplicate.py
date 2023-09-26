@@ -1,13 +1,9 @@
-#%%
-#sintr -t 1:0:0 --nodes 1 --cpus-per-task 1 -p icelake --ntasks 16 -A KRUEGER-SL3-CPU --qos=INTR
-# srun -t 10:0:0 --nodes 1 --cpus-per-task 1 -p icelake --ntasks 76 -A KRUEGER-SL3-CPU --pty=bash
-from data.parallelzipfile import ParallelZipFile
 from zipfile import ZipFile, ZIP_DEFLATED
 import cloudpickle
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
-from collections import defaultdict
 from random import shuffle
+
+from inverse_tracr.data.parallelzipfile import ParallelZipFile
 
 DISABLE_TQDM = False
 

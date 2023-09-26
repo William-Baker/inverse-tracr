@@ -1,9 +1,13 @@
-from data.dataloaders import ProgramEncoder
 from collections import defaultdict
-from zipfile import ZipFile
 from cloudpickle import dumps
 import numpy as np
 from time import sleep
+from inverse_tracr.data.dataloaders import ProgramEncoder
+import cloudpickle
+from os import makedirs
+from jax import tree_map
+from zipfile import ZipFile, ZIP_DEFLATED
+import os
 
 def compress_params(params):
     # we first need to find the compression matrix
@@ -57,9 +61,6 @@ def encode_jax_params(params):
             raise NotImplementedError()
     return model_params
 
-import cloudpickle
-from os import makedirs
-from jax import tree_map
 
 def export_params(params, max_ops, actual_ops, trn_all, run_id):
     #compressed = compress_params(params)
@@ -88,8 +89,6 @@ def export_params(params, max_ops, actual_ops, trn_all, run_id):
 
 def transfer_to_archive(source_dir: str):
     dest_dir = source_dir + '.zip'
-    from zipfile import ZipFile, ZIP_DEFLATED
-    import os
     source_files = os.listdir(source_dir)
     zip = ZipFile(dest_dir, mode='a', compression=ZIP_DEFLATED, compresslevel=9)
     dest_files = [x.filename for x in zip.filelist]

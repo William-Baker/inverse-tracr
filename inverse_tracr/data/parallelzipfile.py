@@ -12,6 +12,7 @@ import mmap
 import struct
 import zlib
 from typing import IO, Dict, List, Optional, no_type_check
+from zipfile import ZipFile, _EndRecData, _ECD_SIGNATURE, _ECD_ENTRIES_TOTAL, _ECD_OFFSET, _ECD_COMMENT_SIZE 
 
 
 class ZipInfo:
@@ -42,7 +43,6 @@ class ZipInfo:
         return self.filename.endswith("/")
 
 def get_end_rec_data(filename):
-    from zipfile import ZipFile, _EndRecData, _ECD_SIGNATURE, _ECD_ENTRIES_TOTAL, _ECD_OFFSET, _ECD_COMMENT_SIZE 
     zip = ZipFile(file=filename, mode='r')
 
     endrec = _EndRecData(zip.fp)

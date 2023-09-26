@@ -4,6 +4,14 @@ sys.path.append('tracr/')
 from typing import Union, TypeVar, Sequence, Callable, Optional
 from random import choice, randint, choices
 from functools import partial
+from dataclasses import dataclass
+
+import numpy as np
+import inspect
+from collections import defaultdict
+from enum import Enum
+import networkx as nx
+
 from tracr.compiler import basis_inference
 from tracr.compiler import craft_graph_to_model
 from tracr.compiler import expr_to_craft_graph
@@ -11,17 +19,11 @@ from tracr.compiler import rasp_to_graph
 from tracr.craft import bases
 from tracr.rasp import rasp
 from tracr.craft.transformers import MultiAttentionHead, MLP
-from dataclasses import dataclass
-from data.canonical_ordering import sort_program
-from data.rasp_operators import *
-import numpy as np
-import inspect
-from collections import defaultdict
-from enum import Enum
-import tracr.compiler.lib as lib
 from tracr.rasp import rasp
-import networkx as nx
+import tracr.compiler.lib as lib
 
+from inverse_tracr.data.canonical_ordering import sort_program
+from inverse_tracr.data.rasp_operators import *
 
 class Cat(Enum):
     numeric = 1

@@ -7,13 +7,14 @@
 # squeue -u wb326 -o "%a %c %C %D %e %F %L %M %p %q"
 # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
 
+import traceback
 import subprocess
 from threading import Thread
 from torch.utils.tensorboard import SummaryWriter
 import os
-# from utils.export_compressed_params import transfer_to_archive
-from data.parallel_read_sequential_zip import get_directory_contents_and_write
 import time
+
+from inverse_tracr.data.parallel_read_sequential_zip import get_directory_contents_and_write
 
 mode = 'standard' # 'standard'
 cmd = ''
@@ -45,7 +46,6 @@ def run_experiments(id):
 
             count += 1
         except Exception as E:
-            import traceback
             print(str(E))
             tb = traceback.format_exc()
             print(str(tb))
