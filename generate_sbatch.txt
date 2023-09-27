@@ -25,7 +25,7 @@
 #SBATCH --mem=250000mb
 #! Submit a job array with index values between 0 and 31
 #! NOTE: This must be a range, not a single number (i.e. specifying '32' here would only run one job, with index 32)
-#SBATCH --array=0-10
+#SBATCH --array=0-20
 
 #! This is the partition name.
 #SBATCH -p icelake
@@ -51,4 +51,4 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inve
 echo "This is job" $SLURM_ARRAY_TASK_ID
 
 #! Command line that we want to run:
-python generate_datasets_parallel.py
+python inverse_tracr/generate_dataset/generate_datasets_parallel.py

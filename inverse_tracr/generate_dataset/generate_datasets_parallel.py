@@ -16,6 +16,7 @@ import time
 
 from inverse_tracr.data.parallel_read_sequential_zip import get_directory_contents_and_write
 
+
 mode = 'standard' # 'standard'
 cmd = ''
 if mode == 'compressed':
