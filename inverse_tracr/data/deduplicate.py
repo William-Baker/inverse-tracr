@@ -22,42 +22,53 @@ class ZipStreamReader:
         return params, program
 
 
-print('Initializing reader...')
-df = ZipStreamReader('.data/iTracr_dataset_v4.zip')
-print("Done initializing. Total nr of files:", len(df.files))
-
-def read_file(idx):
-    try:
-        return df[idx]
-    except EOFError:
-        return None
-
-NUM_SAMPLES = len(df.files)
 deduplicated = set()
 
 
-out = ZipFile(file='.data/deduplicated-v5.zip', mode='w', compression=ZIP_DEFLATED, compresslevel=4)
-out_names = [str(x).zfill(9) + '.pkl' for x in range(NUM_SAMPLES)]
-shuffle(out_names)
-out_i = 0
+out = ZipFile(file='.data/deduplicated-v6.zip', mode='a', compression=ZIP_DEFLATED, compresslevel=4)
 
 
-print("Iterating through files...")
-for idx in tqdm(range(NUM_SAMPLES), desc='load and save deduped', disable=DISABLE_TQDM):
-    sample = read_file(idx)
-    if sample is None:
-        continue
 
-    x, program = sample
-    b = program.tobytes()
-    if b not in deduplicated:
-        deduplicated.add(b)
+input_zips = ['.data/output.zip', '.data/output_2.zip', '.data/output_3.zip', '.data/output_4.zip',
+              '.data/output_first_gen.zip']
+max_name = 0
 
-        # write to zip
-        pickled = cloudpickle.dumps(sample)
-        out.writestr(out_names[out_i], pickled)
-        out_i += 1
-            
+for input_zip in input_zips:
 
-print("Original length:", NUM_SAMPLES)
-print("Length of deduplicated dataset:", len(deduplicated))
+    print('Initializing reader...')
+    df = ZipStreamReader(input_zip)
+    print("Done initializing. Total nr of files:", len(df.files))
+
+    def read_file(idx):
+        try:
+            return df[idx]
+        except EOFError:
+            return None
+
+    NUM_SAMPLES = len(df.files)
+    out_names = [str(x).zfill(9) + '.pkl' for x in range(max_name, max_name+NUM_SAMPLES)]
+    shuffle(out_names)
+    out_i = 0
+
+    max_name += NUM_SAMPLES
+
+
+    print("Iterating through files...")
+    for idx in tqdm(range(NUM_SAMPLES), desc='load and save deduped', disable=DISABLE_TQDM):
+        sample = read_file(idx)
+        if sample is None:
+            continue
+
+        x, program = sample
+        b = program.tobytes()
+        if b not in deduplicated:
+            deduplicated.add(b)
+
+            # write to zip
+            pickled = cloudpickle.dumps(sample)
+            out.writestr(out_names[out_i], pickled)
+            out_i += 1
+                
+
+    print("Original length:", NUM_SAMPLES)
+    print("Length of deduplicated dataset:", len(deduplicated))

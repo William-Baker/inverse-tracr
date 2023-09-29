@@ -108,7 +108,8 @@ dataset_path = None
 if args.task == 'Stock':
     ARCH = CRAFT_ARCH
     TIMESTEPS = CRAFT_TIMESTEPS
-    dataset_path = '.data/iTracr_dataset_v5.zip'#'.data/iTracr_standard_20M.zip'
+    #dataset_path = '.data/iTracr_dataset_v5.zip'#'.data/iTracr_standard_20M.zip'
+    dataset_path = '.data/deduplicated-v6.zip'
 elif args.task == 'Compressed':
     ARCH = JAX_ARCH
     TIMESTEPS = JAX_TIMESTEPS
