@@ -1,5 +1,5 @@
 #%%
-from data.parallelzipfile import ParallelZipFile as ZipFile
+from inverse_tracr.data.parallelzipfile import ParallelZipFile as ZipFile
 import cloudpickle
 from random import randint
 
@@ -17,16 +17,18 @@ class ZipStreamReader:
 
 # df = ZipStreamReader('cp_dataset_train_w.zip')
 #df = ZipStreamReader('.data/iTracr_dataset_v2_train.zip')
-df = ZipStreamReader('.data/iTracr_standard_20M.zip')
-
-
+#df = ZipStreamReader('.data/iTracr_standard_20M.zip')
+df = ZipStreamReader('.data/deduplicated-v6.zip')
+#%%
+import numpy as np
 #df = ZipStreamReader('.data/dltest.zip')
 #df = ZipStreamReader('fixed.zip')
 print(len(df))
 # for i in range(200):
 #     next(it)
 sizes = []
-for i in range(500000):
+params = []
+for i in range(500):
     try:
         idx = randint(0, len(df))
         x,y = df.__getitem__(idx)
@@ -35,15 +37,19 @@ for i in range(500000):
         # print(x.keys())
         # prog_enc = ProgramEncoder(15)
         # print(prog_enc.decode_pred(y))
-        
+        params.append(np.sum([np.prod(list(v.values())[0].shape) for v in  [list(i.values())[0] for i in x]]))
         sizes.append(y.shape[0])
-        if (i % 50000):
+        if (i % 100) == 0:
             import pandas as pd
             print(pd.Series(sizes).value_counts())
     except:
         pass
 
+#%%
 
+print(np.min(params))
+print(np.max(params))
+print(np.mean(params))
     
 #df.zip.close()
 

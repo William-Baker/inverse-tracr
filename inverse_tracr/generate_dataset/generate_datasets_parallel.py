@@ -24,7 +24,7 @@ if mode == 'compressed':
     output_path = 1/0 # TODO
 elif mode == 'standard':
     output_path = '.data/iTracr_dataset_v3_train/'
-    cmd = f"python generate_standard_dataset.py -pth \"{output_path}\""
+    cmd = f"python inverse_tracr/generate_dataset/generate_standard_dataset.py -pth \"{output_path}\""
 
 # print(cmd)
 # 1/0

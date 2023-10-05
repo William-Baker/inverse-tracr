@@ -13,6 +13,18 @@ filepath = ".logs/medium-run GPT2 MEDIUM TASK: Stock LR: 5e-05 TrainFrac:0.5 Par
 # filepath = ".logs/iTracrV5_1 GPTNEO pythia_125m TASK: Stock LR: 5e-05 TrainFrac:0.5 ParamNoise: 0.0 InpDrop: 0.0 bs: 512 nembed: 768 n_layer: 12 n_head: 12/events.out.tfevents.1695700103.gpu-q-60.1405368.0"
 
 
+# V2
+
+# large
+# filepath = ".logs/large-run_iii GPT2 LARGE TASK: Stock LR: 5e-05 TrainFrac:0.5 ParamNoise: 0.0 InpDrop: 0.0 bs: 128 n_embed: 1280 n_layer: 36 n_head: 20/events.out.tfevents.1695920247.gpu-q-53.3214893.0"
+
+# medium
+# filepath = ".logs/medium-run_i GPT2 MEDIUM TASK: Stock LR: 5e-05 TrainFrac:0.5 ParamNoise: 0.0 InpDrop: 0.0 bs: 128 n_embed: 1024 n_layer: 24 n_head: 16/events.out.tfevents.1695920493.gpu-q-28.2272120.0"
+
+# 125M
+# filepath = ".logs/neo-run GPTNEO pythia_125m TASK: Stock LR: 5e-05 TrainFrac:0.5 ParamNoise: 0.0 InpDrop: 0.0 bs: 512 n_embed: 768 n_layer: 12 n_head: 12/events.out.tfevents.1695960232.gpu-q-7.1090166.0"
+
+
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 import pandas as pd
 acc = EventAccumulator(

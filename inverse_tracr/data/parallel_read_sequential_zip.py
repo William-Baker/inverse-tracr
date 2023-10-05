@@ -129,3 +129,4 @@ if __name__ == "__main__":
     print("reading dir contents")
     while True:
         contents = get_directory_contents_and_write(dir_path, zip_name)
+        sleep(10)

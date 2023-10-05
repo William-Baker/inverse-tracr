@@ -4,7 +4,7 @@
 #! Name of the job:
 #SBATCH -J itracr_compressed
 #! Account name for group, use SL2 for paying queue:
-#SBATCH -A KRUEGER-SL3-CPU
+#SBATCH -A KRUEGER-SL2-CPU
 #! Output filename:
 #! %A means slurm job ID and %a means array index
 #SBATCH --output=test_dmtcp_%A_%a.out
@@ -16,19 +16,19 @@
 #! Number of tasks. By default SLURM assumes 1 task per node and 1 CPU per task. (for single core jobs always leave this at 1)
 #SBATCH --ntasks=1
 #! How many many cores will be allocated per task? (for single core jobs always leave this at 1)
-#SBATCH --cpus-per-task=5
+#SBATCH --cpus-per-task=32
 #! Estimated runtime: hh:mm:ss (job is force-stopped after if exceeded):
 #SBATCH --time=10:00:00
 #! Estimated maximum memory needed (job is force-stopped if exceeded):
 #! RAM is allocated in ~5980mb blocks, you are charged per block used,
 #! and unused fractions of blocks will not be usable by others.
-#SBATCH --mem=15000mb
+#SBATCH --mem=216000mb
 #! Submit a job array with index values between 0 and 31
 #! NOTE: This must be a range, not a single number (i.e. specifying '32' here would only run one job, with index 32)
 #! SBATCH --array=0-10
 
 #! This is the partition name.
-#SBATCH -p icelake
+#SBATCH -p icelake-himem
 
 #! mail alert at start, end and abortion of execution
 #! emails will default to going to your email address
@@ -51,4 +51,4 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inve
 echo "This is job" $SLURM_ARRAY_TASK_ID
 
 #! Command line that we want to run:
-python data/parallel_read_sequential_zip.py
+python inverse_tracr/data/deduplicate.py 

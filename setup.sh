@@ -7,7 +7,8 @@ pip3 install graphviz
 pip3 install jax chex einops dm-haiku jax networkx numpy typing_extensions matplotlib pandas tensorboard tqdm kaleido plotly torch flax dill optax jax_smi transformers cloudpickle
 #pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 
-python -m pip install -e 
+python -m pip install -e /rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/
+python -m pip install -e /rds/project/rds-eWkDxBhxBrQ/iTracr/tracr
 
 conda create --prefix ./envs
 conda install -c "nvidia/label/cuda-11.7.0" cuda-cupti

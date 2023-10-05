@@ -189,3 +189,6 @@ test_*.out
 .logs_std_com_nat
 .logs_duplicated_dataset
 logs
+slurm_out/
+train/*.pdf
+train/*/*.pdf

@@ -1,0 +1,45 @@
+# 125M
+
+train forced           accuracy       91.049637
+                       accuracy100     9.383203
+                       accuracy90     61.452930
+train generative       accuracy       72.697930
+                       accuracy100     6.198018
+                       accuracy90     29.449956
+validation forced      accuracy       89.714018
+                       accuracy100     7.757135
+                       accuracy90     54.859812
+validation generative  accuracy       72.040195
+                       accuracy100     5.409549
+                       accuracy90     28.046092
+
+# MEDIUM
+
+train forced           accuracy       91.183304
+                       accuracy100     9.807031
+                       accuracy90     62.358594
+train generative       accuracy       73.672237
+                       accuracy100     6.832737
+                       accuracy90     32.055263
+validation forced      accuracy       90.230642
+                       accuracy100     8.494492
+                       accuracy90     56.768666
+validation generative  accuracy       73.486122
+                       accuracy100     6.755224
+                       accuracy90     31.981416
+
+
+# LARGE
+
+train forced           accuracy       90.791452
+                       accuracy100     9.021094
+                       accuracy90     59.978125
+train generative       accuracy       73.248922
+                       accuracy100     5.660204
+                       accuracy90     30.679592
+validation forced      accuracy       89.309586
+                       accuracy100     7.736118
+                       accuracy90     51.827243
+validation generative  accuracy       73.197602
+                       accuracy100     5.958641
+                       accuracy90     30.822268

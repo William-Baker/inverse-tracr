@@ -2,9 +2,9 @@
 #! This line is a comment
 #! Make sure you only have comments and #SBATCH directives between here and the end of the #SBATCH directives, or things will break
 #! Name of the job:
-#SBATCH -J itracr
+#SBATCH -J itracr_compressed
 #! Account name for group, use SL2 for paying queue:
-#SBATCH -A KRUEGER-SL2-GPU
+#SBATCH -A KRUEGER-SL2-CPU
 #! Output filename:
 #! %A means slurm job ID and %a means array index
 #SBATCH --output=test_dmtcp_%A_%a.out
@@ -16,20 +16,19 @@
 #! Number of tasks. By default SLURM assumes 1 task per node and 1 CPU per task. (for single core jobs always leave this at 1)
 #SBATCH --ntasks=1
 #! How many many cores will be allocated per task? (for single core jobs always leave this at 1)
-#! SBATCH --cpus-per-task=64
-#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=76
 #! Estimated runtime: hh:mm:ss (job is force-stopped after if exceeded):
-#SBATCH --time=36:00:00
+#SBATCH --time=10:00:00
 #! Estimated maximum memory needed (job is force-stopped if exceeded):
 #! RAM is allocated in ~5980mb blocks, you are charged per block used,
 #! and unused fractions of blocks will not be usable by others.
-#!SBATCH --mem=200000mb
+#SBATCH --mem=250000mb
 #! Submit a job array with index values between 0 and 31
 #! NOTE: This must be a range, not a single number (i.e. specifying '32' here would only run one job, with index 32)
-
+#SBATCH --array=0-6
 
 #! This is the partition name.
-#SBATCH -p ampere
+#SBATCH -p icelake
 
 #! mail alert at start, end and abortion of execution
 #! emails will default to going to your email address
@@ -42,7 +41,7 @@
 #! Modify the environment seen by the application. For this example we need the default modules.
 . /etc/profile.d/modules.sh                # This line enables the module command
 module purge                               # Removes all modules still loaded
-module load rhel8/default-amp              # REQUIRED - loads the basic environment
+module load rhel7/default-peta4            # REQUIRED - loads the basic environment
 module load cuda/11.8 cudnn/8.9_cuda-11.8
 source venv/bin/activate
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inverse-tracr/envs/lib
@@ -52,4 +51,4 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/rds/project/rds-eWkDxBhxBrQ/iTracr/inve
 echo "This is job" $SLURM_ARRAY_TASK_ID
 
 #! Command line that we want to run:
-python gpt2_train_param_to_prog_ar.py
+python inverse_tracr/generate_dataset/generate_datasets_parallel.py
