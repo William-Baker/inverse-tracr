@@ -1,6 +1,5 @@
 #%%
 
-# Imports for compile_rasp_to_model_returns_all
 from typing import Set
 from tracr.compiler import assemble
 from tracr.compiler import basis_inference
@@ -13,11 +12,7 @@ from tracr.rasp import rasp
 
 
 
-
-import matplotlib.pyplot as plt
-import numpy as np
 import jax
-from random import choice
 import os
 from tracr.rasp import rasp
 import itertools
@@ -97,8 +92,6 @@ def vocab_to_lang(vocab, max_seq_len):
     
 
 def prog_a():
-    # vocab = ['t0', 't1', 't2', 't3', 't4', 't5', 't6']
-    # max_seq_len = 4 # maybe 5
     vocab = ['a', 'b', 'c']
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -112,8 +105,6 @@ def prog_a():
     return rasp_prog(), vocab, max_seq_len, language
 
 def prog_b():
-    # vocab = ['t0', 't1', 't2', 't3', 't4', 't5', 't6']
-    # max_seq_len = 8
     vocab = ['a', 'b', 'c']
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -128,11 +119,7 @@ def prog_b():
         return so7
     return rasp_prog(), vocab, max_seq_len, language
 
-
 def prog_c() -> rasp.SOp:
-    """
-    sum_of_inputs
-    """
     vocab = [1,2,3]
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -158,11 +145,6 @@ def prog_d():
     return rasp_prog(), vocab, max_seq_len, language
 
 def prog_e():
-    #  Select'>, inputs=['tokens', 'tokens', <Comparison.GT: '>'>], output="<class 'Selector'> 1", lambda_name=None),
-    #  SelectorWidth'>, inputs=["<class 'Selector'> 1"], output="<class 'SOp'> 5", lambda_name=None),
-    #  Map'>, inputs=[functools.partial(<function <lambda> at 0x2affe42f6560>, 4), "<class 'SOp'> 5"], output="<class 'SOp'> 7", lambda_name='LAM_GE'),
-    #  Select'>, inputs=["<class 'SOp'> 7", "<class 'SOp'> 7", <Comparison.TRUE: 'True'>], output="<class 'Selector'> 3", lambda_name=None),
-    #  Aggregate'>, inputs=["<class 'Selector'> 3", "<class 'SOp'> 5"], output="<class 'SOp'> 9", lambda_name=None)
     vocab = ['a', 'b', 'c']
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -176,12 +158,6 @@ def prog_e():
     return rasp_prog(), vocab, max_seq_len, language
 
 def prog_f():
-    # Map'>, inputs=function 4), 'indices'], output="<class 'SOp'> 2", lambda_name='LAM_SUB')
-    # Map'>, inputs=function 3), "<class 'SOp'> 2"], output="<class 'SOp'> 3", lambda_name='LAM_EQ')
-    # Map'>, inputs=function 't2'), 'tokens'], output="<class 'SOp'> 1", lambda_name='LAM_LT')
-    # Select'>, inputs=[SOp'> 1", "<class 'SOp'> 3", <Comparison.GT: '>'>], out=.Selector'> 1", lambda_name=None)
-    # SelectorWidth'>, inputs=["Selector'> 1"], output="<class 'SOp'> 7", lambda_name=None)
-    # SequenceMap'>, inputs=[<func "<class 'SOp'> 7", "<class 'SOp'> 7"], output="SOp'> 8", lambda_name='LAM_ADD')
     vocab = ['a', 'b', 'c']
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -196,12 +172,6 @@ def prog_f():
     return rasp_prog(), vocab, max_seq_len, language
 
 def prog_g():
-    # Map'>, inputs=[f  4.28), "<class 'SOp'> 4"], output="<class 'SOp'> 5", lambda_name='LAM_SUB')
-    # Select'>, inputs=['tokens', 'tokens', <Comparison.TRUE: 'True'>], output="<class 'Selector'> 1", lambda_name=None)
-    # Aggregate'>, inputs=["<class 'Selector'> 1", 'indices'], output="<class 'SOp'> 4", lambda_name=None)
-    # Select'>, inputs=["<class 'SOp'> 4", "<class 'SOp'> 4", <Comparison.FALSE: 'False'>], output="<class 'Selector'> 2", lambda_name=None)
-    # Aggregate'>, inputs=["<class 'Selector'> 2", "<class 'SOp'> 5"], output="<class 'SOp'> 6", lambda_name=None)
-    # Map'>, inputs=[functools.partial(<function <lambda> at 0x2af496ed0ee0>, 4), "<class 'SOp'> 6"], output="<class 'SOp'> 10", lambda_name='LAM_ADD')
     vocab = ['a', 'b', 'c']
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -216,11 +186,6 @@ def prog_g():
     return rasp_prog(), vocab, max_seq_len, language
 
 def prog_h():
-    #'Select'>, inputs=['tokens', 'tokens', <Comparison.GEQ: '>='>], output="<class 'Selector'> 1", lambda_name=None)
-    #'SelectorWidth'>, inputs=["<class 'Selector'> 1"], output="<class 'SOp'> 6", lambda_name=None)
-    #'Map'>, inputs=[functools.partial(<function <lambda> at 0x2b29b36ac9d0>, 4), "<class 'SOp'> 6"], output="<class 'SOp'> 7", lambda_name='LAM_AND')
-    #'SequenceMap'>, inputs=[<function <lambda> at 0x2b29b36ac940>, "<class 'SOp'> 7", "<class 'SOp'> 6"], output="<class 'SOp'> 8", lambda_name='LAM_OR')
-    #'SequenceMap'>, inputs=[<function <lambda> at 0x2b29b36ac940>, "<class 'SOp'> 8", "<class 'SOp'> 8"], output="<class 'SOp'> 9", lambda_name='LAM_OR'
     vocab = ['a', 'b', 'c']
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -234,12 +199,6 @@ def prog_h():
     return rasp_prog(), vocab, max_seq_len, language
 
 def prog_i():
-    #  'Aggregate'>, inputs=["<class 'Selector'> 1", 'indices'], output="<class 'SOp'> 3", lambda_name=None)
-    #  'Select'>, inputs=["<class 'SOp'> 4", "<class 'SOp'> 3", <Comparison.LT: '<'>], output="<class 'Selector'> 2", lambda_name=None)
-    #  'SelectorWidth'>, inputs=["<class 'Selector'> 2"], output="<class 'SOp'> 7", lambda_name=None)
-    #  'Select'>, inputs=['tokens', 'tokens', <Comparison.NEQ: '!='>], output="<class 'Selector'> 1", lambda_name=None)
-    #  'SelectorWidth'>, inputs=["<class 'Selector'> 1"], output="<class 'SOp'> 4", lambda_name=None)
-    #  'SequenceMap'>, inputs=[<function <lambda> at 0x2b2b8a960430>, "<class 'SOp'> 4", "<class 'SOp'> 7"], output="<class 'SOp'> 8", lambda_name='LAM_OR')
     vocab = ['a', 'b', 'c']
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -254,12 +213,6 @@ def prog_i():
     return rasp_prog(), vocab, max_seq_len, language
 
 def prog_i_n():
-    #  'Aggregate'>, inputs=["<class 'Selector'> 1", 'indices'], output="<class 'SOp'> 3", lambda_name=None)
-    #  'Select'>, inputs=["<class 'SOp'> 4", "<class 'SOp'> 3", <Comparison.LT: '<'>], output="<class 'Selector'> 2", lambda_name=None)
-    #  'SelectorWidth'>, inputs=["<class 'Selector'> 2"], output="<class 'SOp'> 7", lambda_name=None)
-    #  'Select'>, inputs=['tokens', 'tokens', <Comparison.NEQ: '!='>], output="<class 'Selector'> 1", lambda_name=None)
-    #  'SelectorWidth'>, inputs=["<class 'Selector'> 1"], output="<class 'SOp'> 4", lambda_name=None)
-    #  'SequenceMap'>, inputs=[<function <lambda> at 0x2b2b8a960430>, "<class 'SOp'> 4", "<class 'SOp'> 7"], output="<class 'SOp'> 8", lambda_name='LAM_OR')
     vocab = [1, 2, 3]
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -274,12 +227,6 @@ def prog_i_n():
     return rasp_prog(), vocab, max_seq_len, language
    
 def prog_j():
-    #'Map'>, inputs=[functools.partial(<function <lambda> at 0x2b2b8aa0c8b0>, 3), 'indices'], output="<class 'SOp'> 2", lambda_name='LAM_SUB')
-    #'SequenceMap'>, inputs=[<function <lambda> at 0x2b2b8aa0c820>, "<class 'SOp'> 2", 'indices'], output="<class 'SOp'> 4", lambda_name='LAM_OR')
-    #'Map'>, inputs=[functools.partial(<function <lambda> at 0x2b2b8aa0c700>, 't2'), 'tokens'], output="<class 'SOp'> 1", lambda_name='LAM_GT')
-    #'Map'>, inputs=[functools.partial(<function <lambda> at 0x2b2b8aa0c670>, False), "<class 'SOp'> 1"], output="<class 'SOp'> 3", lambda_name='LAM_LT')
-    #'Select'>, inputs=["<class 'SOp'> 3", "<class 'SOp'> 3", <Comparison.LEQ: '<='>], output="<class 'Selector'> 1", lambda_name=None)
-    #'Aggregate'>, inputs=["<class 'Selector'> 1", "<class 'SOp'> 4"], output="<class 'SOp'> 6", lambda_name=None) 
     vocab = ['a', 'b', 'c']
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -294,12 +241,6 @@ def prog_j():
     return rasp_prog(), vocab, max_seq_len, language        
 
 def prog_k():
-    # SelectorWidth'>, inputs=["<class Selector'> 3"], output="<class SOp'> 6", lambda_name=None)
-    # Map'>, inputs=[functools.partial(<function <lambda> at 0x2b29b30f8940>, 3), "<class SOp'> 1"], output="<class SOp'> 3", lambda_name='LAM_MUL')
-    # Map'>, inputs=[functools.partial(<function <lambda> at 0x2b29b30f88b0>, 4.11), 'indices'], output="<class SOp'> 1", lambda_name='LAM_ADD')
-    # Select'>, inputs=["<class SOp'> 1", 'indices', <Comparison.NEQ: '!='>], output="<class Selector'> 3", lambda_name=None)
-    # Aggregate'>, inputs=["<class Selector'> 3", "<class SOp'> 3"], output="<class SOp'> 5", lambda_name=None)
-    # SequenceMap'>, inputs=[<function <lambda> at 0x2b29b30f88b0>, "<class SOp'> 5", "<class SOp'> 6"], output="<class SOp'> 8", lambda_name='LAM_ADD')
     vocab = [1,2, 3]
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -314,12 +255,6 @@ def prog_k():
     return rasp_prog(), vocab, max_seq_len, language        
 
 def prog_l():
-    # Map'>, inputs=[functools.partial(<function <lambda> at 0x2b2b8ab101f0>, True), "<class SOp'> 1"], output="<class SOp'> 3", lambda_name='LAM_IV')
-    # Map'>, inputs=[functools.partial(<function <lambda> at 0x2b2b8ab100d0>, 't0'), 'tokens'], output="<class SOp'> 1", lambda_name='LAM_LT')
-    # Select'>, inputs=["<class SOp'> 1", "<class SOp'> 3", <Comparison.EQ: '=='>], output="<class Selector'> 1", lambda_name=None)
-    # SelectorWidth'>, inputs=["<class Selector'> 1"], output="<class SOp'> 10", lambda_name=None)
-    # Map'>, inputs=[functools.partial(<function <lambda> at 0x2b2b8ab10040>, 4), "<class SOp'> 10"], output="<class SOp'> 11", lambda_name='LAM_OR')
-    # Map'>, inputs=[functools.partial(<function <lambda> at 0x2b2b8aac7f40>, 3.29), "<class SOp'> 11"], output="<class SOp'> 13", lambda_name='LAM_MUL')
     vocab = ['a', 'b', 'c']
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -334,14 +269,6 @@ def prog_l():
     return rasp_prog(), vocab, max_seq_len, language
 
 def prog_m():
-    # key is none?
-    #  Map'>, inputs=[functools.partial(<function <lambda> at 0x2b29b30f8a60>, 4), "<class SOp'> 1"], output="<class SOp'> 4", lambda_name='LAM_AND')
-    #  Map'>, inputs=[functools.partial(<function <lambda> at 0x2b29b30f8af0>, 4.7), "<class SOp'> 4"], output="<class SOp'> 5", lambda_name='LAM_OR')
-    #  SelectorWidth'>, inputs=["<class Selector'> 1"], output="<class SOp'> 1", lambda_name=None)
-    #  Select'>, inputs=['tokens', 'tokens', <Comparison.NEQ: '!='>], output="<class Selector'> 1", lambda_name=None)
-    #  Aggregate'>, inputs=["<class Selector'> 1", "<class SOp'> 1"], output="<class SOp'> 3", lambda_name=None)
-    #  Select'>, inputs=["<class SOp'> 3", "<class SOp'> 5", <Comparison.FALSE: 'False'>], output="<class Selector'> 2", lambda_name=None)
-    #  SelectorWidth'>, inputs=["<class Selector'> 2"], output="<class SOp'> 7", lambda_name=None)
     vocab = ['a', 'b', 'c']
     max_seq_len = 3+1
     language = vocab_to_lang(vocab, max_seq_len)
@@ -422,40 +349,39 @@ def test_program(rasp_prog, vocab, max_seq_len, language, prog_name: str):
     
     for inp in language:
         formatted_input = [COMPILER_BOS] + list(inp)
-
+        
+        # Jax forward pass
+        output = assembled_model.apply(formatted_input)
+        jax_output = output.decoded
+        
+        
+        # rasp forward pass
+        try:
+            rasp_out = rasp_prog(list(inp))
+        except Exception as E:
+            rasp_out = f"RASP_FAILED:{E}"
+        
+        
+        # CRAFT forward pass
         embedded_input = embed_input(formatted_input, input_space=input_space, _BOS_DIRECTION=_BOS_DIRECTION, _ONE_DIRECTION=_ONE_DIRECTION)
         output_seq = craft_model.apply(embedded_input)
 
-
-
-        
         output_space = bases.VectorSpaceWithBasis(rasp_model.sink[nodes.OUTPUT_BASIS])
 
-        outs = output_seq.project(output_space)
-
-
-
-        output = assembled_model.apply(formatted_input)
-
         def decode_outs(output_seq, output_space):
-            outs = output_seq.project(output_space)
+            outs = output_seq.project(output_space) # sparse outs
             labels = outs.magnitudes.argmax(axis=1)
             return [output_space.basis[i].value for i in labels]
 
-        # print(f"rasp: {rasp_prog(formatted_input}")
-        # print(f"craft {decode_outs(output_seq, output_space)}")
-        # print(f"JAX: {output.decoded}")
+        craft_outputs = decode_outs(output_seq, output_space)
         
-        try:
-            rasp_out = rasp_prog(formatted_input)
-        except Exception as E:
-            rasp_out = f"RASP_FAILED:{E}"
+        
         
 
         df_rows.append(dict(prog_name=prog_name, inp=inp, 
                             rasp=rasp_out, 
-                            craft=decode_outs(output_seq, output_space), 
-                            jax=output.decoded ))
+                            craft=craft_outputs, 
+                            jax=jax_output))
 
         # from inverse_tracr.utils.verbose_craft import plot_basis_dir
         # fig, axs = plt.subplots(1, 1, figsize=(5, 5))
@@ -465,17 +391,17 @@ def test_program(rasp_prog, vocab, max_seq_len, language, prog_name: str):
 
 progs = {
     "prog_a": prog_a,
-    # "prog_b": prog_b, # compiler error jax conversion qk matrix
-    #"prog_c": prog_c, # calls aggregate on numeric tokens - bos throws exception
+    "prog_b": prog_b, # compiler error jax conversion qk matrix
+    "prog_c": prog_c,
     "prog_d": prog_d,
     "prog_e": prog_e,
     "prog_f": prog_f,
     "prog_g": prog_g,
     "prog_h": prog_h,
-    #"prog_i": prog_i, # query is None!
+    "prog_i": prog_i, # query is None!
     "prog_i_n": prog_i_n,
-    #"prog_j": prog_j,  # compiler error jax conversion qk matrix
-    "prog_k": prog_k,
+    "prog_j": prog_j,  # compiler error jax conversion qk matrix
+    "prog_k": prog_k, # issue with aggregation types causes RASP to fail
     "prog_m": prog_m,
     
 }
@@ -495,5 +421,5 @@ for prog_name, prog in progs.items():
     df = test_program(rasp_prog, vocab, max_seq_len, language, prog_name)
     master_df.append(df)
 master_df = pd.concat(master_df)
-
+master_df.to_csv('craft_vs_jax_wov.csv')
 # %%

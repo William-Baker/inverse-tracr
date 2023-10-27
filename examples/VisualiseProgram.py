@@ -5,16 +5,16 @@ import sys
 sys.path.append('tracr/')
 
 
-from utils.plot import *
+from inverse_tracr.utils.plot import *
 
 # The default of float16 can lead to discrepancies between outputs of
 # the compiled model and the RASP program.
 jax.config.update('jax_default_matmul_precision', 'float32')
 
 
-from utils import compiling_all
-from utils.verbose_craft import make_craft_model_verbose
-from utils.craft_embeddings import embed_input
+from inverse_tracr.utils import compiling_all
+from inverse_tracr.utils.verbose_craft import make_craft_model_verbose
+from inverse_tracr.utils.craft_embeddings import embed_input
 
 from tracr.rasp import rasp
 
@@ -106,7 +106,7 @@ def get_program(program_name, max_seq_len):
 
 
 #%%
-prog_name = "hist"
+prog_name = "sort"
 program, vocab, input_seq = get_program(prog_name, 6)
 vocab = set(list(input_seq))
 formatted_input = ["bos"] + list(input_seq)

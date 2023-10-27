@@ -14,9 +14,23 @@ def make_input_space(vocab, max_seq_len, _ONE_DIRECTION, _BOS_DIRECTION):
   return input_space
 
 
-def embed_input(input_seq, input_space, _BOS_DIRECTION, _ONE_DIRECTION):
+# def embed_input(input_seq, input_space, _BOS_DIRECTION, _ONE_DIRECTION):
+#   bos_vec = input_space.vector_from_basis_direction(
+#       bases.BasisDirection(_BOS_DIRECTION))
+#   one_vec = input_space.vector_from_basis_direction(
+#       bases.BasisDirection(_ONE_DIRECTION))
+#   embedded_input = [bos_vec + one_vec]
+#   for i, val in enumerate(input_seq):
+#     i_vec = input_space.vector_from_basis_direction(
+#         bases.BasisDirection(rasp.indices.label, i))
+#     val_vec = input_space.vector_from_basis_direction(
+#         bases.BasisDirection(rasp.tokens.label, val))
+#     embedded_input.append(i_vec + val_vec + one_vec)
+#   return bases.VectorInBasis.stack(embedded_input)
+
+def embed_input(input_seq, input_space, _BOS_DIRECTION, _ONE_DIRECTION, BOS_VALUE='compiler_bos'):
   bos_vec = input_space.vector_from_basis_direction(
-      bases.BasisDirection(_BOS_DIRECTION))
+      bases.BasisDirection(_BOS_DIRECTION, BOS_VALUE))
   one_vec = input_space.vector_from_basis_direction(
       bases.BasisDirection(_ONE_DIRECTION))
   embedded_input = [bos_vec + one_vec]
