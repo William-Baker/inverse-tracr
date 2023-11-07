@@ -29,66 +29,32 @@ os.environ['CUDA_VISIBLE_DEVICES'] = ''
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
 
 
-COMPILER_BOS = "compiler_bos"
-COMPILER_PAD = "compiler_pad"
+_BOS_DIRECTION = "rasp_to_transformer_integration_test_BOS"
+_ONE_DIRECTION = "rasp_to_craft_integration_test_ONE"
+_COMPILER_PAD = "compiler_pad"
 
+def make_input_space(vocab, max_seq_len):
+  tokens_space = bases.VectorSpaceWithBasis.from_values("tokens", vocab)
+  indices_space = bases.VectorSpaceWithBasis.from_values(
+      "indices", range(max_seq_len))
+  one_space = bases.VectorSpaceWithBasis.from_names([_ONE_DIRECTION])
+  bos_space = bases.VectorSpaceWithBasis.from_names([_BOS_DIRECTION])
+  input_space = bases.join_vector_spaces(tokens_space, indices_space, one_space,
+                                         bos_space)
 
-def compile_rasp_to_model_returns_all(
-    program: rasp.SOp,
-    vocab: Set[rasp.Value],
-    max_seq_len: int,
-    causal: bool = False,
-    compiler_bos: str = COMPILER_BOS,
-    compiler_pad: str = COMPILER_PAD,
-    mlp_exactness: int = 100) -> assemble.AssembledTransformerModel:
+  return input_space
 
-  if compiler_bos in vocab:
-    raise ValueError("Compiler BOS token must not be present in the vocab. "
-                     f"Found '{compiler_bos}' in {vocab}")
-
-  if compiler_pad in vocab:
-    raise ValueError("Compiler PAD token must not be present in the vocab. "
-                     f"Found '{compiler_pad}' in {vocab}")
-
-  rasp_model = rasp_to_graph.extract_rasp_graph(program)
-  graph, sources, sink = rasp_model.graph, rasp_model.sources, rasp_model.sink
-
-  basis_inference.infer_bases(
-      graph,
-      sink,
-      vocab,
-      max_seq_len,
-  )
-
-  expr_to_craft_graph.add_craft_components_to_rasp_graph(
-      graph,
-      bos_dir=bases.BasisDirection(rasp.tokens.label, compiler_bos),
-      mlp_exactness=mlp_exactness,
-  )
-
-  craft_model = craft_graph_to_model.craft_graph_to_model(graph, sources)
-
-  return craft_model_to_transformer.craft_model_to_transformer(
-      craft_model=craft_model,
-      graph=graph,
-      sink=sink,
-      max_seq_len=max_seq_len,
-      causal=causal,
-      compiler_bos=compiler_bos,
-      compiler_pad=compiler_pad,
-  ), rasp_model, craft_model
-
-def embed_input(input_seq, input_space, _BOS_DIRECTION, _ONE_DIRECTION, BOS_VALUE='compiler_bos'):
+def embed_input(input_seq, input_space):
   bos_vec = input_space.vector_from_basis_direction(
-      bases.BasisDirection(_BOS_DIRECTION, BOS_VALUE))
+      bases.BasisDirection(_BOS_DIRECTION))
   one_vec = input_space.vector_from_basis_direction(
       bases.BasisDirection(_ONE_DIRECTION))
   embedded_input = [bos_vec + one_vec]
   for i, val in enumerate(input_seq):
     i_vec = input_space.vector_from_basis_direction(
-        bases.BasisDirection(rasp.indices.label, i))
+        bases.BasisDirection("indices", i))
     val_vec = input_space.vector_from_basis_direction(
-        bases.BasisDirection(rasp.tokens.label, val))
+        bases.BasisDirection("tokens", val))
     embedded_input.append(i_vec + val_vec + one_vec)
   return bases.VectorInBasis.stack(embedded_input)
 
@@ -354,6 +320,7 @@ def prog_m():
         se2 = rasp.Select(so3, so5, rasp.Comparison.FALSE)
         so7 = rasp.SelectorWidth(se2)
         return so7
+    
     return rasp_prog(), vocab, max_seq_len, language
         
 import tracr.compiler.lib as lib
@@ -406,25 +373,100 @@ def get_program(program_name, max_seq_len):
   return program, vocab, max_seq_len, language
 
 
+def compile_rasp_to_model_returns_all(
+    program: rasp.SOp,
+    vocab: Set[rasp.Value],
+    max_seq_len: int,
+    causal: bool = False,
+    mlp_exactness: int = 100) -> assemble.AssembledTransformerModel:
+
+    if _BOS_DIRECTION in vocab:
+        raise ValueError("Compiler BOS token must not be present in the vocab. "
+                        f"Found '{_BOS_DIRECTION}' in {vocab}")
+
+    if _COMPILER_PAD in vocab:
+        raise ValueError("Compiler PAD token must not be present in the vocab. "
+                        f"Found '{_COMPILER_PAD}' in {vocab}")
+
+    #   rasp_model = rasp_to_graph.extract_rasp_graph(program)
+    #   graph, sources, sink = rasp_model.graph, rasp_model.sources, rasp_model.sink
+
+    #   basis_inference.infer_bases(
+    #       graph,
+    #       sink,
+    #       vocab,
+    #       max_seq_len,
+    #   )
+
+    #   expr_to_craft_graph.add_craft_components_to_rasp_graph(
+    #       graph,
+    #       bos_dir=bases.BasisDirection(rasp.tokens.label, compiler_bos),
+    #       mlp_exactness=mlp_exactness,
+    #   )
+
+    #   craft_model = craft_graph_to_model.craft_graph_to_model(graph, sources)
+    categorical_output = rasp.is_categorical(program)
+    rasp_model = rasp_to_graph.extract_rasp_graph(program)
+    basis_inference.infer_bases(
+        rasp_model.graph,
+        rasp_model.sink,
+        vocab,
+        max_seq_len=max_seq_len,
+    )
+    expr_to_craft_graph.add_craft_components_to_rasp_graph(
+        rasp_model.graph,
+        bos_dir=bases.BasisDirection(_BOS_DIRECTION),
+        one_dir=bases.BasisDirection(_ONE_DIRECTION),
+    )
+    craft_model = craft_graph_to_model.craft_graph_to_model(rasp_model.graph,
+                                                        rasp_model.sources)
+    input_space = make_input_space(vocab, max_seq_len)
+    output_space = bases.VectorSpaceWithBasis(
+        rasp_model.sink[nodes.OUTPUT_BASIS])
+    if not categorical_output:
+            assert len(output_space.basis) == 1
+
+    jax_model = craft_model_to_transformer.craft_model_to_transformer(
+        craft_model=craft_model,
+        graph=rasp_model.graph,
+        sink=rasp_model.sink,
+        max_seq_len=max_seq_len,
+        causal=causal,
+        compiler_bos=_BOS_DIRECTION,
+        compiler_pad=_COMPILER_PAD,
+    )
+    
+    return jax_model, rasp_model, craft_model, input_space, output_space
+
 def test_program(rasp_prog, vocab, max_seq_len, language, prog_name: str):
-    assembled_model, rasp_model, craft_model = compile_rasp_to_model_returns_all(
-        rasp_prog, set(vocab), max_seq_len, compiler_bos=COMPILER_BOS, compiler_pad=COMPILER_PAD)
+    jax_model, rasp_model, craft_model, input_space, output_space = compile_rasp_to_model_returns_all(
+        rasp_prog, set(vocab), max_seq_len)
     
-    
-    indices_space = bases.VectorSpaceWithBasis.from_values(
-        rasp.indices.label, range(max_seq_len))
-    input_space = bases.join_vector_spaces(indices_space, craft_model.residual_space)
-    
-    _ONE_DIRECTION = 'one'
-    _BOS_DIRECTION = [basis.name for basis in craft_model.residual_space.basis if (basis.value == 'compiler_bos')][0]
+    # _ONE_DIRECTION = 'one'
+    # _BOS_DIRECTION = [basis.name for basis in craft_model.residual_space.basis if (basis.value == 'compiler_bos')][0]
     
     df_rows = []
     
     for inp in language:
-        formatted_input = [COMPILER_BOS] + list(inp)
+        # CRAFT forward pass
+        test_input_vector = embed_input(list(inp), input_space)
+        output_seq = craft_model.apply(test_input_vector).project(output_space)
+        
+        output_space = bases.VectorSpaceWithBasis(rasp_model.sink[nodes.OUTPUT_BASIS])
+
+        def decode_outs(output_seq, output_space):
+            outs = output_seq.project(output_space) # sparse outs
+            labels = outs.magnitudes.argmax(axis=1)
+            return [output_space.basis[i].value for i in labels]
+
+        craft_outputs = decode_outs(output_seq, output_space)
+        
+        
+        
+        formatted_input = [_BOS_DIRECTION] + list(inp)
         
         # Jax forward pass
-        output = assembled_model.apply(formatted_input)
+        output = jax_model.apply(formatted_input)
         jax_output = output.decoded
         
         
@@ -435,18 +477,12 @@ def test_program(rasp_prog, vocab, max_seq_len, language, prog_name: str):
             rasp_out = f"RASP_FAILED:{E}"
         
         
-        # CRAFT forward pass
-        embedded_input = embed_input(formatted_input, input_space=input_space, _BOS_DIRECTION=_BOS_DIRECTION, _ONE_DIRECTION=_ONE_DIRECTION)
-        output_seq = craft_model.apply(embedded_input)
+        
+        
+        # embedded_input = embed_input(formatted_input, input_space=input_space, _BOS_DIRECTION=_BOS_DIRECTION, _ONE_DIRECTION=_ONE_DIRECTION)
+        # output_seq = craft_model.apply(embedded_input)
 
-        output_space = bases.VectorSpaceWithBasis(rasp_model.sink[nodes.OUTPUT_BASIS])
-
-        def decode_outs(output_seq, output_space):
-            outs = output_seq.project(output_space) # sparse outs
-            labels = outs.magnitudes.argmax(axis=1)
-            return [output_space.basis[i].value for i in labels]
-
-        craft_outputs = decode_outs(output_seq, output_space)
+        
         
         
         
@@ -488,8 +524,49 @@ for ex in ex_progs:
     progs[ex] = partial(get_program, ex, 4)
 
 
-rasp_prog, vocab, max_seq_len, language = progs['length']()
-df = test_program(rasp_prog, vocab, max_seq_len, [('a', 'a', 'a')
-], 'length')
-    
+# master_df = []
+# for prog_name, prog in progs.items():
+#     print(prog_name)
+#     rasp_prog, vocab, max_seq_len, language = prog()
+#     df = test_program(rasp_prog, vocab, max_seq_len, language, prog_name)
+#     master_df.append(df)
+# master_df = pd.concat(master_df)
+# master_df.to_csv('craft_vs_jax_v2.csv')
+
+
+#%%
+
+rasp_prog, vocab, max_seq_len, language = progs['prog_e']()
+
+inp = list('aab')
+
+
+jax_model, rasp_model, craft_model, input_space, output_space = compile_rasp_to_model_returns_all(
+        rasp_prog, set(vocab), max_seq_len)
+
+
+from inverse_tracr.utils.verbose_craft import make_craft_model_verbose
+
+make_craft_model_verbose(craft_model)
+
+test_input_vector = embed_input(list(inp), input_space)
+output_seq = craft_model.apply(test_input_vector).project(output_space)
+
+output_space = bases.VectorSpaceWithBasis(rasp_model.sink[nodes.OUTPUT_BASIS])
+
+def decode_outs(output_seq, output_space):
+    outs = output_seq.project(output_space) # sparse outs
+    labels = outs.magnitudes.argmax(axis=1)
+    return [output_space.basis[i].value for i in labels]
+
+craft_outputs = decode_outs(output_seq, output_space)
+
+        
+
+rasp_out = rasp_prog(list(inp))
 # %%
+
+
+[0.333333, 0.666667, 0.      , 0.      , 0.      , 0.      ],
+[0.333333, 0.666667, 0.      , 0.      , 0.      , 0.      ],
+[0.333333, 0.666667, 0.      , 0.      , 0.      , 0.      ]])
