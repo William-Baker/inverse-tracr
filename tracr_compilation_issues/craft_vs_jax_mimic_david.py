@@ -566,7 +566,29 @@ craft_outputs = decode_outs(output_seq, output_space)
 rasp_out = rasp_prog(list(inp))
 # %%
 
+inp = list('abc')
 
-[0.333333, 0.666667, 0.      , 0.      , 0.      , 0.      ],
-[0.333333, 0.666667, 0.      , 0.      , 0.      , 0.      ],
-[0.333333, 0.666667, 0.      , 0.      , 0.      , 0.      ]])
+test_input_vector = embed_input(list(inp), input_space)
+output_seq = craft_model.apply(test_input_vector).project(output_space)
+
+output_space = bases.VectorSpaceWithBasis(rasp_model.sink[nodes.OUTPUT_BASIS])
+
+def decode_outs(output_seq, output_space):
+    outs = output_seq.project(output_space) # sparse outs
+    labels = outs.magnitudes.argmax(axis=1)
+    return [output_space.basis[i].value for i in labels]
+
+craft_outputs = decode_outs(craft_outputs, output_space)
+
+        
+
+rasp_out = rasp_prog(list(inp))
+# %%
+[1.92874985e-22, 1.92874985e-22, 1.92874985e-22, 0.00000000e+00, 0.00000000e+00],
+[3.33333333e-01, 3.33333333e-01, 3.33333333e-01, 0.00000000e+00,0.00000000e+00],
+[3.33333333e-01, 3.33333333e-01, 3.33333333e-01, 0.00000000e+00, 0.00000000e+00],
+[3.33333333e-01, 3.33333333e-01, 3.33333333e-01, 0.00000000e+00,0.00000000e+00]]
+
+[[0.33,0.33,0.33],
+ [0.33,0.33,0.33],
+ [0.33,0.33,0.33]]

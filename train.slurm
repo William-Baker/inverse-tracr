@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J train-large
+#SBATCH -J train-large-iii
 #SBATCH -A KRUEGER-SL2-GPU
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -28,12 +28,28 @@ export XLA_FLAGS=--xla_gpu_cuda_data_dir=/rds/user/lsl38/hpc-work/miniconda3/env
 ### REMEMBER TO SET JOB NAME!!! ###
 ###################################
 
+# OPTIONS="
+#     --config MEDIUM
+#     --batch_size 128
+#     --model GPT2
+#     --trail_name medium-run_i
+# "
+
+# OPTIONS="
+#     --config pythia_125m
+#     --batch_size 512
+#     --model GPTNEO
+#     --trail_name neo-run
+# "
+
+
+
 OPTIONS="
     --config LARGE
+    --batch_size 128
     --model GPT2
-    --trail_name large-run
+    --trail_name large-run_iii
 "
-
 python train/gpt2_train_param_to_prog_ar.py $OPTIONS
 
 
